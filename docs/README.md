@@ -13,7 +13,9 @@
 - `templates/exec-plan.md`: plan template.
 - `provenance/termux-harness-build.json`: pinned native Harness build identity.
 - `runbooks/harness-rebuild.md`: native Harness rebuild and recovery procedure.
+- `runbooks/orchestration-state.md`: initialize, query, snapshot, rebuild, and
+  recover Harness work state.
 - `FEATURE_INTAKE.md`, `TRACE_SPEC.md`, `TOOL_REGISTRY.md`, and related
-  compatibility documents: the pinned upstream Core Plus CLI knowledge
-  payload; these optional workflows do not replace `WORKFLOW.md` or
-  `./qa/verify`.
+  documents: checksum-locked upstream compatibility references for the pinned
+  Core Plus CLI. Their historical default-workflow notes do not override
+  `WORKFLOW.md`, `HARNESS.md`, or `runbooks/orchestration-state.md`.

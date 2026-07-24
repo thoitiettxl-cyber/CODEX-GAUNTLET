@@ -13,3 +13,4 @@ documents here as real choices are accepted, then index them in this file.
 
 - [0001 — Single verification authority](0001-single-verification-authority.md)
 - [0002 — Serialize Harness CLI locking on Android](0002-android-exclusive-lock.md)
+- [0003 — Use Harness as the orchestration state authority](0003-orchestration-first-harness-state.md)

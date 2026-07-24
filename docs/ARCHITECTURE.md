@@ -1,6 +1,6 @@
 # Architecture
 
-## Eight layers
+## Nine layers
 
 | Layer | Owner | Artifact | Role |
 |---|---|---|---|
@@ -12,6 +12,7 @@
 | 6 | Gauntlet | `qa/` | Canonical verification engine |
 | 7 | Harness | `.harness-core/`, `scripts/bin/harness` | Provenance and controlled maintenance |
 | 8 | Repository | CI | Independent final enforcement |
+| 9 | Harness + repository | `.harness/changesets/`, `harness.db` | Replayable orchestration state |
 
 ## Ownership
 
@@ -26,6 +27,17 @@ Agent done → Harness context complete → Local Gauntlet verified → Reposito
 ```
 
 Only the final state is mergeable.
+
+## Orchestration authority
+
+Harness work-graph state owns task lifecycle, readiness, dependencies,
+hierarchy, and runnable selection. A linked Git execution plan owns intent,
+progress, decisions, recovery, and validation context. Semantic changesets are
+reviewed and committed; the SQLite database is generated and ignored.
+
+Gauntlet retains sole executable pass/fail authority through `./qa/verify`.
+Story completion may invoke that command as fresh proof, but metadata never
+redefines verification.
 
 ## Termux control plane
 

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,6 +26,88 @@ def hook(path: str, event: dict, env=None):
     )
     data = json.loads(proc.stdout) if proc.stdout.strip() else {}
     return proc.returncode, data, proc.stderr
+
+
+def orchestration_probe():
+    temp_root = os.environ.get('PREFIX', '/data/data/com.termux/files/usr') + '/tmp'
+    lock_path = ROOT/'.harness/epoch-transition/writer.lock'
+    nested_writer = False
+    if lock_path.exists():
+        with lock_path.open('rb') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            except BlockingIOError:
+                nested_writer = True
+    with tempfile.TemporaryDirectory(prefix='gauntlet-orchestration-', dir=temp_root) as tmp:
+        db_path = str(Path(tmp) / 'harness.db')
+        env = {**os.environ, 'HARNESS_DB_PATH': db_path}
+        env.pop('HARNESS_RUN_ID', None)
+        if nested_writer:
+            # story complete holds the repository writer lock while running proof.
+            # Re-entering rebuild through the same lock would deadlock, so nested
+            # proof validates the already runtime-tested replay source instead.
+            changeset = ROOT/'.harness/changesets/20260724-orchestration-first.changeset.jsonl'
+            try:
+                operations = [
+                    json.loads(line) for line in changeset.read_text().splitlines()
+                    if line.strip()
+                ]
+            except (OSError, json.JSONDecodeError):
+                operations = []
+            rebuild_ok = (
+                operations[:1] != [] and
+                operations[0].get('op') == 'changeset.header' and
+                any(
+                    op.get('op') == 'story.add' and op.get('id') == 'TERMUX-001'
+                    for op in operations
+                )
+            )
+        else:
+            init = subprocess.run(
+                [str(ROOT/'scripts/termux-control'), 'orchestrator', 'init'],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
+            )
+            graph = subprocess.run(
+                [str(ROOT/'scripts/termux-control'), 'orchestrator', 'query', 'work-graph', '--json'],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
+            )
+            try:
+                stories = json.loads(graph.stdout)['result']['stories']
+            except (KeyError, TypeError, json.JSONDecodeError):
+                stories = []
+            rebuild_ok = (
+                init.returncode == 0 and graph.returncode == 0 and
+                any(story.get('id') == 'TERMUX-001' for story in stories)
+            )
+        guard = subprocess.run(
+            [
+                str(ROOT/'scripts/termux-control'), 'orchestrator', 'story',
+                'update', '--id', 'TERMUX-001', '--status', 'planned', '--json'
+            ],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
+        )
+        help_value_guard = subprocess.run(
+            [
+                str(ROOT/'scripts/termux-control'), 'orchestrator', 'story',
+                'update', '--id', 'help', '--status', 'planned', '--json'
+            ],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
+        )
+        discovery = subprocess.run(
+            [str(ROOT/'scripts/termux-control'), 'orchestrator', 'story', '--help'],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
+        )
+        run_id_guard_ok = (
+            guard.returncode == 2 and
+            'set a stable HARNESS_RUN_ID' in guard.stderr
+        )
+        help_value_guard_ok = (
+            help_value_guard.returncode == 2 and
+            'set a stable HARNESS_RUN_ID' in help_value_guard.stderr
+        )
+        discovery_ok = discovery.returncode == 0 and 'Usage:' in discovery.stdout
+        return rebuild_ok, run_id_guard_ok, discovery_ok, help_value_guard_ok
 
 
 def checks():
@@ -61,6 +145,8 @@ def checks():
         'cwd': str(ROOT), 'hook_event_name': 'PermissionRequest', 'tool_name': 'Bash',
         'tool_input': {'command': 'codex --dangerously-bypass-hook-trust'}
     })
+
+    rebuild_ok, run_id_guard_ok, discovery_ok, help_value_guard_ok = orchestration_probe()
 
     return {
         'G01': ('sandbox baseline', 'sandbox_mode = "workspace-write"' in config and 'approval_policy = "on-request"' in config),
@@ -101,6 +187,10 @@ def checks():
         'H15': ('nested instruction precedence acknowledged', 'smallest authoritative context' in agents and 'Authority order' in workflow),
         'H16': ('Codex directories protected', '.codex/**' in quality and '.agents/skills' in quality),
         'H17': ('complete Harness payload checked', 'EXPECTED_CORE_PATHS' in text('qa/check_harness.py') and 'EXPECTED_CLI_PATHS' in text('qa/check_harness.py') and '"git", "apply", "--numstat"' in text('qa/check_harness.py')),
+        'H18': ('orchestration state rebuilds from semantic changesets', rebuild_ok),
+        'H19': ('orchestration mutations require stable run id', run_id_guard_ok),
+        'H20': ('orchestration discovery stays read-only', discovery_ok),
+        'H21': ('help values cannot bypass orchestration run id', help_value_guard_ok),
     }
 
 

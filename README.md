@@ -7,13 +7,15 @@ implementing **Codex Gauntlet v3 — Repository Harness Integrated**.
 
 - compact `AGENTS.md` entry map;
 - repository knowledge, decisions, and durable plans under `docs/`;
+- orchestration-first intake, work graph, trace, and semantic replay through
+  the pinned Harness CLI;
 - five repository skills under `.agents/skills/`;
 - Codex sandbox and lifecycle hooks under `.codex/`;
 - a single verification authority: `./qa/verify`;
 - Harness provenance and compatibility checks;
 - ownership-aware policy audit;
 - a hermetic GitHub Actions workflow that never downloads the latest Harness;
-- 38 named structural acceptance checks (`G01–G21`, `H01–H17`).
+- 42 named structural acceptance checks (`G01–G21`, `H01–H21`).
 
 ## Native Termux tools
 
@@ -42,8 +44,15 @@ proof.
 ```bash
 ./scripts/termux-control status
 ./scripts/termux-control doctor
+./scripts/termux-control orchestrator init
+./scripts/termux-control orchestrator status
 ./scripts/termux-control verify
 ```
+
+Use a stable `HARNESS_RUN_ID` for state-changing orchestrator commands. Complex
+work uses one Harness story linked to one Git-native execution plan. The
+generated `harness.db` stays ignored; semantic changesets are committed so the
+database can be rebuilt.
 
 For a consumer application, set `application_present` to `true` in `qa/project-commands.json` and provide real executable commands for every required gate. Empty commands fail closed once an application is declared.
 

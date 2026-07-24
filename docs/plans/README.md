@@ -8,9 +8,9 @@ intent from chat history or a partial diff.
 
 Use an ephemeral plan for bounded, single-session work.
 
-Create one durable plan when work spans sessions, coordinates contributors, has
-meaningful dependencies or ordering, requires recovery steps, or would be unsafe
-to resume from the diff alone.
+Create one durable plan and link it from one Harness story when work spans
+sessions, coordinates contributors, has meaningful dependencies or ordering,
+requires recovery steps, or would be unsafe to resume from the diff alone.
 
 Use `docs/templates/exec-plan.md` and place the file under `active/`.
 
@@ -23,9 +23,16 @@ docs/plans/active/<slug>.md
   -> move to docs/plans/completed/<slug>.md
 ```
 
-The plan is the primary task artifact. Promote a lasting product or architecture
-decision into `docs/decisions/`; keep task-local choices in the plan.
+The plan is authoritative for task intent, progress, decisions, recovery, and
+validation context. The linked Harness story is authoritative for lifecycle,
+readiness, dependencies, and hierarchy. Promote a lasting product or
+architecture decision into `docs/decisions/`; keep task-local choices in the
+plan.
 
 ## Active Plans
 
-No active execution plans are currently indexed.
+No active execution plans.
+
+## Recently Completed
+
+- `TERMUX-001` — [Activate orchestration-first Harness state](completed/orchestration-first-harness-state.md)

@@ -6,6 +6,28 @@ Codex Gauntlet owns execution constraints: `.codex/`, verification, policy audit
 
 Harness never defines application pass/fail. All paths converge on `./qa/verify`.
 
+## Active orchestration
+
+The Core Plus CLI is the machine-readable task control plane for complex work.
+Its work graph owns lifecycle, readiness, dependencies, hierarchy, and runnable
+selection. Each complex story links to one Git execution plan that owns intent,
+progress, decisions, recovery, and validation context.
+
+Use `scripts/termux-control orchestrator` so repository and database paths are
+explicit. State-changing runs require a stable `HARNESS_RUN_ID` and emit
+semantic changesets under `.harness/changesets/`. The generated `harness.db`
+remains ignored and reproducible from those reviewed changesets.
+
+Intake, trace, intervention, audit, backlog, and proposal records improve
+inspection and control. They remain metadata and cannot replace executable
+proof or the canonical gate.
+
+The 23-file upstream CLI payload remains checksum-locked for provenance, so
+some compatibility documents describe the earlier opt-in default. For this
+repository, the local authority order in `docs/WORKFLOW.md`, this document, ADR
+0003, and `docs/runbooks/orchestration-state.md` supersedes those historical
+default-workflow notes without rewriting the pinned payload.
+
 ## Installed provenance
 
 The compatibility baseline pins upstream tag `harness-v0.1.7` at commit

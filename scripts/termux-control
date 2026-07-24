@@ -2,9 +2,62 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HARNESS_CLI="$ROOT/scripts/bin/harness-cli"
+ORCHESTRATOR_DB="${HARNESS_DB_PATH:-$ROOT/harness.db}"
+CHANGESET_DIR="$ROOT/.harness/changesets"
 
 usage() {
-  echo "Usage: scripts/termux-control {status|doctor|verify|rebuild-harness}"
+  echo "Usage: scripts/termux-control {status|doctor|verify|rebuild-harness|orchestrator}"
+  echo "       scripts/termux-control orchestrator {init|rebuild|status|<harness-cli args...>}"
+}
+
+orchestrator() {
+  HARNESS_REPO_ROOT="$ROOT" HARNESS_DB_PATH="$ORCHESTRATOR_DB" "$HARNESS_CLI" "$@"
+}
+
+has_changesets() {
+  [[ -d "$CHANGESET_DIR" ]] &&
+    [[ -n "$(find "$CHANGESET_DIR" -maxdepth 1 -type f -name '*.changeset.jsonl' -print -quit)" ]]
+}
+
+requires_run_id() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -h|--help)
+        return 1
+        ;;
+    esac
+  done
+  [[ "${1:-}" == "help" || "${2:-}" == "help" ]] && return 1
+
+  case "${1:-}" in
+    story)
+      [[ "${2:-}" == "backlog" && "${3:-}" == "list" ]] && return 1
+      return 0
+      ;;
+    backlog)
+      if [[ "${2:-}" == "reconcile" && " $* " == *" --dry-run "* &&
+            " $* " != *" --apply "* ]]; then
+        return 1
+      fi
+      return 0
+      ;;
+    intake|decision|tool|intervention|trace|import)
+      return 0
+      ;;
+    audit)
+      [[ " $* " == *" --record-evidence "* ]]
+      return
+      ;;
+    propose)
+      [[ " $* " == *" --accept "* || " $* " == *" --reject "* ]]
+      return
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 case "${1:-}" in
@@ -30,6 +83,43 @@ case "${1:-}" in
     ;;
   rebuild-harness)
     exec "$ROOT/scripts/build-harness-termux"
+    ;;
+  orchestrator)
+    shift
+    [[ "$ORCHESTRATOR_DB" == /* ]] ||
+      { echo "FAIL: HARNESS_DB_PATH must be absolute: $ORCHESTRATOR_DB" >&2; exit 2; }
+    case "${1:-status}" in
+      init)
+        if [[ -e "$ORCHESTRATOR_DB" ]]; then
+          HARNESS_DB_PATH="$ORCHESTRATOR_DB" bash "$ROOT/scripts/bootstrap-harness.sh"
+        elif has_changesets; then
+          orchestrator db rebuild --from "$CHANGESET_DIR"
+        else
+          HARNESS_DB_PATH="$ORCHESTRATOR_DB" bash "$ROOT/scripts/bootstrap-harness.sh"
+        fi
+        ;;
+      rebuild)
+        [[ ! -e "$ORCHESTRATOR_DB" ]] ||
+          { echo "FAIL: move the existing database aside before rebuild: $ORCHESTRATOR_DB" >&2; exit 1; }
+        has_changesets ||
+          { echo "FAIL: no semantic changesets found in $CHANGESET_DIR" >&2; exit 1; }
+        orchestrator db rebuild --from "$CHANGESET_DIR"
+        ;;
+      status)
+        contract="$(orchestrator query contract --json)"
+        echo "$contract"
+        if [[ "$contract" == *'"database_state":"current"'* ]]; then
+          orchestrator query work-graph --json
+        fi
+        ;;
+      *)
+        if requires_run_id "$@" && [[ -z "${HARNESS_RUN_ID:-}" ]]; then
+          echo "FAIL: set a stable HARNESS_RUN_ID before mutating Harness state." >&2
+          exit 2
+        fi
+        exec env HARNESS_REPO_ROOT="$ROOT" HARNESS_DB_PATH="$ORCHESTRATOR_DB" "$HARNESS_CLI" "$@"
+        ;;
+    esac
     ;;
   *)
     usage >&2
