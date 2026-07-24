@@ -21,3 +21,8 @@ Ordinary tasks may not directly modify `.codex/**`, `.harness-core/**`, policy-c
 ## Single authority
 
 There is no `harness verify`. All test, coverage, acceptance, mutation, provenance, and policy requirements are orchestrated by `./qa/verify`.
+
+GitHub-hosted Ubuntu cannot execute Android ELF artifacts. CI runs the same
+authority with `CODEX_GAUNTLET_CROSS_PLATFORM=1`, which verifies their pinned
+checksums and all repository policy while skipping only native binary
+execution. The Termux local gate must execute the binaries and `harness doctor`.

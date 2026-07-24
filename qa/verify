@@ -22,7 +22,11 @@ run() {
   "$@" 2>&1 | tee -a "$LOG"
 }
 
-run python3 qa/check_harness.py --skip-doctor-command
+HARNESS_CHECK_ARGS=(--skip-doctor-command)
+if [[ "${CODEX_GAUNTLET_CROSS_PLATFORM:-}" == "1" ]]; then
+  HARNESS_CHECK_ARGS+=(--skip-binary-execution)
+fi
+run python3 qa/check_harness.py "${HARNESS_CHECK_ARGS[@]}"
 run python3 qa/selftest/run.py --group all
 run python3 qa/policy_audit.py
 
@@ -54,7 +58,7 @@ for gate in docs build unit integration acceptance coverage migration mutation; 
   if [[ "$gate" == docs ]]; then
     run python3 -m compileall -q .codex/hooks qa
   else
-    run "qa/run-${gate}.sh"
+    run bash "qa/run-${gate}.sh"
   fi
 done
 

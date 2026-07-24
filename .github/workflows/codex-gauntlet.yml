@@ -21,9 +21,11 @@ jobs:
       - name: Verify checked-in repository state
         env:
           CODEX_GAUNTLET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CODEX_GAUNTLET_CROSS_PLATFORM: "1"
         run: |
-          chmod +x qa/verify qa/run-*.sh scripts/bin/harness .codex/hooks/*.py
-          ./qa/verify --mode ci
+          # Ubuntu verifies the Android artifacts by pinned checksum. Native
+          # execution remains mandatory in the Termux local gate.
+          bash ./qa/verify --mode ci
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4

@@ -33,6 +33,7 @@ def fail(message: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-doctor-command", action="store_true")
+    parser.add_argument("--skip-binary-execution", action="store_true")
     ns = parser.parse_args()
     errors = []
     try:
@@ -95,14 +96,14 @@ def main() -> int:
     if missing:
         errors.append(f"missing expected skills: {sorted(missing)}")
 
-    if binary.exists():
+    if binary.exists() and not ns.skip_binary_execution:
         result = subprocess.run(
             [str(binary), "--version"], cwd=ROOT, capture_output=True, text=True
         )
         if result.returncode or result.stdout.strip() != f"harness {expected}":
             errors.append("Harness executable version mismatch")
 
-    if cli.exists():
+    if cli.exists() and not ns.skip_binary_execution:
         result = subprocess.run(
             [str(cli), "--version"], cwd=ROOT, capture_output=True, text=True
         )
@@ -110,7 +111,7 @@ def main() -> int:
         if result.returncode or result.stdout.strip() != f"harness-cli {expected_cli}":
             errors.append("harness-cli executable version mismatch")
 
-    if not ns.skip_doctor_command and binary.exists():
+    if not ns.skip_doctor_command and not ns.skip_binary_execution and binary.exists():
         result = subprocess.run([str(binary), "doctor", "--directory", str(ROOT)], cwd=ROOT)
         if result.returncode:
             errors.append("harness doctor command failed")
