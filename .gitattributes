@@ -1,3 +1,5 @@
 .harness-core/base/** -whitespace
+scripts/patches/*.patch -whitespace
 scripts/bin/harness binary
 scripts/bin/harness-cli binary
+scripts/bootstrap-harness.ps1 text eol=crlf whitespace=cr-at-eol

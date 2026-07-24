@@ -19,7 +19,11 @@
     "binary_mode": "termux-source-build",
     "production_binary_required": false,
     "core_sha256": "20ec5d0a717d75f36a307926d008f67ebc2cdff7c3ab718abefc0384fdc4e222",
-    "cli_sha256": "d4c51ebacd9622eff5ba97f8b26f80ec4442acc470bb1bb0810167ff477b2234",
+    "cli_sha256": "1d39602c82d3937ccafe1af5d851e5fc50d5c39b7d86277c60f844ca2b011b87",
+    "android_patch_sha256": "67672f7efc2a10ce7656fa24a1e6e6924f0cbb309bc9b0d937cb194284a65a5d",
+    "core_payload_count": 19,
+    "cli_payload_count": 23,
+    "cli_payload_manifest_sha256": "eb4ae884262a7a03d117cb7b5dff5c932ecb4184d76aef27428b39bfe55e2067",
     "schema_count": 14,
     "schema_manifest_sha256": "e31ac87a8afb2d37d1f6c24ab2d0b00e7ac73d2d6acc3c10f88f4dd525141f51"
   }

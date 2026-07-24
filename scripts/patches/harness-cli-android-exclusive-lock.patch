@@ -1,21 +1,20 @@
 diff --git a/crates/harness-cli/src/epoch_fence.rs b/crates/harness-cli/src/epoch_fence.rs
-index e18949a..ee9ef6b 100644
+index 01e1124..483172d 100644
 --- a/crates/harness-cli/src/epoch_fence.rs
 +++ b/crates/harness-cli/src/epoch_fence.rs
-@@ -55,8 +55,14 @@ pub fn acquire_command_guard(
+@@ -60,8 +60,14 @@ pub fn acquire_command_guard(
          .write(true)
          .open(&lock_path)
          .map_err(|source| io_error(&lock_path, source))?;
 -    lock.lock_shared()
--        .map_err(|source| io_error(&lock_path, source))?;
 +    #[cfg(target_os = "android")]
 +    lock.lock_exclusive()
-+        .map_err(|source| io_error(&lock_path, source))?;
+         .map_err(|source| io_error(&lock_path, source))?;
 +    #[cfg(not(target_os = "android"))]
 +    {
 +        lock.lock_shared()
 +            .map_err(|source| io_error(&lock_path, source))?;
 +    }
-+
+ 
      let journal_path = control.join("journal.json");
      if journal_path.exists() {

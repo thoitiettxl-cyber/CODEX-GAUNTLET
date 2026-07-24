@@ -82,6 +82,8 @@ def checks():
         'G17': ('hook trust documented', 'hook trust' in quality.lower()),
         'G18': ('Rules optional', '.codex/rules' not in config and 'rules' not in hooks_json),
         'G19': ('Termux hook interpreters', all(command.startswith('/data/data/com.termux/files/usr/bin/python3 ') for command in hook_commands)),
+        'G20': ('untracked changes classified', 'git", "ls-files", "--others", "--exclude-standard' in text('qa/classify_changes.py')),
+        'G21': ('multiple change classes split', 'sep="\\n"' in text('qa/verify') and '"\\\\n".join' not in text('qa/verify')),
         'H01': ('Harness provenance', (ROOT/'.harness-core/manifest.json').exists()),
         'H02': ('skill coexistence and unique names', set(skill_names) == {'onboard-repository','audit-onboarding-proposal','verify-suite','spec-check','mutation-audit'} and len(skill_names)==len(set(skill_names))),
         'H03': ('compact AGENTS entrypoint', len(agents.splitlines()) < 45 and 'docs/WORKFLOW.md' in agents and './qa/verify' in agents),
@@ -98,6 +100,7 @@ def checks():
         'H14': ('single verification authority', 'single_authority: ./qa/verify' in matrix and 'There is no `harness verify`' in quality),
         'H15': ('nested instruction precedence acknowledged', 'smallest authoritative context' in agents and 'Authority order' in workflow),
         'H16': ('Codex directories protected', '.codex/**' in quality and '.agents/skills' in quality),
+        'H17': ('complete Harness payload checked', 'EXPECTED_CORE_PATHS' in text('qa/check_harness.py') and 'EXPECTED_CLI_PATHS' in text('qa/check_harness.py') and '"git", "apply", "--numstat"' in text('qa/check_harness.py')),
     }
 
 

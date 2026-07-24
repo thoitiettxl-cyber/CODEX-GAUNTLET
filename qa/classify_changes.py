@@ -16,6 +16,7 @@ def git_paths(base: str | None) -> list[str]:
     commands += [
         ["git", "diff", "--name-only", "HEAD"],
         ["git", "diff", "--name-only", "--cached"],
+        ["git", "ls-files", "--others", "--exclude-standard"],
     ]
     paths = set()
     for command in commands:

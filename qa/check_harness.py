@@ -18,6 +18,52 @@ EXPECTED_SKILLS = {
     "spec-check",
     "mutation-audit",
 }
+EXPECTED_CORE_PATHS = {
+    ".agents/skills/audit-onboarding-proposal/SKILL.md",
+    ".agents/skills/audit-onboarding-proposal/agents/openai.yaml",
+    ".agents/skills/audit-onboarding-proposal/scripts/validate_evidence_capsule.py",
+    ".agents/skills/onboard-repository/SKILL.md",
+    ".agents/skills/onboard-repository/agents/openai.yaml",
+    ".agents/skills/onboard-repository/references/evidence-capsule-v1.md",
+    ".agents/skills/onboard-repository/references/evidence-capsule-v2.md",
+    ".agents/skills/onboard-repository/scripts/emit_evidence_bundle.py",
+    ".agents/skills/onboard-repository/scripts/render_patch.py",
+    "AGENTS.md",
+    "docs/WORKFLOW.md",
+    "docs/README.md",
+    "docs/product/README.md",
+    "docs/plans/README.md",
+    "docs/plans/active/README.md",
+    "docs/plans/completed/README.md",
+    "docs/decisions/README.md",
+    "docs/templates/decision.md",
+    "docs/templates/exec-plan.md",
+}
+EXPECTED_CLI_PATHS = (
+    "docs/FEATURE_INTAKE.md",
+    "docs/GLOSSARY.md",
+    "docs/HARNESS_AUDIT.md",
+    "docs/HARNESS_BACKLOG.md",
+    "docs/HARNESS_COMPONENTS.md",
+    "docs/HARNESS_MATURITY.md",
+    "docs/IMPROVEMENT_PROTOCOL.md",
+    "docs/TEST_MATRIX.md",
+    "docs/TOOL_REGISTRY.md",
+    "docs/TRACE_SPEC.md",
+    "docs/contracts/harness-orchestration-v1.md",
+    "docs/stories/README.md",
+    "docs/stories/backlog.md",
+    "docs/templates/spec-intake.md",
+    "docs/templates/story.md",
+    "docs/templates/validation-report.md",
+    "docs/templates/high-risk-story/design.md",
+    "docs/templates/high-risk-story/execplan.md",
+    "docs/templates/high-risk-story/overview.md",
+    "docs/templates/high-risk-story/validation.md",
+    "scripts/bootstrap-harness.sh",
+    "scripts/bootstrap-harness.ps1",
+    "scripts/harness-cli-release-tag",
+)
 
 
 def sha256(path: Path) -> str:
@@ -61,6 +107,35 @@ def main() -> int:
     elif sha256(cli) != harness_compat["cli_sha256"]:
         errors.append("local harness-cli executable checksum mismatch")
 
+    patch = ROOT / "scripts" / "patches" / "harness-cli-android-exclusive-lock.patch"
+    if not patch.exists():
+        errors.append("Android Harness CLI patch is missing")
+    elif sha256(patch) != harness_compat["android_patch_sha256"]:
+        errors.append("Android Harness CLI patch checksum mismatch")
+    else:
+        result = subprocess.run(
+            ["git", "apply", "--numstat", str(patch)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode:
+            errors.append("Android Harness CLI patch is not a valid Git patch")
+
+    if len(EXPECTED_CLI_PATHS) != harness_compat["cli_payload_count"]:
+        errors.append("Harness CLI expected payload count mismatch")
+    else:
+        missing_cli = [path for path in EXPECTED_CLI_PATHS if not (ROOT / path).is_file()]
+        if missing_cli:
+            errors.append(f"Harness CLI payload files missing: {missing_cli}")
+        else:
+            cli_manifest = "".join(
+                f"{sha256(ROOT / path)}  {path}\n" for path in EXPECTED_CLI_PATHS
+            ).encode()
+            actual = hashlib.sha256(cli_manifest).hexdigest()
+            if actual != harness_compat["cli_payload_manifest_sha256"]:
+                errors.append("Harness CLI payload checksum mismatch")
+
     schemas = sorted((ROOT / "scripts" / "schema").glob("*.sql"))
     if len(schemas) != harness_compat["schema_count"]:
         errors.append("Harness CLI schema bundle count mismatch")
@@ -73,6 +148,17 @@ def main() -> int:
             errors.append("Harness CLI schema bundle checksum mismatch")
 
     owned = manifest.get("files", [])
+    owned_paths = [entry.get("path") for entry in owned]
+    if len(owned_paths) != len(set(owned_paths)):
+        errors.append("Harness core manifest contains duplicate paths")
+    if len(EXPECTED_CORE_PATHS) != harness_compat["core_payload_count"]:
+        errors.append("Harness core expected payload count mismatch")
+    if set(owned_paths) != EXPECTED_CORE_PATHS:
+        missing_core = sorted(EXPECTED_CORE_PATHS - set(owned_paths))
+        extra_core = sorted(set(owned_paths) - EXPECTED_CORE_PATHS)
+        errors.append(
+            f"Harness core payload mismatch: missing={missing_core}, extra={extra_core}"
+        )
     for entry in owned:
         path = entry["path"]
         expected_hash = entry["upstream_sha256"]

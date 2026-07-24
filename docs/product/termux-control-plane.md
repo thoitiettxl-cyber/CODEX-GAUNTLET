@@ -19,7 +19,7 @@ policy, inventory, runbooks, pinned tooling, and cross-repository procedures.
 - `scripts/termux-control verify` runs the sole repository verification
   authority.
 - `scripts/termux-control rebuild-harness` rebuilds the pinned Harness tools
-  from source.
+  from source according to `docs/runbooks/harness-rebuild.md`.
 
 ## Change contract
 
@@ -42,7 +42,9 @@ The native `harness` binary maintains repository-centered core files.
 `harness-cli` is the optional SQLite compatibility control plane. Neither
 replaces `./qa/verify`, and the compatibility database is not required for
 ordinary work. The pinned migrations under `scripts/schema/` are installed
-with the CLI; generated `harness.db` state remains ignored.
+with the CLI; generated `harness.db` state remains ignored. This repository
+installs the complete upstream Core Plus CLI payload while keeping CLI intake,
+story, trace, and database operations opt-in.
 
 On Termux, upstream self-update is unsupported for `android/aarch64`. Updates
 must use the pinned source-build lane; a Linux release binary is not compatible

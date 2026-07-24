@@ -13,13 +13,15 @@ implementing **Codex Gauntlet v3 — Repository Harness Integrated**.
 - Harness provenance and compatibility checks;
 - ownership-aware policy audit;
 - a hermetic GitHub Actions workflow that never downloads the latest Harness;
-- 34 named structural acceptance checks (`G01–G18`, `H01–H16`).
+- 38 named structural acceptance checks (`G01–G21`, `H01–H17`).
 
 ## Native Termux tools
 
 The repository pins upstream tag `harness-v0.1.7` and builds its Rust tools
 natively for `aarch64-linux-android`. The tag provides `harness 0.1.7` and
-`harness-cli 0.1.23`.
+`harness-cli 0.1.23`. The complete Core Plus CLI payload is installed: the
+19-file repository core, 23-file compatibility bundle, native binaries, and 14
+schema migrations.
 
 Upstream self-update does not support `android/aarch64`. Use
 `scripts/termux-control rebuild-harness` to rebuild from the pinned tag; never
@@ -30,6 +32,10 @@ The rebuild lane requires explicit maintenance authorization:
 ```bash
 CODEX_GAUNTLET_MAINTENANCE=1 scripts/termux-control rebuild-harness
 ```
+
+Read the [Harness rebuild runbook](docs/runbooks/harness-rebuild.md) before
+using the maintenance lane. It records prerequisites, recovery, and required
+proof.
 
 ## Start
 

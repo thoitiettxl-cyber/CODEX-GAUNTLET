@@ -36,7 +36,7 @@ if [[ -n "$BASE" ]]; then
 fi
 CLASS_JSON="$(python3 qa/classify_changes.py "${CLASSIFY_ARGS[@]}")"
 echo "$CLASS_JSON" | tee -a "$LOG"
-mapfile -t CLASSES < <(python3 -c 'import json,sys; print("\\n".join(json.load(sys.stdin)["classes"]))' <<< "$CLASS_JSON")
+mapfile -t CLASSES < <(python3 -c 'import json,sys; print(*json.load(sys.stdin)["classes"], sep="\n")' <<< "$CLASS_JSON")
 
 declare -A GATES=()
 for class in "${CLASSES[@]}"; do
