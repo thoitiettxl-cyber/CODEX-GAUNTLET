@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "application_coverage_percent": null,
+  "mutation_score_percent": null,
+  "policy": "Thresholds must be set by the consumer application and may not be lowered merely to make a change pass."
+}

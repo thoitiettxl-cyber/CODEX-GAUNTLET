@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.qa-artifacts/
+.coverage
+coverage.xml
+.DS_Store
+.env
+.env.*
+!.env.example
+harness.db
+harness.db-*
+.harness/epoch-transition/

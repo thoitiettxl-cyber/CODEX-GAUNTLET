@@ -1,0 +1,17 @@
+schema_version: 1
+single_authority: ./qa/verify
+classes:
+  docs-only: [docs]
+  pure-logic: [unit, coverage]
+  api-contract: [unit, integration, acceptance, coverage]
+  migration-schema: [unit, integration, migration, acceptance]
+  dependency: [build, unit, integration]
+  security-critical: [unit, integration, coverage, mutation]
+  codex: [gauntlet-selftest, full-relevant]
+  qa: [gauntlet-selftest, full-relevant]
+  gauntlet-skill: [skill-contract, gauntlet-selftest]
+  harness-managed-core: [harness-integrity, gauntlet-integration, full-relevant]
+  harness-provenance: [provenance-update-integrity]
+  workflow: [harness-doc-contract, workflow-selftests]
+  agents-entrypoint: [instruction-chain, workflow-selftests]
+  unknown-mixed: [conservative-full-relevant]

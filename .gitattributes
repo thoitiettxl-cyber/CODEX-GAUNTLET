@@ -1,0 +1,3 @@
+.harness-core/base/** -whitespace
+scripts/bin/harness binary
+scripts/bin/harness-cli binary

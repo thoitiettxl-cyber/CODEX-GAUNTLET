@@ -1,0 +1,5 @@
+interface:
+  display_name: "Audit an onboarding proposal"
+  short_description: "Audit an onboarding proposal"
+policy:
+  allow_implicit_invocation: false

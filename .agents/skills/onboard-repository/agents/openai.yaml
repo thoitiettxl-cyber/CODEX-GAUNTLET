@@ -1,0 +1,5 @@
+interface:
+  display_name: "Brownfield repository onboarding"
+  short_description: "Brownfield repository onboarding"
+policy:
+  allow_implicit_invocation: false

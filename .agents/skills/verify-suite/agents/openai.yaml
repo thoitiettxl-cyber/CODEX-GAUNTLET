@@ -1,0 +1,5 @@
+interface:
+  display_name: "Run canonical repository verification"
+  short_description: "Run canonical repository verification"
+policy:
+  allow_implicit_invocation: true

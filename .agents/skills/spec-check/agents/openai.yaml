@@ -1,0 +1,5 @@
+interface:
+  display_name: "Check changes against repository truth"
+  short_description: "Check changes against repository truth"
+policy:
+  allow_implicit_invocation: true

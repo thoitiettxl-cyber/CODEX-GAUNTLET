@@ -1,0 +1,38 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  echo "Usage: scripts/termux-control {status|doctor|verify|rebuild-harness}"
+}
+
+case "${1:-}" in
+  status)
+    echo "control_plane=$ROOT"
+    echo "kernel=$(uname -srmo)"
+    echo "prefix=${PREFIX:-unset}"
+    "$ROOT/scripts/bin/harness" --version
+    "$ROOT/scripts/bin/harness-cli" --version
+    "$ROOT/scripts/bin/harness" status --directory "$ROOT"
+    ;;
+  doctor)
+    [[ "$(uname -o 2>/dev/null || true)" == "Android" ]] ||
+      { echo "FAIL: not running on Android/Termux." >&2; exit 1; }
+    [[ "$(uname -m)" == "aarch64" ]] ||
+      { echo "FAIL: expected aarch64." >&2; exit 1; }
+    "$ROOT/scripts/bin/harness" doctor --directory "$ROOT"
+    "$ROOT/scripts/bin/harness-cli" --version
+    python3 "$ROOT/qa/check_harness.py"
+    ;;
+  verify)
+    exec "$ROOT/qa/verify" --mode targeted
+    ;;
+  rebuild-harness)
+    exec "$ROOT/scripts/build-harness-termux"
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Audit mutation testing requirements"
+  short_description: "Audit mutation testing requirements"
+policy:
+  allow_implicit_invocation: false

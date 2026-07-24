@@ -1,0 +1,13 @@
+{
+  "application_present": false,
+  "commands": {
+    "docs": [],
+    "unit": [],
+    "integration": [],
+    "acceptance": [],
+    "coverage": [],
+    "mutation": [],
+    "build": [],
+    "migration": []
+  }
+}

@@ -1,0 +1,33 @@
+name: Codex Gauntlet
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify checked-in repository state
+        env:
+          CODEX_GAUNTLET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          chmod +x qa/verify qa/run-*.sh scripts/bin/harness .codex/hooks/*.py
+          ./qa/verify --mode ci
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-gauntlet-diagnostics
+          path: .qa-artifacts/
+          if-no-files-found: ignore
