@@ -31,7 +31,7 @@ plan.
 
 ## Active Plans
 
-No active execution plans.
+- `TERMUX-002` — [Add compaction-aware Codex session continuity](active/session-continuity-v1.md)
 
 ## Recently Completed
 
