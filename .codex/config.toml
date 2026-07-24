@@ -1,6 +1,7 @@
 sandbox_mode = "workspace-write"
 approval_policy = "on-request"
 approvals_reviewer = "user"
+experimental_compact_prompt_file = "../scripts/continuity/compact-prompt.md"
 
 [sandbox_workspace_write]
 network_access = false

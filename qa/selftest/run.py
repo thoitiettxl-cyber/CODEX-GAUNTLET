@@ -137,14 +137,152 @@ def checks():
         'cwd': str(ROOT), 'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
         'tool_input': {'command': 'rm -rf /'}
     })
+    _, hard_reset, _ = hook('.codex/hooks/pre_tool_use_policy.py', {
+        'cwd': str(ROOT), 'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
+        'tool_input': {'command': 'git reset --hard HEAD~1'}
+    })
     _, protected, _ = hook('.codex/hooks/pre_tool_use_policy.py', {
         'cwd': str(ROOT), 'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
         'tool_input': {'command': 'cat > .codex/config.toml'}
+    })
+    protected_patch_event = {
+        'cwd': str(ROOT), 'hook_event_name': 'PreToolUse', 'tool_name': 'apply_patch',
+        'tool_input': {
+            'patch': '*** Begin Patch\n*** Update File: .codex/config.toml\n*** End Patch\n'
+        }
+    }
+    ordinary_env = {
+        'CODEX_GAUNTLET_MAINTENANCE': '0',
+        'CODEX_GAUNTLET_MAINTENANCE_TARGETS': '',
+    }
+    _, ordinary_patch, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py', protected_patch_event, ordinary_env
+    )
+    exact_env = {
+        'CODEX_GAUNTLET_MAINTENANCE': '1',
+        'CODEX_GAUNTLET_MAINTENANCE_TARGETS': '.codex/config.toml',
+    }
+    _, exact_patch, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py', protected_patch_event, exact_env
+    )
+    absolute_patch_event = {
+        **protected_patch_event,
+        'tool_input': {
+            'patch': (
+                '*** Begin Patch\n'
+                f'*** Update File: {ROOT / ".codex/config.toml"}\n'
+                '*** End Patch\n'
+            )
+        },
+    }
+    _, absolute_ordinary_patch, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py', absolute_patch_event, ordinary_env
+    )
+    _, absolute_exact_patch, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py', absolute_patch_event, exact_env
+    )
+    _, traversal_patch, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py',
+        {
+            **protected_patch_event,
+            'tool_input': {
+                'patch': (
+                    '*** Begin Patch\n'
+                    '*** Update File: docs/../.codex/config.toml\n'
+                    '*** End Patch\n'
+                )
+            },
+        },
+        ordinary_env,
+    )
+    _, weakened_config_patch, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py',
+        {
+            **protected_patch_event,
+            'tool_input': {
+                'patch': (
+                    '*** Begin Patch\n'
+                    '*** Update File: .codex/config.toml\n'
+                    '@@\n'
+                    '+sandbox_mode = "danger-full-access"\n'
+                    '*** End Patch\n'
+                )
+            },
+        },
+        exact_env,
+    )
+    write_event = {
+        'cwd': str(ROOT), 'hook_event_name': 'PreToolUse', 'tool_name': 'Write',
+        'tool_input': {
+            'file_path': str(ROOT / '.codex/config.toml'),
+            'content': 'hooks = true',
+        },
+    }
+    _, ordinary_write, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py', write_event, ordinary_env
+    )
+    _, exact_write, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py', write_event, exact_env
+    )
+    _, wrong_scope_patch, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py',
+        protected_patch_event,
+        {
+            'CODEX_GAUNTLET_MAINTENANCE': '1',
+            'CODEX_GAUNTLET_MAINTENANCE_TARGETS': '.codex/hooks.json',
+        },
+    )
+    _, hard_protected_patch, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py',
+        {
+            'cwd': str(ROOT), 'hook_event_name': 'PreToolUse', 'tool_name': 'apply_patch',
+            'tool_input': {
+                'patch': (
+                    '*** Begin Patch\n'
+                    '*** Update File: .harness-core/manifest.json\n'
+                    '*** End Patch\n'
+                )
+            },
+        },
+        {
+            'CODEX_GAUNTLET_MAINTENANCE': '1',
+            'CODEX_GAUNTLET_MAINTENANCE_TARGETS': '.harness-core/manifest.json',
+        },
+    )
+    _, prose_only, _ = hook(
+        '.codex/hooks/pre_tool_use_policy.py',
+        {
+            'cwd': str(ROOT), 'hook_event_name': 'PreToolUse', 'tool_name': 'apply_patch',
+            'tool_input': {
+                'patch': (
+                    '*** Begin Patch\n'
+                    '*** Update File: docs/example.md\n'
+                    '@@\n'
+                    '+The protected example is .codex/config.toml.\n'
+                    '*** End Patch\n'
+                )
+            },
+        },
+        ordinary_env,
+    )
+    _, network_enable, network_stderr = hook('.codex/hooks/pre_tool_use_policy.py', {
+        'cwd': str(ROOT), 'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
+        'tool_input': {'command': 'echo sandbox_workspace_write.network_access = true'}
     })
     _, permission, _ = hook('.codex/hooks/permission_request_policy.py', {
         'cwd': str(ROOT), 'hook_event_name': 'PermissionRequest', 'tool_name': 'Bash',
         'tool_input': {'command': 'codex --dangerously-bypass-hook-trust'}
     })
+    permission_event = {
+        **protected_patch_event,
+        'hook_event_name': 'PermissionRequest',
+    }
+    _, ordinary_permission, _ = hook(
+        '.codex/hooks/permission_request_policy.py', permission_event, ordinary_env
+    )
+    _, scoped_permission, _ = hook(
+        '.codex/hooks/permission_request_policy.py', permission_event, exact_env
+    )
 
     rebuild_ok, run_id_guard_ok, discovery_ok, help_value_guard_ok = orchestration_probe()
 
@@ -170,6 +308,21 @@ def checks():
         'G19': ('Termux hook interpreters', all(command.startswith('/data/data/com.termux/files/usr/bin/python3 ') for command in hook_commands)),
         'G20': ('untracked changes classified', 'git", "ls-files", "--others", "--exclude-standard' in text('qa/classify_changes.py')),
         'G21': ('multiple change classes split', 'sep="\\n"' in text('qa/verify') and '"\\\\n".join' not in text('qa/verify')),
+        'G22': ('hard reset denied', hard_reset.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
+        'G23': ('ordinary protected patch denied', ordinary_patch.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
+        'G24': ('exact scoped maintenance patch permitted', exact_patch == {}),
+        'G25': ('non-allowlisted maintenance patch denied', wrong_scope_patch.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
+        'G26': ('hard-protected patch remains denied', hard_protected_patch.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
+        'G27': ('protected prose does not create a false target', prose_only == {}),
+        'G28': ('network enable denied without hook failure', network_stderr == '' and network_enable.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
+        'G29': ('ordinary protected permission request denied', ordinary_permission.get('hookSpecificOutput',{}).get('decision',{}).get('behavior') == 'deny'),
+        'G30': ('scoped permission remains with the user', scoped_permission == {}),
+        'G31': ('absolute protected patch denied', absolute_ordinary_patch.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
+        'G32': ('absolute target respects exact maintenance scope', absolute_exact_patch == {}),
+        'G33': ('maintenance cannot weaken sandbox policy', weakened_config_patch.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
+        'G34': ('traversal target remains protected', traversal_patch.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
+        'G35': ('ordinary Write to protected target denied', ordinary_write.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
+        'G36': ('exact scoped Write remains user-authorized', exact_write == {}),
         'H01': ('Harness provenance', (ROOT/'.harness-core/manifest.json').exists()),
         'H02': ('skill coexistence and unique names', set(skill_names) == {'onboard-repository','audit-onboarding-proposal','verify-suite','spec-check','mutation-audit'} and len(skill_names)==len(set(skill_names))),
         'H03': ('compact AGENTS entrypoint', len(agents.splitlines()) < 45 and 'docs/WORKFLOW.md' in agents and './qa/verify' in agents),

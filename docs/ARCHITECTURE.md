@@ -45,6 +45,12 @@ The repository owns Termux operating policy, runbooks, pinned local tooling,
 and cross-repository coordination. Target repositories retain ownership of
 their product code and tests.
 
+Compaction-aware continuity is generated local control-plane state. It owns
+only session bindings, bounded checkpoints, checkpoint events, operation
+observations, and recovery attempts. It may read Harness with a bounded timeout
+but cannot mutate story lifecycle. It cannot replace the linked Git plan,
+target-system state, or `./qa/verify`.
+
 `scripts/termux-control` is the human and agent entrypoint. It delegates
 repository pass/fail to `./qa/verify`; it does not introduce a second
 verification authority.

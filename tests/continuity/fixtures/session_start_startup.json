@@ -1,0 +1,9 @@
+{
+  "session_id": "fixture-session",
+  "transcript_path": null,
+  "cwd": ".",
+  "hook_event_name": "SessionStart",
+  "source": "startup",
+  "permission_mode": "default",
+  "model": "fixture-model"
+}

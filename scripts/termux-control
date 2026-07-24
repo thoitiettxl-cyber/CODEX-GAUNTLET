@@ -7,8 +7,9 @@ ORCHESTRATOR_DB="${HARNESS_DB_PATH:-$ROOT/harness.db}"
 CHANGESET_DIR="$ROOT/.harness/changesets"
 
 usage() {
-  echo "Usage: scripts/termux-control {status|doctor|verify|rebuild-harness|orchestrator}"
+  echo "Usage: scripts/termux-control {status|doctor|verify|rebuild-harness|orchestrator|continuity}"
   echo "       scripts/termux-control orchestrator {init|rebuild|status|<harness-cli args...>}"
+  echo "       scripts/termux-control continuity {status|bind|checkpoint|verify|recover|audit|operation}"
 }
 
 orchestrator() {
@@ -83,6 +84,11 @@ case "${1:-}" in
     ;;
   rebuild-harness)
     exec "$ROOT/scripts/build-harness-termux"
+    ;;
+  continuity)
+    shift
+    exec /data/data/com.termux/files/usr/bin/python3 \
+      "$ROOT/scripts/continuity_cli.py" --repo-root "$ROOT" "$@"
     ;;
   orchestrator)
     shift

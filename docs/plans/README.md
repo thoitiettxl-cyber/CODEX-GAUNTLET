@@ -31,8 +31,9 @@ plan.
 
 ## Active Plans
 
-- `TERMUX-002` — [Add compaction-aware Codex session continuity](active/session-continuity-v1.md)
+- None.
 
 ## Recently Completed
 
+- `TERMUX-002` — [Add compaction-aware Codex session continuity](completed/session-continuity-v1.md)
 - `TERMUX-001` — [Activate orchestration-first Harness state](completed/orchestration-first-harness-state.md)

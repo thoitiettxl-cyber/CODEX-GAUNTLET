@@ -20,6 +20,9 @@ policy, inventory, runbooks, pinned tooling, and cross-repository procedures.
   authority.
 - `scripts/termux-control orchestrator` initializes, rebuilds, queries, and
   invokes the pinned Harness orchestration CLI against an explicit database.
+- `scripts/termux-control continuity` binds sessions, records and verifies
+  bounded checkpoints, recovers a valid predecessor, audits local recovery
+  metrics, and records replay-safe operation observations.
 - `scripts/termux-control rebuild-harness` rebuilds the pinned Harness tools
   from source according to `docs/runbooks/harness-rebuild.md`.
 

@@ -15,8 +15,8 @@ only. Repository contracts and current Codex behavior remain authoritative.
 
 Codex CLI `0.145.0` documents `PreCompact`, `PostCompact`, `SessionStart` with
 `compact|resume`, `/compact`, `/resume`, `/fork`, `/goal`, compact-prompt
-configuration, and local memories. Current project hooks cover only
-`PreToolUse`, `PermissionRequest`, `PostToolUse`, and `Stop`.
+configuration, and local memories. Before this implementation, project hooks
+covered only `PreToolUse`, `PermissionRequest`, `PostToolUse`, and `Stop`.
 
 Existing durability:
 
@@ -225,34 +225,46 @@ This gate is a real prerequisite, not permission to evade Gauntlet.
 - [x] User accepted the roadmap and requested durable handoff.
 - [x] Intake `2` and planned story `TERMUX-002` created.
 - [x] Execution plan written with authority, recovery, and acceptance bounds.
-- [ ] Product contract and checkpoint schema accepted.
-- [ ] Fixture-driven continuity implementation completed.
-- [ ] Exact protected-path maintenance authorized and applied.
-- [ ] Game-day recovery evidence recorded.
-- [ ] Story completed with fresh proof and final canonical verification.
+- [x] Product contract and checkpoint schema accepted.
+- [x] Fixture-driven continuity implementation completed.
+- [x] Exact protected-path maintenance authorized and applied.
+- [x] Game-day recovery evidence recorded.
+- [x] Fresh pre-lifecycle canonical verification and detailed trace recorded.
+- [x] Story lifecycle completion and post-mutation canonical verification.
 
 ## Last safe boundary
 
-Planning and handoff only are complete. No continuity implementation,
-dependency installation, protected-path mutation, or external service change
-has started. `TERMUX-002` must remain `planned` until a later session re-reads
-the contracts and intentionally starts implementation.
+The product contract, checkpoint schema, ADR, Termux-native SQLite store,
+session binding, lifecycle handler, compact prompt, replay-safe operation
+ledger, continuity CLI, fixture suite, and game-day proof are implemented.
+The exact-target Gauntlet maintenance lane is active, canonicalizes relative,
+absolute, and traversal targets, and keeps `.harness-core/**`, managed skills,
+policy weakening, and shell mutation fail-closed. Its focused gate passes
+36/36 checks.
+
+Continuity lifecycle entries and the compact-prompt override are present in
+the protected Codex configuration. Final focused proof passes 18/18 tests. After the
+user reviewed hook trust, a real `SessionStart/resume` created binding
+`019f9503-60b6-7643-85f5-f18bb822dfc7`, restored `TERMUX-002` plus this plan,
+and increased the `rehydrated` metric. SQLite plus backup integrity are `ok`.
+The final pre-lifecycle canonical targeted gate passed 55/55 structural checks
+and every configured consumer. Detailed implementation trace `#4` achieved
+tier 3/3. Decision `0004` verification passed. `story complete TERMUX-002
+--json` then ran the same proof while holding the Harness writer transaction,
+passed without hook deadlock, and atomically marked the story `implemented`.
+Runtime checkpoint `3` records the preceding activation boundary for session
+`20260724-termux002-implementation`.
 
 Exact next sequence:
 
 ```bash
-scripts/termux-control orchestrator status
-HARNESS_RUN_ID=<new-stable-run-id> \
-  scripts/termux-control orchestrator story update \
-  --id TERMUX-002 \
-  --status in_progress \
-  --expected-status planned \
-  --require-runnable \
-  --json
+run canonical verification after the lifecycle mutation
+audit and replay Harness state
+commit and push final implementation
 ```
 
-Then implement Phase 1 only. Do not edit protected Codex configuration until
-the maintenance gate is satisfied.
+Do not use hook-trust bypass. `TERMUX-002` is `implemented`; only independent
+post-mutation proof, audit, review, and Git publication remain.
 
 ## Decisions
 
@@ -297,12 +309,26 @@ recovery.
 
 - Harness intake `2` and story `TERMUX-002` were created under semantic run
   `20260724-session-continuity-handoff`.
-- The story is deliberately `planned` and currently runnable.
-- Harness audit entropy is expected to be `5/100` while the planned story has
-  not yet run its implementation verification; it is not orphaned because
-  detailed planning trace `#3` is linked.
-- No packages, services, protected hooks, Codex configuration, or external
-  systems were changed.
+- The story transitioned from `planned` to `in_progress` by compare-and-set
+  under semantic run
+  `20260724-termux002-session-continuity-implementation`.
+- Harness decision `0004` records the accepted local-store authority boundary.
+- Handoff commit `3201f00` was pushed to `origin/main`.
+- A generated local continuity database and online backup were created under
+  the default Termux state root; no package or external service was changed.
+- The user authorized exact Gauntlet and activation targets. The protected
+  hook registry and compact-prompt configuration were changed through the
+  scoped maintenance lane without changing repository sandbox, approval, or
+  network policy.
+- The Gauntlet maintenance contract, target parser, and 15 regression checks
+  were added after the original guard exposed a bootstrap catch-22 and
+  false-positive path matching.
+- The user reviewed and trusted the changed project hooks. A real resumed
+  session rehydrated checkpoint state; no hook-trust bypass was used.
+- Detailed implementation trace `#4` was recorded under semantic run
+  `20260724-termux002-session-continuity-implementation`.
+- Decision `0004` verification and `TERMUX-002` completion both passed their
+  canonical proof under that stable semantic run.
 
 ## Validation
 
@@ -334,3 +360,43 @@ Implementation acceptance later requires:
 - secret fixtures are redacted;
 - hook failure degrades safely;
 - final `./qa/verify --mode targeted` passes after story completion.
+
+Interim implementation evidence recorded on 2026-07-24:
+
+- `python3 -m unittest discover -v -s tests/continuity -p 'test_*.py'`
+  passed 17/17 tests;
+- interrupted transaction, corrupt-head recovery, online-backup failure,
+  ambiguity, redaction, unknown external outcome, and held-lock scenarios
+  passed;
+- isolated semantic changeset rebuild matched the live logical work graph;
+- `./qa/verify --mode targeted` passed 42/42 structural checks, policy audit,
+  build, 7 unit tests, 8 integration tests, 2 game-day acceptance tests,
+  coverage trace, and 3 security-negative tests;
+- protected activation is now present; direct config parsing, strict Codex
+  config loading, and lifecycle rehydration passed;
+- Gauntlet focused proof passes 36/36, including exact-scope, absolute,
+  traversal, hard-protected, false-positive, and policy-weakening cases;
+- `./qa/verify --mode targeted` passed again after hook trust and bootstrap
+  cleanup: 55/55 structural checks, policy audit, build, 7 unit tests,
+  9 integration tests, 2 game-day acceptance tests, 18-test coverage trace,
+  and 3 security-negative tests;
+- `story complete TERMUX-002 --json` repeated the same gate inside the Harness
+  writer transaction, passed, and marked the story `implemented`;
+- the first independent post-lifecycle gate failed two integration assertions
+  because the fixture still expected the historical active-plan path while
+  Harness correctly refreshed the completed contract path;
+- the fixture was changed to the completed path, focused hook/game-day proof
+  passed 8/8, and the independent `./qa/verify --mode targeted` then repeated
+  the 55/55 and all consumer-gate passes;
+- a final live resume then exposed that rehydration emitted a stale checkpoint
+  plan path even after its binding refreshed from Harness; the emitted packet
+  now overlays current binding metadata without rewriting forensic history;
+- the new contract-refresh regression passed, and final
+  `./qa/verify --mode targeted` passed 55/55 with 7 unit, 9 integration,
+  2 acceptance, 18-test coverage, and 3 security-negative tests;
+- cached-diff review then exposed that `Edit`/`Write` tool events had exact
+  targets but were not classified as mutations by command text alone; the
+  tool-type guard and two regressions now pass 36/36 focused checks;
+- final `./qa/verify --mode targeted` passed 57/57 structural checks with the
+  same 7 unit, 9 integration, 2 acceptance, 18-test coverage, and
+  3 security-negative passes.

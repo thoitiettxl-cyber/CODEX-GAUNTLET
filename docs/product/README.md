@@ -1,8 +1,15 @@
 # Product truth
 
-This repository is the Termux operating control plane. Its current contract is
-defined in [`termux-control-plane.md`](termux-control-plane.md).
+This repository is the Termux operating control plane. Its current contracts
+are:
 
-It does not declare a consumer application surface; `qa/project-commands.json`
-therefore keeps `application_present: false`. Control-plane integrity is
-verified directly by Gauntlet structural and policy checks.
+- [`termux-control-plane.md`](termux-control-plane.md) for the control-plane
+  boundary and entrypoints;
+- [`session-continuity-v1.md`](session-continuity-v1.md) for bounded
+  compaction/resume state and replay-safe operation observations.
+
+The continuity implementation is a local consumer application surface.
+`qa/project-commands.json` declares executable build, unit, integration,
+acceptance, coverage, and security-negative commands. Gauntlet structural and
+policy checks continue to run through the same canonical `./qa/verify`
+authority.

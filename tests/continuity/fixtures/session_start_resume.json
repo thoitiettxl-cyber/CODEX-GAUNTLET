@@ -1,0 +1,9 @@
+{
+  "session_id": "fixture-session",
+  "transcript_path": "/tmp/unstable-transcript.jsonl",
+  "cwd": ".",
+  "hook_event_name": "SessionStart",
+  "source": "resume",
+  "permission_mode": "default",
+  "model": "fixture-model"
+}

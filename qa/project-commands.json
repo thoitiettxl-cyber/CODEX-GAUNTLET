@@ -1,13 +1,27 @@
 {
-  "application_present": false,
+  "application_present": true,
   "commands": {
-    "docs": [],
-    "unit": [],
-    "integration": [],
-    "acceptance": [],
-    "coverage": [],
-    "mutation": [],
-    "build": [],
+    "build": [
+      "python3 -m compileall -q scripts/continuity scripts/continuity_cli.py tests/continuity"
+    ],
+    "docs": [
+      "python3 -m compileall -q scripts/continuity scripts/continuity_cli.py tests/continuity"
+    ],
+    "unit": [
+      "python3 -m unittest -v tests.continuity.test_store"
+    ],
+    "integration": [
+      "python3 -m unittest -v tests.continuity.test_cli tests.continuity.test_hooks"
+    ],
+    "acceptance": [
+      "python3 -m unittest -v tests.continuity.test_game_day"
+    ],
+    "coverage": [
+      "mkdir -p .qa-artifacts/continuity-coverage && python3 -m trace --count --summary --missing --ignore-dir \"$PREFIX/lib/python3.14\" --coverdir .qa-artifacts/continuity-coverage --module unittest discover -s tests/continuity -p 'test_*.py'"
+    ],
+    "mutation": [
+      "python3 -m unittest -v tests.continuity.test_store.StoreTests.test_secret_values_are_redacted_from_packet_output_and_database tests.continuity.test_store.StoreTests.test_same_operation_key_does_not_repeat_committed_fake_side_effect tests.continuity.test_hooks.HookFixtureTests.test_hook_failure_degrades_without_blocking"
+    ],
     "migration": []
   }
 }

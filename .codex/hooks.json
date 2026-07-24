@@ -40,6 +40,58 @@
         ]
       }
     ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/data/data/com.termux/files/usr/bin/python3 \"$(git rev-parse --show-toplevel)/scripts/continuity_cli.py\" hook",
+            "timeout": 2,
+            "statusMessage": "Restoring session continuity"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/data/data/com.termux/files/usr/bin/python3 \"$(git rev-parse --show-toplevel)/scripts/continuity_cli.py\" hook",
+            "timeout": 3,
+            "statusMessage": "Saving continuity checkpoint"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/data/data/com.termux/files/usr/bin/python3 \"$(git rev-parse --show-toplevel)/scripts/continuity_cli.py\" hook",
+            "timeout": 2,
+            "statusMessage": "Rehydrating continuity checkpoint"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "other",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/data/data/com.termux/files/usr/bin/python3 \"$(git rev-parse --show-toplevel)/scripts/continuity_cli.py\" hook",
+            "timeout": 2,
+            "statusMessage": "Recording continuity event"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

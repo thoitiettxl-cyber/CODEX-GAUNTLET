@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -17,6 +18,11 @@ PROTECTED_PATHS = (
     ".agents/skills/verify-suite/",
     ".agents/skills/spec-check/",
     ".agents/skills/mutation-audit/",
+)
+HARD_PROTECTED_PATHS = tuple(
+    path
+    for path in PROTECTED_PATHS
+    if path == ".harness-core/" or path.startswith(".agents/skills/")
 )
 POLICY_CRITICAL = (
     "qa/thresholds.json",
@@ -39,9 +45,10 @@ def read_event() -> dict[str, Any]:
 def command_text(event: dict[str, Any]) -> str:
     tool_input = event.get("tool_input") or {}
     if isinstance(tool_input, dict):
-        value = tool_input.get("command")
-        if isinstance(value, str):
-            return value
+        for key in ("command", "patch"):
+            value = tool_input.get(key)
+            if isinstance(value, str):
+                return value
         return json.dumps(tool_input, sort_keys=True)
     return str(tool_input)
 
@@ -81,11 +88,101 @@ def mentions_path(text: str, path: str) -> bool:
     return path.rstrip("/") in normalized
 
 
-def protected_target(text: str) -> str | None:
+def normalize_target(value: str) -> str:
+    candidate = value.strip().strip("\"'").replace("\\", "/")
+    while candidate.startswith("./"):
+        candidate = candidate[2:]
+    return posixpath.normpath(candidate)
+
+
+def normalize_event_target(value: str, event: dict[str, Any]) -> str:
+    candidate = Path(normalize_target(value))
+    root = repo_root(event).resolve()
+    cwd = Path(event.get("cwd") or root).resolve()
+    resolved = candidate.resolve() if candidate.is_absolute() else (cwd / candidate).resolve()
+    try:
+        return resolved.relative_to(root).as_posix()
+    except ValueError:
+        return resolved.as_posix()
+
+
+def patch_targets(text: str) -> set[str]:
+    pattern = (
+        r"(?m)^\*\*\* (?:Add|Update|Delete) File: (.+)$"
+        r"|^\*\*\* Move to: (.+)$"
+    )
+    return {
+        normalize_target(match.group(1) or match.group(2))
+        for match in re.finditer(pattern, text)
+    }
+
+
+def mutation_targets(event: dict[str, Any]) -> set[str]:
+    tool_name = str(event.get("tool_name") or "").lower()
+    tool_input = event.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return set()
+    patch = tool_input.get("patch")
+    if tool_name == "apply_patch" or isinstance(patch, str):
+        return {
+            normalize_event_target(target, event)
+            for target in patch_targets(
+                patch if isinstance(patch, str) else command_text(event)
+            )
+        }
+    if tool_name in {"edit", "write"}:
+        return {
+            normalize_event_target(value, event)
+            for key in ("file_path", "path")
+            if isinstance((value := tool_input.get(key)), str)
+        }
+    return set()
+
+
+def target_matches(target: str, protected_path: str) -> bool:
+    normalized = normalize_target(protected_path)
+    return target == normalized or (
+        protected_path.endswith("/") and target.startswith(normalized + "/")
+    )
+
+
+def protected_target(event: dict[str, Any] | str) -> str | None:
+    if isinstance(event, dict):
+        targets = mutation_targets(event)
+        if targets:
+            for target in targets:
+                for path in PROTECTED_PATHS + POLICY_CRITICAL:
+                    if target_matches(target, path):
+                        return path
+            return None
+        text = command_text(event)
+    else:
+        text = event
     for path in PROTECTED_PATHS + POLICY_CRITICAL:
         if mentions_path(text, path):
             return path
     return None
+
+
+def maintenance_mutation_authorized(event: dict[str, Any]) -> bool:
+    if os.environ.get("CODEX_GAUNTLET_MAINTENANCE") != "1":
+        return False
+    tool_name = str(event.get("tool_name") or "").lower()
+    if tool_name not in {"apply_patch", "edit", "write"}:
+        return False
+    targets = mutation_targets(event)
+    allowed = {
+        normalize_target(item)
+        for item in os.environ.get("CODEX_GAUNTLET_MAINTENANCE_TARGETS", "").split(",")
+        if item.strip()
+    }
+    if not targets or not targets <= allowed:
+        return False
+    return not any(
+        target_matches(target, path)
+        for target in targets
+        for path in HARD_PROTECTED_PATHS
+    )
 
 
 def is_mutating(text: str) -> bool:
