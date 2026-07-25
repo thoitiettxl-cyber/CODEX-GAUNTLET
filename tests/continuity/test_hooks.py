@@ -6,8 +6,10 @@ import sqlite3
 import time
 import unittest
 from contextlib import closing
+from unittest.mock import patch
 
 from tests.continuity.support import ROOT, ContinuityFixture
+from continuity.hook import handle_event
 
 
 class HookFixtureTests(unittest.TestCase):
@@ -87,9 +89,20 @@ class HookFixtureTests(unittest.TestCase):
         )
         self.fixture.plan_path = current_plan
 
-        result = self.output(
-            self.fixture.run_hook("session_start_resume.json")
-        )
+        graph = {
+            "revision": "current-harness-revision",
+            "stories": [
+                {
+                    "id": self.fixture.story_id,
+                    "status": "implemented",
+                    "contract_doc": current_plan,
+                }
+            ],
+        }
+        with patch(
+            "continuity.harness_bridge.query_work_graph", return_value=graph
+        ):
+            result = handle_event(self.fixture.event("session_start_resume.json"))
 
         self.assertIn(current_plan, result["systemMessage"])
         self.assertNotIn(stale_plan, result["systemMessage"])

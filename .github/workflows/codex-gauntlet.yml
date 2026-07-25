@@ -27,9 +27,10 @@ jobs:
           # execution remains mandatory in the Termux local gate.
           bash ./qa/verify --mode ci
       - name: Upload diagnostics
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: codex-gauntlet-diagnostics
           path: .qa-artifacts/
           if-no-files-found: ignore
+          retention-days: 3
