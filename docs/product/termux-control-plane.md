@@ -23,6 +23,9 @@ policy, inventory, runbooks, pinned tooling, and cross-repository procedures.
 - `scripts/termux-control continuity` binds sessions, records and verifies
   bounded checkpoints, recovers a valid predecessor, audits local recovery
   metrics, and records replay-safe operation observations.
+- `scripts/termux-control rtk` inspects and exercises the pinned optional RTK
+  output-filtering capability without making filtered output authoritative or
+  silently changing user-global state.
 - `scripts/termux-control rebuild-harness` rebuilds the pinned Harness tools
   from source according to `docs/runbooks/harness-rebuild.md`.
 
@@ -62,6 +65,33 @@ application proof.
 On Termux, upstream self-update is unsupported for `android/aarch64`. Updates
 must use the pinned source-build lane; a Linux release binary is not compatible
 with Android's dynamic linker.
+
+## RTK capability boundary
+
+RTK is an optional, lossy command-output filter. The repository owns its
+inventory, reviewed provenance, accuracy-first policy, secret-free
+configuration template, operational checks, and maintenance runbook. The
+deployed binary and files under `~/.local`, `~/.config`, and `~/.codex` remain
+user-global materialized state.
+
+RTK may compact supported noisy test, build, lint, and log output for
+orientation. It must not filter instructions, product contracts, source or
+configuration used for an edit, exact readers, machine-readable output,
+checksums, mutating commands, final Git review, or `./qa/verify`. A truncation,
+degraded parser, passthrough marker, or ambiguous result requires recovery from
+the referenced raw output or an immediate raw rerun.
+
+The inbound Harness registry records RTK presence under capability
+`command-output-filtering` and responsibility `Tool access`. That registration
+does not make RTK Harness core, a verification provider, a command-rewrite
+hook, or a dependency of the main process.
+
+`rtk status` and `rtk doctor` may inspect deployed metadata and run
+secret-free probes. They never print configuration bodies, command history,
+tee contents, or Codex instruction bodies. `rtk update --dry-run` performs
+candidate discovery only. Installation always requires a separately reviewed
+pinned source, native Android build, staged validation, recoverable previous
+binary and configuration, and explicit human authorization.
 
 Android also lacks the shared advisory lock used by the compatibility CLI.
 The build lane applies the reviewed local patch that substitutes an exclusive

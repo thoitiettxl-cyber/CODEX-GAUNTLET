@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "command": "cat AGENTS.md",
+      "posture": "raw_required",
+      "reason": "exact-output"
+    },
+    {
+      "command": "rg -n TERMUX-003 docs",
+      "posture": "raw_required",
+      "reason": "exact-output"
+    },
+    {
+      "command": "git status --short",
+      "posture": "raw_required",
+      "reason": "git-evidence"
+    },
+    {
+      "command": "git diff --check",
+      "posture": "raw_required",
+      "reason": "git-evidence"
+    },
+    {
+      "command": "jq -c . report.json",
+      "posture": "raw_required",
+      "reason": "exact-output"
+    },
+    {
+      "command": "sha256sum scripts/bin/harness",
+      "posture": "raw_required",
+      "reason": "exact-output"
+    },
+    {
+      "command": "./qa/verify --mode targeted",
+      "posture": "raw_required",
+      "reason": "canonical-verification"
+    },
+    {
+      "command": "scripts/termux-control doctor",
+      "posture": "raw_required",
+      "reason": "control-plane"
+    },
+    {
+      "command": "git commit -m synthetic",
+      "posture": "raw_required",
+      "reason": "mutation"
+    },
+    {
+      "command": "npm install",
+      "posture": "raw_required",
+      "reason": "mutation"
+    },
+    {
+      "command": "cargo test && cargo build",
+      "posture": "raw_required",
+      "reason": "shell-composition"
+    },
+    {
+      "command": "cargo test | tee test.log",
+      "posture": "raw_required",
+      "reason": "shell-composition"
+    },
+    {
+      "command": "python3 -c 'print(1)' > report.txt",
+      "posture": "raw_required",
+      "reason": "shell-composition"
+    },
+    {
+      "command": "python3 scripts/release.py",
+      "posture": "raw_required",
+      "reason": "unsupported-command"
+    },
+    {
+      "command": "cargo test --workspace",
+      "posture": "rtk_permitted",
+      "reason": "supported-noisy-command",
+      "suggested": "rtk cargo test --workspace"
+    },
+    {
+      "command": "cargo build --release",
+      "posture": "rtk_permitted",
+      "reason": "supported-noisy-command",
+      "suggested": "rtk cargo build --release"
+    },
+    {
+      "command": "cargo clippy --all-targets",
+      "posture": "rtk_permitted",
+      "reason": "supported-noisy-command",
+      "suggested": "rtk cargo clippy --all-targets"
+    },
+    {
+      "command": "pytest -q",
+      "posture": "rtk_permitted",
+      "reason": "supported-noisy-command",
+      "suggested": "rtk pytest -q"
+    },
+    {
+      "command": "npm test -- --runInBand",
+      "posture": "rtk_permitted",
+      "reason": "supported-noisy-command",
+      "suggested": "rtk npm test -- --runInBand"
+    },
+    {
+      "command": "go test ./...",
+      "posture": "rtk_permitted",
+      "reason": "supported-noisy-command",
+      "suggested": "rtk go test ./..."
+    },
+    {
+      "command": "ruff check .",
+      "posture": "rtk_permitted",
+      "reason": "supported-noisy-command",
+      "suggested": "rtk ruff check ."
+    },
+    {
+      "command": "vitest run",
+      "posture": "rtk_permitted",
+      "reason": "supported-noisy-command",
+      "suggested": "rtk vitest run"
+    }
+  ]
+}

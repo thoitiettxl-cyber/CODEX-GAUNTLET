@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "https://github.com/rtk-ai/rtk.git",
+    "tag": "v0.43.0",
+    "commit": "5a7880d404db8364d602f2ecdc41dd790f64013f",
+    "tag_kind": "lightweight",
+    "commit_signature": {
+      "present": true,
+      "key_id": "B5690EEEBB952194",
+      "local_verification": "unavailable-public-key"
+    }
+  },
+  "build": {
+    "target": "aarch64-linux-android",
+    "host": "aarch64-linux-android",
+    "rustc": "1.96.1",
+    "cargo": "1.96.1",
+    "profile": "release",
+    "locked": true,
+    "source_patches": []
+  },
+  "artifact": {
+    "version": "0.43.0",
+    "path": "~/.local/bin/rtk",
+    "sha256": "6a9471ac107faac6be1af6a36e8c7913bbfea79cbbcda8c2d3b2168221ad8114",
+    "mode": "0755",
+    "format": "ELF64",
+    "machine": "AArch64",
+    "interpreter": "/system/bin/linker64",
+    "android_api": 24,
+    "ndk": "r29 (14206865)"
+  },
+  "workarounds": [
+    {
+      "id": "rtk-0.43.0-tracking-enabled-not-enforced",
+      "setting": "tracking.database_path=/dev/null",
+      "reason": "The 0.43.0 recording path opens the tracking database without consulting tracking.enabled.",
+      "removal_gate": "Review and test the upstream recording path before changing the sink."
+    }
+  ],
+  "verification": {
+    "upstream_unit": {
+      "passed": 2237,
+      "ignored": 8,
+      "xdg_isolated": true
+    },
+    "focused_integration": {
+      "passed": 50,
+      "xdg_isolated": true
+    },
+    "local_checks": [
+      "native Android ELF identity",
+      "installed SHA-256",
+      "raw proxy byte equivalence",
+      "child exit-code preservation",
+      "private failure tee",
+      "telemetry disabled with no consent or device salt",
+      "no persisted tracking database",
+      "Codex global reference health"
+    ]
+  }
+}
