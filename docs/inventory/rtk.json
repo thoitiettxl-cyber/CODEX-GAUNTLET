@@ -10,13 +10,22 @@
   "runbook": "docs/runbooks/rtk-maintenance.md",
   "templates": {
     "config": "config/rtk/config.toml",
-    "codex_policy": "config/rtk/RTK.md"
+    "codex_policy": "config/rtk/RTK.md",
+    "pi_policy": "config/rtk/RTK.md"
   },
   "materialized_targets": {
     "binary": "~/.local/bin/rtk",
     "config": "~/.config/rtk/config.toml",
     "codex_policy": "~/.codex/RTK.md",
-    "codex_entrypoint": "~/.codex/AGENTS.md"
+    "codex_entrypoint": "~/.codex/AGENTS.md",
+    "pi_policy": "~/.pi/agent/APPEND_SYSTEM.md"
+  },
+  "prohibited_targets": {
+    "pi_automatic_rewrite_extension": "~/.pi/agent/extensions/rtk.ts"
+  },
+  "integration_policy": {
+    "codex": "guidance-only",
+    "pi": "guidance-only"
   },
   "update_policy": "reviewed-pinned-native-build-only",
   "automatic_update": false,

@@ -86,6 +86,8 @@ class RuntimePaths:
     config: Path
     codex_policy: Path
     codex_agents: Path
+    pi_policy: Path
+    pi_rewrite_extension: Path
 
     @classmethod
     def deployed(cls) -> RuntimePaths:
@@ -95,6 +97,8 @@ class RuntimePaths:
             config=home / ".config" / "rtk" / "config.toml",
             codex_policy=home / ".codex" / "RTK.md",
             codex_agents=home / ".codex" / "AGENTS.md",
+            pi_policy=home / ".pi" / "agent" / "APPEND_SYSTEM.md",
+            pi_rewrite_extension=home / ".pi" / "agent" / "extensions" / "rtk.ts",
         )
 
 
@@ -224,6 +228,29 @@ def codex_reference_healthy(agents: Path, policy: Path) -> bool:
         "@/data/data/com.termux/files/home/.codex/RTK.md",
     }
     return any(line.strip() in accepted for line in lines)
+
+
+def inspect_pi_integration(
+    policy_template: Path,
+    policy_target: Path,
+    rewrite_extension: Path,
+) -> dict[str, dict[str, object]]:
+    policy_match = bool(
+        policy_target.is_file()
+        and sha256_file(policy_target) == sha256_file(policy_template)
+    )
+    rewrite_absent = not (rewrite_extension.exists() or rewrite_extension.is_symlink())
+    return {
+        "pi_policy_match": check(policy_match, "canonical global append policy"),
+        "pi_automatic_rewrite_absent": check(
+            rewrite_absent,
+            (
+                "prohibited extension absent"
+                if rewrite_absent
+                else "prohibited automatic rewrite target present"
+            ),
+        ),
+    }
 
 
 def privacy_config_healthy(config: dict) -> bool:
@@ -358,6 +385,13 @@ def inspect_status(
     checks["codex_reference"] = check(
         codex_reference_healthy(runtime.codex_agents, runtime.codex_policy),
         "AGENTS reference present",
+    )
+    checks.update(
+        inspect_pi_integration(
+            policy_template,
+            runtime.pi_policy,
+            runtime.pi_rewrite_extension,
+        )
     )
     checks["telemetry_runtime"] = check(
         binary_exists and telemetry_healthy(runtime.binary),

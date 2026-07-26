@@ -42,6 +42,11 @@
       "reason": "control-plane"
     },
     {
+      "command": "pi --version",
+      "posture": "raw_required",
+      "reason": "unsupported-command"
+    },
+    {
       "command": "git commit -m synthetic",
       "posture": "raw_required",
       "reason": "mutation"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 from scripts.rtk_control import (
     codex_reference_healthy,
     elf_identity,
+    inspect_pi_integration,
     parse_release_refs,
     rehearse_atomic_switch,
     sha256_file,
@@ -106,6 +108,40 @@ class ControlTests(unittest.TestCase):
             self.assertTrue(codex_reference_healthy(agents, policy))
             agents.write_text("repository defaults\n")
             self.assertFalse(codex_reference_healthy(agents, policy))
+
+    def test_pi_policy_materialization_and_drift_are_detected_without_bodies(self) -> None:
+        with task_temp_dir("rtk-pi-policy-test") as temp:
+            template = temp / "RTK.md"
+            target = temp / "APPEND_SYSTEM.md"
+            extension = temp / "extensions" / "rtk.ts"
+            template.write_text("synthetic accuracy policy\n")
+
+            absent = inspect_pi_integration(template, target, extension)
+            self.assertFalse(absent["pi_policy_match"]["ok"])
+            self.assertTrue(absent["pi_automatic_rewrite_absent"]["ok"])
+
+            shutil.copyfile(template, target)
+            materialized = inspect_pi_integration(template, target, extension)
+            self.assertTrue(materialized["pi_policy_match"]["ok"])
+            self.assertTrue(materialized["pi_automatic_rewrite_absent"]["ok"])
+
+            target.write_text("synthetic drift\n")
+            drifted = inspect_pi_integration(template, target, extension)
+            self.assertFalse(drifted["pi_policy_match"]["ok"])
+
+    def test_pi_automatic_rewrite_target_is_rejected(self) -> None:
+        with task_temp_dir("rtk-pi-extension-test") as temp:
+            template = temp / "RTK.md"
+            target = temp / "APPEND_SYSTEM.md"
+            extension = temp / "extensions" / "rtk.ts"
+            template.write_text("synthetic accuracy policy\n")
+            shutil.copyfile(template, target)
+            extension.parent.mkdir()
+            extension.write_text("synthetic rewrite extension\n")
+
+            report = inspect_pi_integration(template, target, extension)
+            self.assertTrue(report["pi_policy_match"]["ok"])
+            self.assertFalse(report["pi_automatic_rewrite_absent"]["ok"])
 
     def test_non_elf_candidate_is_rejected(self) -> None:
         with task_temp_dir("rtk-elf-test") as temp:

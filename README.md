@@ -39,6 +39,16 @@ Read the [Harness rebuild runbook](docs/runbooks/harness-rebuild.md) before
 using the maintenance lane. It records prerequisites, recovery, and required
 proof.
 
+## Optional auxiliary tools
+
+User-global helpers are optional inbound Harness capabilities, not verification
+authorities. Pi is registered as an auxiliary agent runtime; its
+[inventory](docs/inventory/pi.json) links to the shared
+[Pi Termux runbook](docs/runbooks/pi-termux.md). Native ripgrep resolution is
+recorded in its [inventory](docs/inventory/rg.json) and
+[Termux runbook](docs/runbooks/rg-termux.md). Agent entry files keep only
+generic capability-routing instructions.
+
 ## Start
 
 ```bash

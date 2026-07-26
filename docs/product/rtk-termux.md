@@ -12,7 +12,7 @@ accuracy-first output-filtering capability while raw execution and
 - `docs/provenance/rtk-termux-build.json` pins source, toolchain, target,
   artifact identity, workarounds, and prior verification.
 - `config/rtk/config.toml` is the canonical secret-free runtime template.
-- `config/rtk/RTK.md` is the canonical Codex accuracy policy.
+- `config/rtk/RTK.md` is the canonical accuracy policy shared by Codex and Pi.
 - `docs/runbooks/rtk-maintenance.md` defines review, update, recovery, and
   rollback.
 - `scripts/termux-control rtk` provides status, doctor, discovery, and isolated
@@ -20,7 +20,10 @@ accuracy-first output-filtering capability while raw execution and
 
 The files deployed under the user's home directory are not repository truth.
 The control plane detects both semantic and byte drift and never overwrites
-them from status, doctor, startup, hooks, CI, or dry-run operations.
+them from status, doctor, startup, hooks, CI, or dry-run operations. Pi loads
+the canonical policy from `~/.pi/agent/APPEND_SYSTEM.md`; the upstream
+automatic Bash rewrite extension at `~/.pi/agent/extensions/rtk.ts` is
+prohibited.
 
 ## Accuracy contract
 
@@ -74,7 +77,8 @@ install into the user's active paths.
 
 ## Acceptance
 
-- `rtk status --json` reports provenance, drift, privacy, Codex reference, and
+- `rtk status --json` reports provenance, drift, privacy, Codex reference, Pi
+  policy parity, absence of the prohibited Pi automatic rewrite extension, and
   Harness registry health without secret-bearing bodies.
 - `rtk doctor --json` proves native execution, config parsing, raw proxy byte
   and exit-code preservation, isolated filtering, private bounded tee, absent

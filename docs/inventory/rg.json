@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "name": "rg",
+  "kind": "termux-package-binary",
+  "capability": "repository-search",
+  "responsibility": "Tool access",
+  "authority": "exact-search-output",
+  "control_entrypoint": "/data/data/com.termux/files/usr/bin/rg",
+  "runbook": "docs/runbooks/rg-termux.md",
+  "materialized_targets": {
+    "native_binary": "/data/data/com.termux/files/usr/bin/rg",
+    "user_symlink": "~/.local/bin/rg",
+    "bash_startup": "~/.bashrc",
+    "codex_launcher": "~/.local/bin/codex"
+  },
+  "install_policy": "termux-native-android-package-only",
+  "resolution_policy": "exported-bash-function-bypasses-incompatible-codex-path-helper",
+  "automatic_update": false,
+  "global_npm_install": false,
+  "verification_authority": false
+}

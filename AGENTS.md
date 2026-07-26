@@ -6,11 +6,13 @@ Read in this order when relevant:
 
 1. `docs/WORKFLOW.md` — canonical request and execution workflow.
 2. `docs/product/` — current product contracts and constraints.
-3. `docs/ARCHITECTURE.md` — boundaries and dependency direction.
-4. `docs/decisions/` — durable architectural decisions.
-5. `scripts/termux-control orchestrator status` — lifecycle and work graph for complex changes.
-6. `docs/quality/CODEX-GAUNTLET.md` — Codex execution and enforcement contract.
-7. `./qa/verify` — the single verification authority.
+3. `scripts/termux-control orchestrator query tools --json` plus
+   `docs/inventory/` — optional user-global/helper capabilities, only when relevant.
+4. `docs/ARCHITECTURE.md` — boundaries and dependency direction.
+5. `docs/decisions/` — durable architectural decisions.
+6. `scripts/termux-control orchestrator status` — lifecycle and work graph for complex changes.
+7. `docs/quality/CODEX-GAUNTLET.md` — Codex execution and enforcement contract.
+8. `./qa/verify` — the single verification authority.
 
 Invariants:
 
@@ -21,6 +23,9 @@ Invariants:
 - For multi-session, coordination-heavy, or recovery-sensitive work, use one Harness story linked to one file under `docs/plans/active/`.
 - Use a stable `HARNESS_RUN_ID` for every Harness state-writing run so semantic changesets remain replayable.
 - Stop before mutation when consequential ambiguity requires human authority.
+- Represent auxiliary user-global tools through the Harness registry,
+  `docs/inventory/<tool>.json`, and linked runbooks; keep tool-specific details
+  out of this entry map and load them only when relevant.
 - Review the final diff.
 - Never treat Harness metadata, hook output, or an agent statement as application test evidence.
 - Harness lifecycle state controls orchestration; Git plans preserve intent and recovery; only executable verification proves completion.

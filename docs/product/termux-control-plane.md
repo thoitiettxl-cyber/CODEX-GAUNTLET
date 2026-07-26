@@ -66,6 +66,24 @@ On Termux, upstream self-update is unsupported for `android/aarch64`. Updates
 must use the pinned source-build lane; a Linux release binary is not compatible
 with Android's dynamic linker.
 
+## Optional auxiliary-tool boundary
+
+User-global helpers and auxiliary agent runtimes are optional inbound
+capabilities. Keep their concerns separated:
+
+- the Harness tool registry owns capability, provider identity, and observed
+  presence;
+- `docs/inventory/<tool>.json` owns durable metadata, materialized paths,
+  operating policy, and the runbook link;
+- the linked Git runbook owns detailed commands, recovery, and diagnosis;
+- `AGENTS.md` owns only generic context routing and must not accumulate
+  tool-specific operating instructions.
+
+An auxiliary tool never becomes Harness core, a dependency of the main
+process, or a verification authority merely because it is registered. Agents
+load its inventory and runbook only when the request names the tool or its
+capability is relevant.
+
 ## RTK capability boundary
 
 RTK is an optional, lossy command-output filter. The repository owns its

@@ -9,7 +9,8 @@ installation, or rollback. Routine status and doctor operations are read-only.
 - Repository truth: `docs/product/rtk-termux.md`, inventory, provenance, and
   templates.
 - User-global materialized state: the deployed binary, config, Codex policy,
-  and AGENTS reference.
+  Codex AGENTS reference, Pi append policy, and absence of the prohibited Pi
+  rewrite extension.
 - Harness: optional inbound-tool presence metadata only.
 - Executable pass/fail: `./qa/verify` only.
 
@@ -35,6 +36,35 @@ tracking, telemetry, tee, and isolated filter probes. Stop on provenance,
 source, privacy, or unexpected user-global drift; do not overwrite it.
 Refreshing persisted presence with `tool check` is a Harness mutation and
 requires a stable `HARNESS_RUN_ID`; routine inspection uses the query above.
+
+The reports must include an exact Pi policy match and absence of
+`~/.pi/agent/extensions/rtk.ts`. They report only target health, never the
+contents of a user-global policy.
+
+## Materialize Pi guidance
+
+Pi's RTK integration is guidance-only. The repository template
+`config/rtk/RTK.md` is materialized as
+`~/.pi/agent/APPEND_SYSTEM.md`; no Pi package or automatic Bash rewrite
+extension is installed.
+
+Before an authorized write, resolve the shared Pi agent directory and inspect
+the exact target without printing its body:
+
+```bash
+readlink -f "$HOME/.pi/agent"
+if test -e "$HOME/.pi/agent/APPEND_SYSTEM.md"; then
+  stat "$HOME/.pi/agent/APPEND_SYSTEM.md"
+  sha256sum "$HOME/.pi/agent/APPEND_SYSTEM.md" config/rtk/RTK.md
+fi
+test ! -e "$HOME/.pi/agent/extensions/rtk.ts"
+```
+
+An absent target can be created from the reviewed template. If the target
+exists and differs, create a mode-`0600` exact backup beside it and stop for
+review; never silently replace unrelated append instructions. Reload an
+existing Pi session with `/reload`, or start a new one, then run status,
+doctor, the focused RTK tests, and canonical verification raw.
 
 ## Discover a candidate
 
