@@ -120,7 +120,6 @@ test("pinned Pi runtime composes the checked-in AgentRouter client profile", { t
 	const available = await runtime.getAvailable("agentrouter");
 	assert.deepEqual(available.map((model) => model.id), [
 		"claude-opus-4-8",
-		"claude-opus-4-6",
 		"gpt-5.5",
 		"gpt-5.6-sol",
 		"glm-5.2",

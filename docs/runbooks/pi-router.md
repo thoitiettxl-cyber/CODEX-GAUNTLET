@@ -52,12 +52,12 @@ node pi-router/src/cli.js models
 ```
 
 The checked-in example uses one provider credential with per-model protocol
-overrides: Claude models use `anthropic-messages` at the endpoint root, while
-GPT, GLM, and Kimi inherit `openai-completions` at `/v1`. Keep its
+overrides: the Claude model uses `anthropic-messages` at the endpoint root,
+while GPT, GLM, and Kimi inherit `openai-completions` at `/v1`. Keep its
 `User-Agent: pi-coding-agent` provider header; raw Pi `ModelRuntime` requests
-without the Pi client profile are rejected by AgentRouter. Claude entries also
-declare `supportsStrictTools` so Responses `strict: true` function tools are
-sent instead of failing before the provider request.
+without the Pi client profile are rejected by AgentRouter. The Claude entry
+also declares `supportsStrictTools` so Responses `strict: true` function tools
+are sent instead of failing before the provider request.
 
 For a Pi built-in OAuth provider:
 

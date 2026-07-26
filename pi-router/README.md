@@ -41,8 +41,8 @@ written by Pi's credential store under
 `~/.local/state/pi-router/accounts/default/auth.json`; `pi-router` does not
 reuse `~/.pi/agent/auth.json`.
 
-The checked-in example is a single AgentRouter provider with the six
-live-tested model IDs. Claude models override the provider default with
+The checked-in example is a single AgentRouter provider with the five
+enabled model IDs. The Claude model overrides the provider default with
 `anthropic-messages`; GPT, GLM, and Kimi use `openai-completions`. The
 provider-level `User-Agent: pi-coding-agent` identifies the pinned Pi request
 runtime without adding a Pi agent prompt, session, or tool loop. AgentRouter

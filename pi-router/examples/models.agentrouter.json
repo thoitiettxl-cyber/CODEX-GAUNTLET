@@ -19,17 +19,6 @@
           }
         },
         {
-          "id": "claude-opus-4-6",
-          "name": "Claude Opus 4.6",
-          "api": "anthropic-messages",
-          "baseUrl": "https://agentrouter.org",
-          "reasoning": true,
-          "compat": {
-            "forceAdaptiveThinking": true,
-            "supportsStrictTools": true
-          }
-        },
-        {
           "id": "gpt-5.5",
           "name": "GPT-5.5",
           "reasoning": true,

@@ -15,20 +15,17 @@ test("AgentRouter example declares the live-tested Pi client profile and model p
 	const models = new Map(provider.models.map((model) => [model.id, model]));
 	assert.deepEqual([...models.keys()], [
 		"claude-opus-4-8",
-		"claude-opus-4-6",
 		"gpt-5.5",
 		"gpt-5.6-sol",
 		"glm-5.2",
 		"kimi-k3",
 	]);
 
-	for (const id of ["claude-opus-4-8", "claude-opus-4-6"]) {
-		const model = models.get(id);
-		assert.equal(model.api, "anthropic-messages");
-		assert.equal(model.baseUrl, "https://agentrouter.org");
-		assert.equal(model.compat.forceAdaptiveThinking, true);
-		assert.equal(model.compat.supportsStrictTools, true);
-	}
+	const claude = models.get("claude-opus-4-8");
+	assert.equal(claude.api, "anthropic-messages");
+	assert.equal(claude.baseUrl, "https://agentrouter.org");
+	assert.equal(claude.compat.forceAdaptiveThinking, true);
+	assert.equal(claude.compat.supportsStrictTools, true);
 	for (const id of ["gpt-5.5", "gpt-5.6-sol", "glm-5.2", "kimi-k3"]) {
 		assert.equal(models.get(id).api, undefined);
 		assert.equal(models.get(id).baseUrl, undefined);
