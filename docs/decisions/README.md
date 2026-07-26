@@ -15,3 +15,4 @@ documents here as real choices are accepted, then index them in this file.
 - [0002 — Serialize Harness CLI locking on Android](0002-android-exclusive-lock.md)
 - [0003 — Use Harness as the orchestration state authority](0003-orchestration-first-harness-state.md)
 - [0004 — Use a bounded local continuity store for agent sessions](0004-compaction-aware-session-continuity.md)
+- [0005 — Use Pi provider runtime behind a local Responses gateway](0005-pi-router-local-provider-gateway.md)

@@ -31,10 +31,11 @@ plan.
 
 ## Active Plans
 
-- None.
+No active plans.
 
 ## Recently Completed
 
+- `TERMUX-007` — [Build the Pi Router MVP](completed/pi-router-mvp.md)
 - `TERMUX-006` — [Add Pi session continuity parity](completed/pi-session-continuity.md)
 - `TERMUX-005` — [Add a project-local Pi Gauntlet adapter](completed/pi-project-gauntlet.md)
 - `TERMUX-002` — [Add compaction-aware Codex session continuity](completed/session-continuity-v1.md)

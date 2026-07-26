@@ -7,6 +7,7 @@ coverage.xml
 .env
 .env.*
 !.env.example
+node_modules/
 harness.db
 harness.db-*
 .harness/epoch-transition/

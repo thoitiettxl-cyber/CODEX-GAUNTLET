@@ -1,0 +1,27 @@
+{
+  "name": "pi-router",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Loopback OpenAI Responses gateway backed by Pi providers",
+  "type": "module",
+  "bin": {
+    "pi-router": "src/cli.js"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "check": "node src/check.js",
+    "start": "node src/cli.js serve",
+    "test": "node test/runner.js all",
+    "test:unit": "node test/runner.js unit",
+    "test:integration": "node test/runner.js integration",
+    "test:acceptance": "node test/runner.js acceptance",
+    "test:mutation": "node test/runner.js mutation",
+    "test:coverage": "node test/coverage.js",
+    "test:live:agentrouter": "node scripts/live-agentrouter.js"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.82.1"
+  }
+}

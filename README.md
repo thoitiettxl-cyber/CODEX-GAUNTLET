@@ -49,6 +49,12 @@ recorded in its [inventory](docs/inventory/rg.json) and
 [Termux runbook](docs/runbooks/rg-termux.md). Agent entry files keep only
 generic capability-routing instructions.
 
+`pi-router` is an optional loopback OpenAI Responses gateway built on Pi's
+provider runtime. It keeps router credentials separate from Pi CLI state and
+lets current Codex clients connect with `wire_api = "responses"`. See the
+[package guide](pi-router/README.md) and
+[operations runbook](docs/runbooks/pi-router.md).
+
 ## Start
 
 ```bash

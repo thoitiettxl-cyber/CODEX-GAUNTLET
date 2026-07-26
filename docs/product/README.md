@@ -11,7 +11,9 @@ are:
 - [`rtk-termux.md`](rtk-termux.md) for the pinned optional output-filtering
   capability and its accuracy, privacy, and update boundaries;
 - [`pi-gauntlet.md`](pi-gauntlet.md) for the trusted project-local Pi policy
-  and mutation-settlement adapter.
+  and mutation-settlement adapter;
+- [`pi-router.md`](pi-router.md) for the optional loopback provider gateway
+  that exposes Pi providers through an OpenAI Responses-compatible API.
 
 The continuity implementation is a local consumer application surface.
 `qa/project-commands.json` declares executable build, unit, integration,

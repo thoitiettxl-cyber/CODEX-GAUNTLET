@@ -77,3 +77,25 @@ verification authority.
 
 Harness updates on Termux follow a source-build lane because upstream release
 self-update does not support `android/aarch64`.
+
+## Optional provider gateway
+
+`pi-router/` is an optional repository-local service at the product boundary.
+It embeds Pi's provider/model/auth runtime but does not embed the Pi agent
+loop, session manager, tools, or extensions. Its only inbound application
+surface is a loopback OpenAI Responses HTTP API protected by a router-local
+bearer token.
+
+Router credential and model state is separate from both repository state and
+Pi CLI state. The dependency direction is:
+
+```text
+Codex or another Responses client
+  → pi-router HTTP adapter
+  → Pi ModelRuntime
+  → configured upstream provider
+```
+
+`pi-router` cannot mutate Harness lifecycle, invoke Gauntlet policy, or define
+verification success. The provider gateway contract is
+[`docs/product/pi-router.md`](product/pi-router.md).
