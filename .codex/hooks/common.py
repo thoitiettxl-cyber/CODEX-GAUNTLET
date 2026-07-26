@@ -10,27 +10,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PROTECTED_PATHS = (
-    ".codex/",
-    ".harness-core/",
-    ".agents/skills/onboard-repository/",
-    ".agents/skills/audit-onboarding-proposal/",
-    ".agents/skills/verify-suite/",
-    ".agents/skills/spec-check/",
-    ".agents/skills/mutation-audit/",
-)
-HARD_PROTECTED_PATHS = tuple(
-    path
-    for path in PROTECTED_PATHS
-    if path == ".harness-core/" or path.startswith(".agents/skills/")
-)
-POLICY_CRITICAL = (
-    "qa/thresholds.json",
-    "qa/compatibility.json",
-    "qa/verify-matrix.yaml",
-    "qa/policy_audit.py",
-    "qa/check_harness.py",
-    ".github/workflows/codex-gauntlet.yml",
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.gauntlet_policy import (  # noqa: E402
+    PolicyContext,
+    PolicyDecision,
+    PolicyInput,
+    decide,
+    is_mutating_command,
+    protected_path_for_target,
+    protected_paths_in_text,
 )
 
 
@@ -139,56 +130,69 @@ def mutation_targets(event: dict[str, Any]) -> set[str]:
     return set()
 
 
-def target_matches(target: str, protected_path: str) -> bool:
-    normalized = normalize_target(protected_path)
-    return target == normalized or (
-        protected_path.endswith("/") and target.startswith(normalized + "/")
-    )
-
-
 def protected_target(event: dict[str, Any] | str) -> str | None:
     if isinstance(event, dict):
         targets = mutation_targets(event)
         if targets:
             for target in targets:
-                for path in PROTECTED_PATHS + POLICY_CRITICAL:
-                    if target_matches(target, path):
-                        return path
+                if protected := protected_path_for_target(target):
+                    return protected
             return None
         text = command_text(event)
     else:
         text = event
-    for path in PROTECTED_PATHS + POLICY_CRITICAL:
-        if mentions_path(text, path):
-            return path
-    return None
+    matches = protected_paths_in_text(text)
+    return matches[0] if matches else None
+
+
+def policy_input(event: dict[str, Any]) -> PolicyInput:
+    tool_name = str(event.get("tool_name") or "").lower()
+    tool_input = event.get("tool_input") or {}
+    patch = tool_input.get("patch") if isinstance(tool_input, dict) else None
+    if tool_name == "bash":
+        operation = "shell"
+    elif tool_name == "apply_patch" or isinstance(patch, str):
+        operation = "patch"
+    elif tool_name in {"edit", "write"}:
+        operation = tool_name
+    else:
+        operation = "unknown"
+    return PolicyInput(
+        operation=operation,
+        text=command_text(event),
+        targets=tuple(sorted(mutation_targets(event))),
+        authority_request=str(event.get("hook_event_name") or "").lower()
+        == "permissionrequest",
+    )
+
+
+def policy_context(event: dict[str, Any]) -> PolicyContext:
+    root = repo_root(event).resolve()
+    return PolicyContext(
+        cwd=Path(event.get("cwd") or root).resolve(),
+        repo_root=root,
+        maintenance_enabled=os.environ.get("CODEX_GAUNTLET_MAINTENANCE") == "1",
+        maintenance_targets=tuple(
+            target.strip()
+            for target in os.environ.get(
+                "CODEX_GAUNTLET_MAINTENANCE_TARGETS", ""
+            ).split(",")
+            if target.strip()
+        ),
+    )
+
+
+def policy_decision(event: dict[str, Any]) -> PolicyDecision:
+    return decide(policy_input(event), policy_context(event))
 
 
 def maintenance_mutation_authorized(event: dict[str, Any]) -> bool:
-    if os.environ.get("CODEX_GAUNTLET_MAINTENANCE") != "1":
-        return False
-    tool_name = str(event.get("tool_name") or "").lower()
-    if tool_name not in {"apply_patch", "edit", "write"}:
-        return False
-    targets = mutation_targets(event)
-    allowed = {
-        normalize_target(item)
-        for item in os.environ.get("CODEX_GAUNTLET_MAINTENANCE_TARGETS", "").split(",")
-        if item.strip()
-    }
-    if not targets or not targets <= allowed:
-        return False
-    return not any(
-        target_matches(target, path)
-        for target in targets
-        for path in HARD_PROTECTED_PATHS
+    decision = policy_decision(event)
+    return (
+        decision.action == "requires_human"
+        and decision.reason_code == "exact_maintenance_scope"
     )
 
 
 def is_mutating(text: str) -> bool:
-    signals = (
-        "apply_patch", "cat >", "cat >>", "tee ", "sed -i", "perl -pi", "python -c",
-        "rm ", "mv ", "cp ", "touch ", "chmod ", "chown ", "git checkout --", "git restore ",
-    )
-    lowered = text.lower()
-    return any(s in lowered for s in signals) or "*** update file:" in lowered or "*** add file:" in lowered
+    return is_mutating_command(text)

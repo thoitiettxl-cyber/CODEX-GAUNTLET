@@ -9,6 +9,7 @@ from contextlib import closing
 from unittest.mock import patch
 
 from tests.continuity.support import ROOT, ContinuityFixture
+from continuity.harness_bridge import HarnessUnavailable
 from continuity.hook import handle_event
 
 
@@ -78,6 +79,28 @@ class HookFixtureTests(unittest.TestCase):
         self.assertGreaterEqual(
             self.fixture.store.audit()["events"].get("observed", 0), 1
         )
+
+    def test_runtime_neutral_lifecycle_protocol_matches_codex_adapter(self) -> None:
+        neutral_process = self.fixture.run_lifecycle("post_compact_manual.json")
+        self.assertEqual(0, neutral_process.returncode, neutral_process.stderr)
+        neutral = json.loads(neutral_process.stdout)
+        codex = self.output(self.fixture.run_hook("post_compact_manual.json"))
+
+        self.assertEqual(1, neutral["protocol_version"])
+        self.assertEqual("PostCompact", neutral["event"])
+        self.assertTrue(neutral["continue"])
+        self.assertEqual(
+            neutral["degraded"],
+            "Degraded recovery:" in neutral["message"],
+        )
+        self.assertEqual(neutral["message"], codex["systemMessage"])
+        self.assertLessEqual(len(neutral_process.stdout.encode("utf-8")), 8_192)
+
+        ended = self.fixture.run_lifecycle("session_end_other.json")
+        self.assertEqual(0, ended.returncode, ended.stderr)
+        ended_result = json.loads(ended.stdout)
+        self.assertEqual("SessionEnd", ended_result["event"])
+        self.assertNotIn("message", ended_result)
 
     def test_harness_contract_refresh_supersedes_stale_checkpoint_plan(self) -> None:
         stale_plan = "docs/plans/active/session-continuity-v1.md"
@@ -178,6 +201,20 @@ class HookFixtureTests(unittest.TestCase):
         self.assertTrue(result["continue"])
         self.assertIn("Continuity recovery degraded", result["systemMessage"])
         self.assertNotIn("relative-state", result["systemMessage"])
+
+    def test_initial_harness_unavailability_degrades_without_blocking(self) -> None:
+        event = self.fixture.event(
+            "session_start_resume.json", session_id="unbound-session"
+        )
+        with patch(
+            "continuity.harness_bridge.query_work_graph",
+            side_effect=HarnessUnavailable("fixture unavailable"),
+        ):
+            result = handle_event(event)
+
+        self.assertTrue(result["continue"])
+        self.assertIn("Continuity recovery degraded", result["systemMessage"])
+        self.assertNotIn("fixture unavailable", result["systemMessage"])
 
     def test_held_harness_writer_lock_uses_bounded_checkpoint_fallback(self) -> None:
         lock_path = ROOT / ".harness" / "epoch-transition" / "writer.lock"

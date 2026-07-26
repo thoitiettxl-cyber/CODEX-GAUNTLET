@@ -5,10 +5,13 @@ are:
 
 - [`termux-control-plane.md`](termux-control-plane.md) for the control-plane
   boundary and entrypoints;
-- [`session-continuity-v1.md`](session-continuity-v1.md) for bounded
-  compaction/resume state and replay-safe operation observations;
+- [`session-continuity-v1.md`](session-continuity-v1.md) for bounded,
+  runtime-neutral Codex/Pi compaction/resume state and replay-safe operation
+  observations;
 - [`rtk-termux.md`](rtk-termux.md) for the pinned optional output-filtering
-  capability and its accuracy, privacy, and update boundaries.
+  capability and its accuracy, privacy, and update boundaries;
+- [`pi-gauntlet.md`](pi-gauntlet.md) for the trusted project-local Pi policy
+  and mutation-settlement adapter.
 
 The continuity implementation is a local consumer application surface.
 `qa/project-commands.json` declares executable build, unit, integration,

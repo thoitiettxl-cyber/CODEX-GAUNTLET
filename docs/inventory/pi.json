@@ -17,7 +17,8 @@
     "release_root": "~/.local/opt/pi/releases",
     "current": "~/.local/opt/pi/current",
     "previous": "~/.local/opt/pi/previous",
-    "global_append_policy": "~/.pi/agent/APPEND_SYSTEM.md"
+    "global_append_policy": "~/.pi/agent/APPEND_SYSTEM.md",
+    "project_gauntlet_adapter": ".pi/extensions/gauntlet"
   },
   "prohibited_targets": {
     "rtk_automatic_rewrite_extension": "~/.pi/agent/extensions/rtk.ts"
@@ -26,5 +27,7 @@
   "update_policy": "verified-transactional-core-update",
   "automatic_update": false,
   "global_npm_install": false,
+  "project_adapter_policy": "trusted-defense-in-depth-no-sandbox",
+  "continuity_protocol": "session-continuity-v1",
   "verification_authority": false
 }

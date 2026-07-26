@@ -31,6 +31,7 @@ def main() -> int:
     errors = []
     tracked = tracked_files()
     changed = changed_files()
+    pi_root = ROOT / ".pi"
 
     forbidden_names = {".env", "id_rsa", "id_ed25519"}
     for path in tracked:
@@ -59,6 +60,108 @@ def main() -> int:
             for handler in group.get("hooks", []):
                 if handler.get("type") != "command":
                     errors.append(f"non-command hook handler configured for {event}")
+
+    compatibility = json.loads((ROOT / "qa" / "compatibility.json").read_text())
+    pi_compatibility = compatibility.get("pi", {})
+    if (
+        pi_compatibility.get("tested_version") != "0.82.1"
+        or pi_compatibility.get("authority") != "auxiliary-only"
+        or pi_compatibility.get("sandbox") is not False
+        or pi_compatibility.get("verification_authority") is not False
+    ):
+        errors.append("Pi compatibility must remain pinned, auxiliary-only, and non-sandboxed")
+
+    expected_pi_files = {
+        ".pi/extensions/gauntlet/index.ts",
+        ".pi/extensions/gauntlet/policy.ts",
+        ".pi/extensions/gauntlet/verification.ts",
+    }
+    actual_pi_files = {
+        path.relative_to(ROOT).as_posix()
+        for path in pi_root.rglob("*")
+        if path.is_file()
+    } if pi_root.exists() else set()
+    if actual_pi_files != expected_pi_files:
+        errors.append(
+            f"Pi adapter layout drift: expected={sorted(expected_pi_files)}, "
+            f"actual={sorted(actual_pi_files)}"
+        )
+
+    forbidden_pi_paths = (
+        pi_root / "SYSTEM.md",
+        pi_root / "APPEND_SYSTEM.md",
+        pi_root / "settings.json",
+        pi_root / "package.json",
+        pi_root / "package-lock.json",
+        pi_root / "npm",
+        pi_root / "node_modules",
+        pi_root / "skills",
+    )
+    if any(path.exists() for path in forbidden_pi_paths):
+        errors.append("Pi adapter may not shadow prompts, copy skills, or add packages")
+
+    shared_policy = (ROOT / "scripts" / "gauntlet_policy.py").read_text()
+    codex_common = (ROOT / ".codex" / "hooks" / "common.py").read_text()
+    pi_policy = (pi_root / "extensions" / "gauntlet" / "policy.ts").read_text()
+    pi_index = (pi_root / "extensions" / "gauntlet" / "index.ts").read_text()
+    pi_verification = (
+        pi_root / "extensions" / "gauntlet" / "verification.ts"
+    ).read_text()
+    pi_contract = (ROOT / "docs" / "product" / "pi-gauntlet.md").read_text()
+    continuity_lifecycle = (
+        ROOT / "scripts" / "continuity" / "lifecycle.py"
+    ).read_text()
+    pi_tests = (ROOT / "tests" / "pi" / "test_adapter.py").read_text()
+    inventory = json.loads((ROOT / "docs" / "inventory" / "pi.json").read_text())
+    matrix = (ROOT / "qa" / "verify-matrix.yaml").read_text()
+    verify = (ROOT / "qa" / "verify").read_text()
+
+    if '".pi/"' not in shared_policy or "from scripts.gauntlet_policy import" not in codex_common:
+        errors.append("shared policy must protect Pi and remain the Codex decision source")
+    if "scripts\", \"gauntlet_policy.py" not in pi_policy:
+        errors.append("Pi adapter does not delegate to the shared decision core")
+    if "not a sandbox" not in pi_index.lower() or "not a sandbox" not in pi_contract.lower():
+        errors.append("Pi adapter must state its no-sandbox boundary")
+    if (
+        '"--mode", "stop"' not in pi_verification
+        or "repairFollowUpSent" not in pi_verification
+        or "failureSignature" not in pi_verification
+    ):
+        errors.append("Pi Stop verification or recursion guards are incomplete")
+    pi_lifecycle_markers = (
+        'pi.on("session_start"',
+        'pi.on("session_before_compact"',
+        'pi.on("session_compact"',
+        'pi.on("session_shutdown"',
+        '`pi:${nativeSessionId}`',
+        '"lifecycle"',
+        'deliverAs: "steer"',
+        "triggerTurn: false",
+    )
+    if (
+        not all(marker in pi_index for marker in pi_lifecycle_markers)
+        or "class LifecycleOutcome" not in continuity_lifecycle
+        or "def handle_lifecycle(" not in continuity_lifecycle
+        or "protocol_version" not in continuity_lifecycle
+    ):
+        errors.append("Pi continuity lifecycle mapping or shared protocol is incomplete")
+    if (
+        "PiRuntimeContinuityTests" not in pi_tests
+        or "pi.continuity-compaction-probe" not in pi_tests
+        or "SessionStart/resume" not in pi_tests
+        or not (
+            ROOT / "tests" / "pi" / "fixtures" / "continuity-probe-session.jsonl"
+        ).is_file()
+    ):
+        errors.append("Pi installed-runtime compaction/resume proof is incomplete")
+    if "pi: [gauntlet-selftest, unit, integration, coverage]" not in matrix or "pi)" not in verify:
+        errors.append("Pi changes do not select the declared verification matrix")
+    if (
+        inventory.get("authority") != "auxiliary-only"
+        or inventory.get("verification_authority") is not False
+        or inventory.get("continuity_protocol") != "session-continuity-v1"
+    ):
+        errors.append("Pi inventory must remain auxiliary-only")
 
     text_files = [p for p in tracked if p.endswith((".md", ".py", ".sh", ".json", ".yaml", ".yml", ".toml"))]
     audit_fixture_files = {"qa/policy_audit.py", "qa/selftest/run.py"}

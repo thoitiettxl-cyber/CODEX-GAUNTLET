@@ -11,6 +11,24 @@
       "repository_skills"
     ]
   },
+  "pi": {
+    "baseline_date": "2026-07-26",
+    "tested_version": "0.82.1",
+    "tested_commit": "b4f2936",
+    "authority": "auxiliary-only",
+    "sandbox": false,
+    "verification_authority": false,
+    "required_features": [
+      "project_trust",
+      "project_extensions",
+      "before_agent_start",
+      "tool_call_blocking",
+      "tool_result",
+      "agent_settled",
+      "repository_skills",
+      "temporary_approve"
+    ]
+  },
   "repository_harness": {
     "tested_core_version": "harness-v0.1.7",
     "tested_core_semver": "0.1.7",

@@ -34,7 +34,9 @@ def classify(paths: list[str]) -> list[str]:
     classes = set()
     for path in paths:
         p = path.replace("\\", "/")
-        if p.startswith(".codex/"):
+        if p.startswith(".pi/"):
+            classes.add("pi")
+        elif p.startswith(".codex/"):
             classes.add("codex")
         elif p.startswith("qa/"):
             classes.add("qa")

@@ -122,3 +122,24 @@ class ContinuityFixture:
             env={**self.environment, **(environment or {})},
             timeout=5,
         )
+
+    def run_lifecycle(
+        self, name: str, *, session_id: str = "fixture-session", environment=None
+    ) -> subprocess.CompletedProcess[str]:
+        event = self.event(name, session_id=session_id)
+        return subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "continuity_cli.py"),
+                "--repo-root",
+                str(ROOT),
+                "lifecycle",
+            ],
+            input=json.dumps(event),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=ROOT,
+            env={**self.environment, **(environment or {})},
+            timeout=5,
+        )

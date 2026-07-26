@@ -126,6 +126,12 @@ def checks():
     quality = text('docs/quality/CODEX-GAUNTLET.md')
     ci = text('.github/workflows/codex-gauntlet.yml')
     matrix = text('qa/verify-matrix.yaml')
+    shared_policy = text('scripts/gauntlet_policy.py')
+    pi_index = text('.pi/extensions/gauntlet/index.ts')
+    pi_policy = text('.pi/extensions/gauntlet/policy.ts')
+    pi_verification = text('.pi/extensions/gauntlet/verification.ts')
+    pi_contract = text('docs/product/pi-gauntlet.md')
+    compatibility = json.loads(text('qa/compatibility.json'))
 
     skill_paths = sorted((ROOT / '.agents/skills').glob('*/SKILL.md'))
     skill_names = []
@@ -323,6 +329,13 @@ def checks():
         'G34': ('traversal target remains protected', traversal_patch.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
         'G35': ('ordinary Write to protected target denied', ordinary_write.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
         'G36': ('exact scoped Write remains user-authorized', exact_write == {}),
+        'G37': ('shared runtime-neutral policy core', 'class PolicyDecision' in shared_policy and 'def decide(' in shared_policy),
+        'G38': ('Pi adapter covers native mutation events', all(event in pi_index for event in ('tool_call', 'tool_result', 'agent_settled')) and all(tool in pi_policy for tool in ('"bash"', '"edit"', '"write"'))),
+        'G39': ('Pi prompt preserves defaults without project shadow files', 'event.systemPrompt' in pi_index and not (ROOT/'.pi/SYSTEM.md').exists() and not (ROOT/'.pi/APPEND_SYSTEM.md').exists()),
+        'G40': ('Pi adapter is dependency-free', not any((ROOT/'.pi'/name).exists() for name in ('package.json','package-lock.json','npm','node_modules'))),
+        'G41': ('Pi verification is bounded and recursion-guarded', all(marker in pi_verification for marker in ('MAX_CAPTURE', 'inFlight', 'failureSignature', 'repairFollowUpSent', '"--mode", "stop"'))),
+        'G42': ('Pi adapter is protected from ordinary mutation', '".pi/"' in shared_policy and 'from scripts.gauntlet_policy import' in text('.codex/hooks/common.py')),
+        'G43': ('Pi changes have an explicit verification class', 'pi: [' in matrix and 'classes.add("pi")' in text('qa/classify_changes.py')),
         'H01': ('Harness provenance', (ROOT/'.harness-core/manifest.json').exists()),
         'H02': ('skill coexistence and unique names', set(skill_names) == {'onboard-repository','audit-onboarding-proposal','verify-suite','spec-check','mutation-audit'} and len(skill_names)==len(set(skill_names))),
         'H03': ('compact AGENTS entrypoint', len(agents.splitlines()) < 45 and 'docs/WORKFLOW.md' in agents and './qa/verify' in agents),
@@ -330,7 +343,7 @@ def checks():
         'H05': ('durable task structure', (ROOT/'docs/plans/active').is_dir() and (ROOT/'docs/plans/completed').is_dir() and (ROOT/'docs/templates/exec-plan.md').exists()),
         'H06': ('onboarding pass one read-only', 'Pass 1 — read-only' in text('.agents/skills/onboard-repository/SKILL.md')),
         'H07': ('onboarding exact approval', 'exact proposal items' in text('.agents/skills/onboard-repository/SKILL.md')),
-        'H08': ('ordinary Harness tampering protected', '.harness-core/' in text('.codex/hooks/common.py')),
+        'H08': ('ordinary Harness tampering protected', '.harness-core/' in shared_policy and 'from scripts.gauntlet_policy import' in text('.codex/hooks/common.py')),
         'H09': ('explicit Harness maintenance authorization', 'CODEX_GAUNTLET_MAINTENANCE' in text('scripts/build-harness-termux')),
         'H10': ('merge conflict requires human direction', 'semantic merge conflicts without human direction' in harness_doc),
         'H11': ('ownership collision fails', 'overlaps protected Gauntlet path' in text('qa/check_harness.py')),
@@ -344,6 +357,7 @@ def checks():
         'H19': ('orchestration mutations require stable run id', run_id_guard_ok),
         'H20': ('orchestration discovery stays read-only', discovery_ok),
         'H21': ('help values cannot bypass orchestration run id', help_value_guard_ok),
+        'H22': ('Pi remains auxiliary-only without sandbox claims', compatibility.get('pi',{}).get('authority') == 'auxiliary-only' and compatibility.get('pi',{}).get('sandbox') is False and 'not a sandbox' in pi_contract.lower()),
     }
 
 

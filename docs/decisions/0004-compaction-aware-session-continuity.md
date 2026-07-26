@@ -1,4 +1,4 @@
-# 0004 Use a bounded local continuity store for Codex sessions
+# 0004 Use a bounded local continuity store for agent sessions
 
 Date: 2026-07-24
 
@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 Harness and Git already preserve complex-work lifecycle and intent, but a
-Codex compaction or interrupted Termux session can lose the immediate safe
+Agent compaction or an interrupted Termux session can lose the immediate safe
 boundary, exact next action, and observations needed to avoid repeating a
 consequential external write.
 
@@ -29,6 +29,10 @@ The store persists only allowlisted, redacted fields and does not read
 transcripts. Consequential operation retries require a stable operation key
 and a real-target observation.
 
+Runtime adapters translate native lifecycle events to one normalized protocol.
+Pi IDs are namespaced as `pi:<native-session-id>`; native session formats and
+summarizers remain outside the store.
+
 Harness remains authoritative for lifecycle and scheduling, the Git plan for
 intent and recovery, external targets for their real state, and `./qa/verify`
 for pass/fail.
@@ -43,6 +47,8 @@ Positive:
   checkpoint;
 - Android writer-lock contention is bounded;
 - operation observations reduce accidental duplicate side effects.
+- Codex and Pi recover from the same checkpoint semantics without sharing
+  transcript formats.
 
 Tradeoffs:
 

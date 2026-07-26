@@ -8,6 +8,7 @@ classes:
   dependency: [build, unit, integration]
   security-critical: [unit, integration, coverage, mutation]
   codex: [gauntlet-selftest, full-relevant]
+  pi: [gauntlet-selftest, unit, integration, coverage]
   qa: [gauntlet-selftest, full-relevant]
   gauntlet-skill: [skill-contract, gauntlet-selftest]
   harness-managed-core: [harness-integrity, gauntlet-integration, full-relevant]

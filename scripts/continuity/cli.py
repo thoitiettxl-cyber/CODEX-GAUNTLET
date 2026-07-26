@@ -16,6 +16,7 @@ from .harness_bridge import (
     state_database,
 )
 from .hook import run_hook
+from .lifecycle import run_lifecycle
 from .model import (
     ContinuityError,
     SCHEMA_VERSION,
@@ -213,7 +214,7 @@ def command_operation_show(args: argparse.Namespace) -> int:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         prog="scripts/termux-control continuity",
-        description="Compaction-aware local Codex session continuity",
+        description="Compaction-aware local session continuity",
     )
     result.add_argument("--repo-root", help=argparse.SUPPRESS)
     commands = result.add_subparsers(dest="command", required=True)
@@ -281,6 +282,8 @@ def parser() -> argparse.ArgumentParser:
 
     hook = commands.add_parser("hook")
     hook.set_defaults(func=lambda args: run_hook())
+    lifecycle = commands.add_parser("lifecycle")
+    lifecycle.set_defaults(func=lambda args: run_lifecycle())
     return result
 
 

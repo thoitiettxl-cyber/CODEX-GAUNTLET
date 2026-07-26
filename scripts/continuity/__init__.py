@@ -1,4 +1,4 @@
-"""Compaction-aware Codex session continuity for Termux."""
+"""Compaction-aware runtime-neutral session continuity for Termux."""
 
 from .model import SCHEMA_VERSION
 

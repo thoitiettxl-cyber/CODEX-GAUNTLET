@@ -35,5 +35,7 @@ plan.
 
 ## Recently Completed
 
+- `TERMUX-006` — [Add Pi session continuity parity](completed/pi-session-continuity.md)
+- `TERMUX-005` — [Add a project-local Pi Gauntlet adapter](completed/pi-project-gauntlet.md)
 - `TERMUX-002` — [Add compaction-aware Codex session continuity](completed/session-continuity-v1.md)
 - `TERMUX-001` — [Activate orchestration-first Harness state](completed/orchestration-first-harness-state.md)

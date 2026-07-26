@@ -100,6 +100,117 @@ authorized materialization, use `/reload` in an existing session or start a
 new session, then run the RTK status and doctor commands from the maintenance
 runbook.
 
+## Project Gauntlet adapter
+
+This repository has a trusted, dependency-free project extension at
+`.pi/extensions/gauntlet/`. It keeps using the root `AGENTS.md`, the existing
+`.agents/skills`, and the global RTK append policy. Do not add project
+`SYSTEM.md`, `APPEND_SYSTEM.md`, settings, copied skills, packages, or generated
+dependency trees.
+
+The adapter is defense in depth, not a sandbox. It gates only Pi's known
+built-in `bash`, `edit`, and `write` events, fails closed for malformed or
+non-interactive approval-required calls, reports successful mutations, and
+runs `./qa/verify --mode stop` after a mutation epoch settles. Custom and
+extension tools are not covered by that built-in gate.
+
+Review the project extension before trusting it. For the first runtime proof,
+use a temporary trust override and an ephemeral session:
+
+```bash
+PI_GAUNTLET_PROBE=1 \
+  pi --approve --no-session --mode json "/gauntlet-probe"
+```
+
+The command is handled by the extension before an agent/provider turn. The
+expected record has operation `pi.gauntlet-probe`, reports the project resource
+loaded, denies the synthetic destructive and protected-write cases, preserves
+the default prompt prefix, appends the Pi guidance, and exposes bounded Stop
+wiring.
+
+Then confirm the global RTK policy and prohibited rewrite extension remain
+unchanged:
+
+```bash
+sha256sum \
+  config/rtk/RTK.md \
+  "$HOME/.pi/agent/APPEND_SYSTEM.md" \
+  "$HOME/.codex/RTK.md"
+test ! -e "$HOME/.pi/agent/extensions/rtk.ts"
+pi list --no-approve
+```
+
+Do not persist trust from an automated probe and do not inspect auth, session,
+or credential bodies. If the adapter fails, run with `--no-approve`, inspect
+the repository diff, and repair only `.pi/extensions/gauntlet/`.
+
+## Session continuity
+
+Trusted persistent Pi sessions automatically use the repository
+`session-continuity-v1` protocol. The extension prefixes the native session ID
+as `pi:<native-session-id>`, binds it to an existing exact binding or the only
+`in_progress` Harness story, checkpoints before compaction, and recovers after
+compaction or reopen.
+
+The prompt appendix reports the exact continuity key. Before consequential
+work or a planned `/compact`, record the current safe boundary and operation
+state with that key:
+
+```bash
+scripts/termux-control continuity checkpoint \
+  --session "pi:${PI_SESSION_ID:?Pi session ID is unavailable}" \
+  --safe-boundary "<last fully completed operation>" \
+  --next-action "<one exact next action>" \
+  --completed-operation "<stable completed operation>" \
+  --pending-operation "<stable pending operation>" \
+  --external-side-effect "<observed target state>" \
+  --verification '{"focused":"pass","canonical":"pending"}'
+```
+
+Use repeated operation flags when more than one bounded item is needed. Do not
+put tokens, credentials, request bodies, transcript excerpts, or secret-bearing
+command input in these values.
+
+Native Pi session commands remain unchanged:
+
+```bash
+pi --continue
+pi --session <path-or-id>
+pi --resume
+```
+
+After manual or threshold compaction, the recovery packet is appended to the
+next turn without starting a provider turn. Overflow recovery is delivered to
+the retry already in progress. A saved session reopened by a later Pi process
+receives the latest valid packet. `--no-session` is intentionally not durable
+across processes.
+
+If binding is ambiguous, inspect `scripts/termux-control orchestrator status`
+and bind the exact injected Pi key explicitly:
+
+```bash
+scripts/termux-control continuity bind \
+  --session "pi:${PI_SESSION_ID:?Pi session ID is unavailable}" \
+  --story <TERMUX-ID>
+```
+
+Never retry a consequential external operation merely because Pi resumed.
+Inspect both `scripts/termux-control continuity operation show --key <key>` and
+the real target state first.
+
+The repeatable Termux-only proof uses temporary agent, session, and continuity
+state, provides a local compaction summary, disables startup networking, and
+reopens the same native Pi JSONL in a second process:
+
+```bash
+python3 -m unittest -v \
+  tests.pi.test_adapter.PiRuntimeContinuityTests
+```
+
+Cross-platform CI verifies the static adapter contract but declares the
+Android Pi binary surface absent. The local Termux gate must run this consumer
+test through the configured Pi integration command.
+
 ## Recorded baseline
 
 Observed and verified on 2026-07-26 UTC:

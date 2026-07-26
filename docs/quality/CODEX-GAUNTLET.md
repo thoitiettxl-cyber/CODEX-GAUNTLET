@@ -31,6 +31,9 @@ lane. `.harness-core/**` and managed `.agents/skills/**` remain denied even if
 listed. `PermissionRequest` emits no allow decision for a valid maintenance
 request, so normal human approval remains authoritative.
 
+The active project Pi adapter under `.pi/**` is also Gauntlet-managed and
+protected from ordinary mutation.
+
 On Termux versions where the workspace sandbox cannot initialize because
 Android denies a `bwrap` `/proc/sys` read, the operator may select a temporary
 no-sandbox invocation after reviewing the exact target allowlist. That runtime
@@ -45,3 +48,19 @@ GitHub-hosted Ubuntu cannot execute Android ELF artifacts. CI runs the same
 authority with `CODEX_GAUNTLET_CROSS_PLATFORM=1`, which verifies their pinned
 checksums and all repository policy while skipping only native binary
 execution. The Termux local gate must execute the binaries and `harness doctor`.
+
+## Pi defense-in-depth adapter
+
+The trusted `.pi/extensions/gauntlet/` adapter uses the shared policy core for
+Pi's built-in `bash`, `edit`, and `write` events, reports successful mutations,
+delegates settled mutation epochs to `./qa/verify --mode stop`, and maps Pi
+session lifecycle events to the shared continuity protocol. It must fail
+closed when a covered decision cannot be obtained or non-interactive execution
+would require human authority. Continuity failures degrade safely without
+guessing a story or authorizing a side-effect replay.
+
+This is not sandbox parity. Pi project trust controls resource loading only,
+and the extension runs with the same user permissions as Pi. Custom and
+extension tools remain outside the built-in mutation gate. Static and
+synthetic proof is cross-platform; only the Termux gate claims execution of
+the installed Pi runtime, including its offline compaction/resume probe.
