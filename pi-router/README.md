@@ -8,7 +8,7 @@ The MVP supports one credential per provider in each named account. Named
 accounts are isolated stores selected explicitly at startup; automatic
 multi-account rotation and failover are not implemented.
 
-## Install
+## Install from source
 
 Node.js `>=22.19.0` is required.
 
@@ -25,6 +25,26 @@ The router does not expose glob-pattern input, and npm cannot override this
 nested shrinkwrap independently. Do not run a blind dependency upgrade;
 update the Pi pin only with the runtime compatibility proof described in the
 product contract.
+
+## Install the Termux binary
+
+The committed `bin/pi-router-android-aarch64` artifact is a native Android
+AArch64 Node SEA. It contains the router, pinned Pi runtime, and exact
+single-file Management Center; it is not a GNU/Linux AArch64 executable.
+
+Install the shared libraries declared by the pinned Termux Node base, then
+copy the verified artifact to a user-owned executable location:
+
+```bash
+pkg install libc++ openssl c-ares libicu libsqlite zlib libffi
+(cd pi-router/bin && sha256sum --check pi-router-android-aarch64.sha256)
+install -Dm755 pi-router/bin/pi-router-android-aarch64 \
+  ~/.local/bin/pi-router
+pi-router --version
+```
+
+The build identity and source digest are recorded in
+[`docs/provenance/pi-router-termux-build.json`](../docs/provenance/pi-router-termux-build.json).
 
 ## Configure AgentRouter
 
@@ -72,13 +92,55 @@ node pi-router/src/cli.js serve
 The default address is `http://127.0.0.1:8318`. Only `127.0.0.1` and `::1`
 are accepted.
 
+Open the self-contained Management Center:
+
+```text
+http://127.0.0.1:8318/management.html
+```
+
+Enter the same local `PI_ROUTER_API_KEY` used by API clients. **Overview**
+shows bounded service, account, model, runtime, and release posture.
+**Probe** retains the full Responses request bench: it can load models,
+compose or edit raw requests, inspect JSON or ordered SSE events, render
+function calls and usage, cancel an active provider request, and copy a curl
+command with a key placeholder. **Updates** checks stable GitHub releases and,
+when running the packaged binary, installs an exact verified candidate or
+restores the retained previous binary. It cannot log in providers, expose
+credentials, edit router state, or restart the process.
+
+The UI has no external browser assets and does not persist the bearer,
+prompts, requests, or responses. Reloading clears the page memory. The HTML
+itself is unauthenticated, while every `/v1/*` and `/management/api/*` request
+it makes retains the normal bearer requirement.
+
 Useful checks:
 
 ```bash
 curl http://127.0.0.1:8318/health
 curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
   http://127.0.0.1:8318/v1/models
+curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
+  http://127.0.0.1:8318/management/api/status
 ```
+
+Source mode may check releases but refuses install and rollback so it can
+never replace the Node interpreter. The packaged binary supports:
+
+```bash
+pi-router update check
+pi-router update install 0.2.1
+pi-router update rollback
+```
+
+An installed or rolled-back executable activates after the serving process is
+restarted. Automatic verified installation is opt-in:
+
+```bash
+PI_ROUTER_AUTO_UPDATE=1 pi-router serve
+```
+
+Automatic update work runs in the background and a GitHub or validation
+failure never prevents the loopback service from starting.
 
 ## Live AgentRouter acceptance
 
@@ -123,7 +185,53 @@ pi-router serve [--host HOST] [--port PORT] [--account NAME] [--state-dir PATH]
 pi-router login PROVIDER [--type api_key|oauth] [--account NAME] [--state-dir PATH]
 pi-router logout PROVIDER [--account NAME] [--state-dir PATH]
 pi-router models [--account NAME] [--state-dir PATH]
+pi-router status [--account NAME] [--state-dir PATH]
+pi-router update check
+pi-router update install VERSION
+pi-router update rollback
+pi-router --version
 ```
 
 See the [runbook](../docs/runbooks/pi-router.md) for state, recovery, and
 verification details.
+
+## Build the Web UI
+
+React and TypeScript source lives under `web/src/`. Build the single-file,
+offline artifact after UI changes:
+
+```bash
+npm --prefix pi-router run build
+```
+
+The committed output is `web/dist/index.html`. The package `check` script
+type-checks the source and fails when that artifact is stale.
+
+## Build and release the Termux binary
+
+Binary builds must run natively on Android AArch64. The build downloads and
+checksum-verifies the pinned Termux `nodejs` package, prepares the SEA blob
+with that exact Bionic executable, applies the verified Bionic image-selection
+compatibility patch, and records fresh provenance:
+
+```bash
+npm --prefix pi-router run build:binary
+npm --prefix pi-router run check:binary
+npm --prefix pi-router run test:binary
+```
+
+`test:binary` starts the actual executable and probes its CLI, Pi model
+runtime, embedded UI, and authenticated Management API. The shared libraries
+listed in the binary installation section must be installed.
+
+Pushing an exact `pi-router-vMAJOR.MINOR.PATCH` tag triggers
+`.github/workflows/pi-router-release.yml`. The workflow reruns the canonical
+repository gate and publishes only:
+
+```text
+pi-router-android-aarch64
+pi-router-android-aarch64.sha256
+```
+
+Creating or pushing the tag is an explicit release action; the build command
+does not publish anything.

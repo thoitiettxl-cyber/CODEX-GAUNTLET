@@ -16,3 +16,4 @@ documents here as real choices are accepted, then index them in this file.
 - [0003 — Use Harness as the orchestration state authority](0003-orchestration-first-harness-state.md)
 - [0004 — Use a bounded local continuity store for agent sessions](0004-compaction-aware-session-continuity.md)
 - [0005 — Use Pi provider runtime behind a local Responses gateway](0005-pi-router-local-provider-gateway.md)
+- [0006 — Package Pi Router as a verified Termux SEA](0006-package-pi-router-as-a-verified-termux-sea.md)

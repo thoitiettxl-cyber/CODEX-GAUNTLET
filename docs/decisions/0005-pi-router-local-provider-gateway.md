@@ -70,4 +70,6 @@ Tradeoffs:
   protocol fidelity are proven.
 - Add inbound Anthropic Messages and Chat Completions endpoints as separate
   stories.
-- Define a recoverable Termux launcher/update lane after the source MVP passes.
+- Package the accepted source MVP through the recoverable Termux SEA and
+  verified GitHub update lane in
+  [ADR 0006](0006-package-pi-router-as-a-verified-termux-sea.md).

@@ -1,6 +1,6 @@
 {
   "name": "pi-router",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Loopback OpenAI Responses gateway backed by Pi providers",
   "type": "module",
@@ -11,7 +11,12 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "check": "node src/check.js",
+    "build": "npm run typecheck:web && npm run build:web && node src/check.js",
+    "build:binary": "npm run build && node scripts/build-binary.js",
+    "build:web": "node scripts/build-web.js",
+    "check": "npm run typecheck:web && npm run check:web && npm run check:binary && node src/check.js",
+    "check:binary": "node scripts/check-binary.js",
+    "check:web": "node scripts/build-web.js --check",
     "start": "node src/cli.js serve",
     "test": "node test/runner.js all",
     "test:unit": "node test/runner.js unit",
@@ -19,9 +24,20 @@
     "test:acceptance": "node test/runner.js acceptance",
     "test:mutation": "node test/runner.js mutation",
     "test:coverage": "node test/coverage.js",
-    "test:live:agentrouter": "node scripts/live-agentrouter.js"
+    "test:binary": "node scripts/test-binary.js",
+    "test:live:agentrouter": "node scripts/live-agentrouter.js",
+    "typecheck:web": "node node_modules/typescript/bin/tsc -p web/tsconfig.json --noEmit"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.82.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "0.28.1",
+    "postject": "1.0.0-alpha.6",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "typescript": "6.0.3"
   }
 }

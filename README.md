@@ -51,8 +51,12 @@ generic capability-routing instructions.
 
 `pi-router` is an optional loopback OpenAI Responses gateway built on Pi's
 provider runtime. It keeps router credentials separate from Pi CLI state and
-lets current Codex clients connect with `wire_api = "responses"`. See the
-[package guide](pi-router/README.md) and
+lets current Codex clients connect with `wire_api = "responses"`. Its
+self-contained Management Center at `/management.html` reports bounded runtime
+status, probes JSON or SSE Responses requests, and manages checksum-verified
+GitHub updates for the native Termux AArch64 binary without persisting bearer
+or prompt data.
+See the [package guide](pi-router/README.md) and
 [operations runbook](docs/runbooks/pi-router.md).
 
 ## Start

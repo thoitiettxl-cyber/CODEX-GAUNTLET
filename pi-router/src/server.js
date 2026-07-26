@@ -1,12 +1,49 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
-import { RouterError, errorEnvelope, notFound, safeError, unauthorized } from "./errors.js";
+import {
+	RouterError,
+	errorEnvelope,
+	invalidRequest,
+	notFound,
+	safeError,
+	unauthorized,
+} from "./errors.js";
+import { createManagementService } from "./management.js";
 import { publicModel } from "./pi-runtime.js";
 import { collectResponse, requestToPi, sseFrame, translatePiStream } from "./responses.js";
+import { GithubUpdateManager } from "./update.js";
+import { VERSION } from "./version.js";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1"]);
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
+const MANAGEMENT_HTML = typeof __PI_ROUTER_MANAGEMENT_HTML__ === "string"
+	? __PI_ROUTER_MANAGEMENT_HTML__
+	: readFileSync(new URL("../web/dist/index.html", import.meta.url), "utf8");
+
+function inlineSourceHash(tag, html) {
+	const opening = `<${tag}>`;
+	const closing = `</${tag}>`;
+	const start = html.indexOf(opening);
+	const end = html.indexOf(closing, start + opening.length);
+	if (start < 0 || end < 0) {
+		throw new Error(`Pi Router management HTML has no inline ${tag}.`);
+	}
+	const source = html.slice(start + opening.length, end);
+	return `'sha256-${createHash("sha256").update(source).digest("base64")}'`;
+}
+
+const MANAGEMENT_CSP = [
+	"default-src 'none'",
+	`script-src ${inlineSourceHash("script", MANAGEMENT_HTML)}`,
+	`style-src ${inlineSourceHash("style", MANAGEMENT_HTML)}`,
+	"connect-src 'self'",
+	"img-src data:",
+	"base-uri 'none'",
+	"form-action 'none'",
+	"frame-ancestors 'none'",
+].join("; ");
 
 function json(response, status, body) {
 	const payload = JSON.stringify(body);
@@ -16,6 +53,21 @@ function json(response, status, body) {
 		"cache-control": "no-store",
 	});
 	response.end(payload);
+}
+
+function managementHtml(response, method) {
+	response.writeHead(200, {
+		"content-type": "text/html; charset=utf-8",
+		"content-length": Buffer.byteLength(MANAGEMENT_HTML),
+		"cache-control": "no-store",
+		"content-security-policy": MANAGEMENT_CSP,
+		"cross-origin-opener-policy": "same-origin",
+		"permissions-policy": "camera=(), geolocation=(), microphone=()",
+		"referrer-policy": "no-referrer",
+		"x-content-type-options": "nosniff",
+		"x-frame-options": "DENY",
+	});
+	response.end(method === "HEAD" ? undefined : MANAGEMENT_HTML);
 }
 
 function digest(value) {
@@ -84,7 +136,7 @@ function healthBody() {
 	return {
 		status: "ok",
 		service: "pi-router",
-		version: "0.1.0",
+		version: VERSION,
 	};
 }
 
@@ -105,13 +157,47 @@ async function writeSse(response, event) {
 
 async function routeRequest(request, response, options) {
 	const url = new URL(request.url ?? "/", "http://pi-router.local");
+	if (
+		["GET", "HEAD"].includes(request.method ?? "")
+		&& ["/", "/management.html"].includes(url.pathname)
+	) {
+		managementHtml(response, request.method);
+		return;
+	}
 	if (request.method === "GET" && url.pathname === "/health") {
 		json(response, 200, healthBody());
 		return;
 	}
 
-	if (url.pathname.startsWith("/v1/")) {
+	if (
+		url.pathname.startsWith("/v1/")
+		|| url.pathname.startsWith("/management/api/")
+	) {
 		requireAuth(request, options.apiKey);
+	}
+
+	if (request.method === "GET" && url.pathname === "/management/api/status") {
+		json(response, 200, await options.management.status());
+		return;
+	}
+
+	if (request.method === "POST" && url.pathname === "/management/api/updates/check") {
+		json(response, 200, await options.management.checkUpdate());
+		return;
+	}
+
+	if (request.method === "POST" && url.pathname === "/management/api/updates/install") {
+		const body = await readJson(request, options.maxBodyBytes);
+		if (!body || typeof body !== "object" || Array.isArray(body)) {
+			throw invalidRequest("Request body must be a JSON object.");
+		}
+		json(response, 200, await options.management.installUpdate(body.version));
+		return;
+	}
+
+	if (request.method === "POST" && url.pathname === "/management/api/updates/rollback") {
+		json(response, 200, await options.management.rollbackUpdate());
+		return;
 	}
 
 	if (request.method === "GET" && url.pathname === "/v1/models") {
@@ -172,6 +258,9 @@ async function routeRequest(request, response, options) {
 export function createPiRouterServer({
 	runtime,
 	apiKey,
+	account = "default",
+	updater = new GithubUpdateManager(),
+	management,
 	maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
 	now = Date.now,
 } = {}) {
@@ -186,7 +275,14 @@ export function createPiRouterServer({
 		});
 	}
 
-	const options = { runtime, apiKey, maxBodyBytes, now };
+	const managementService = management ?? createManagementService({
+		runtime,
+		account,
+		updater,
+		startedAt: now(),
+		now,
+	});
+	const options = { runtime, apiKey, management: managementService, maxBodyBytes, now };
 	return createServer((request, response) => {
 		void routeRequest(request, response, options).catch((error) => {
 			if (response.headersSent || response.destroyed) {

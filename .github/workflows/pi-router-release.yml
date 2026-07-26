@@ -1,0 +1,63 @@
+name: Pi Router Release
+
+on:
+  push:
+    tags:
+      - "pi-router-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26.4.0"
+          cache: npm
+          cache-dependency-path: pi-router/package-lock.json
+      - name: Validate tag and committed artifact identity
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+
+          const packageJson = JSON.parse(await readFile("pi-router/package.json", "utf8"));
+          const provenance = JSON.parse(
+            await readFile("docs/provenance/pi-router-termux-build.json", "utf8"),
+          );
+          const expectedTag = `pi-router-v${packageJson.version}`;
+          if (process.env.GITHUB_REF_NAME !== expectedTag) {
+            throw new Error(`Expected tag ${expectedTag}; received ${process.env.GITHUB_REF_NAME}`);
+          }
+          if (provenance.source?.router_version !== packageJson.version) {
+            throw new Error("Package and committed binary provenance versions differ.");
+          }
+          NODE
+          (
+            cd pi-router/bin
+            sha256sum --check pi-router-android-aarch64.sha256
+          )
+      - name: Run repository verification
+        env:
+          CODEX_GAUNTLET_BASE: ${{ github.event.before }}
+          CODEX_GAUNTLET_CROSS_PLATFORM: "1"
+        run: bash ./qa/verify --mode ci
+      - name: Publish stable assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#pi-router-v}"
+          gh release create "$GITHUB_REF_NAME" \
+            pi-router/bin/pi-router-android-aarch64 \
+            pi-router/bin/pi-router-android-aarch64.sha256 \
+            --verify-tag \
+            --generate-notes \
+            --latest \
+            --title "Pi Router v${version}"

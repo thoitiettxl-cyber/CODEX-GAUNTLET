@@ -16,9 +16,19 @@ test("CLI parses serve and login options", () => {
 		stateDir: undefined,
 		authType: "api_key",
 		provider: undefined,
+		updateAction: undefined,
+		updateVersion: undefined,
 	});
 	assert.equal(parseArgs(["login", "openai-codex", "--type", "oauth"]).provider, "openai-codex");
+	assert.deepEqual(
+		{
+			action: parseArgs(["update", "install", "0.3.0"]).updateAction,
+			version: parseArgs(["update", "install", "0.3.0"]).updateVersion,
+		},
+		{ action: "install", version: "0.3.0" },
+	);
 	assert.throws(() => parseArgs(["login"]), /requires a provider/);
+	assert.throws(() => parseArgs(["update", "install"]), /requires a version/);
 });
 
 test("serve refuses to initialize the runtime without a local API key", async () => {
@@ -112,6 +122,7 @@ test("serve wires the selected address and local key into the HTTP server", asyn
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const runtime = {};
 	const server = {};
+	const updater = { automatic: false, binaryPath: null };
 	let serverOptions;
 	let listenOptions;
 	let output = "";
@@ -127,6 +138,7 @@ test("serve wires the selected address and local key into the HTTP server", asyn
 		env: { PI_ROUTER_API_KEY: "local-only-key" },
 		output: { write(chunk) { output += chunk; } },
 		createRuntime: async () => runtime,
+		createUpdater: () => updater,
 		createServer(options) {
 			serverOptions = options;
 			return server;
@@ -137,10 +149,58 @@ test("serve wires the selected address and local key into the HTTP server", asyn
 			return { address: "::1", family: "IPv6", port: 9000 };
 		},
 	});
-	assert.deepEqual(serverOptions, { runtime, apiKey: "local-only-key" });
+	assert.deepEqual(serverOptions, {
+		runtime,
+		apiKey: "local-only-key",
+		account: "default",
+		updater,
+	});
 	assert.deepEqual(listenOptions, { host: "::1", port: 9000 });
 	assert.match(output, /http:\/\/\[::1\]:9000/);
+	assert.match(output, /http:\/\/\[::1\]:9000\/management\.html/);
+	assert.doesNotMatch(output, /local-only-key/);
 	assert.equal(result.server, server);
+});
+
+test("update and version commands do not initialize provider state", async () => {
+	let created = false;
+	const calls = [];
+	let output = "";
+	const updater = {
+		async check() {
+			calls.push(["check"]);
+			return { status: "current", latest_version: "0.2.0" };
+		},
+		async install(version) {
+			calls.push(["install", version]);
+			return { status: "installed", version };
+		},
+		async rollback() {
+			calls.push(["rollback"]);
+			return { status: "rolled_back" };
+		},
+	};
+	const options = {
+		env: {},
+		output: { write(chunk) { output += chunk; } },
+		createRuntime: async () => {
+			created = true;
+		},
+		createUpdater: () => updater,
+	};
+	await runCli(["update", "check"], options);
+	await runCli(["update", "install", "0.3.0"], options);
+	await runCli(["update", "rollback"], options);
+	const version = await runCli(["--version"], options);
+	assert.equal(created, false);
+	assert.deepEqual(calls, [
+		["check"],
+		["install", "0.3.0"],
+		["rollback"],
+	]);
+	assert.match(output, /"latest_version": "0.2.0"/);
+	assert.match(output, /pi-router 0\.2\.0/);
+	assert.deepEqual(version, { command: "version", version: "0.2.0" });
 });
 
 test("help does not initialize state or runtime", async () => {

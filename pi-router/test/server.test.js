@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import http from "node:http";
 import test from "node:test";
 
 import { createPiRouterServer, listenPiRouter, validateListenHost } from "../src/server.js";
 import { addressUrl, closeServer, fakeRuntime, textStream } from "./helpers.js";
 
-async function started(runtime = fakeRuntime()) {
-	const server = createPiRouterServer({ runtime, apiKey: "local-test-key", now: () => 1000 });
+async function started(runtime = fakeRuntime(), options = {}) {
+	const server = createPiRouterServer({
+		runtime,
+		apiKey: "local-test-key",
+		now: () => 1000,
+		...options,
+	});
 	const address = await listenPiRouter(server, { host: "127.0.0.1", port: 0 });
 	return { server, baseUrl: addressUrl(address) };
 }
@@ -24,7 +30,7 @@ test("health is bounded and v1 endpoints require bearer authentication", async (
 	t.after(() => closeServer(server));
 	const health = await fetch(`${baseUrl}/health`);
 	assert.equal(health.status, 200);
-	assert.deepEqual(await health.json(), { status: "ok", service: "pi-router", version: "0.1.0" });
+	assert.deepEqual(await health.json(), { status: "ok", service: "pi-router", version: "0.2.0" });
 	const unauthenticated = await fetch(`${baseUrl}/v1/models`);
 	assert.equal(unauthenticated.status, 401);
 	assert.equal((await unauthenticated.json()).error.code, "invalid_api_key");
@@ -38,6 +44,141 @@ test("health is bounded and v1 endpoints require bearer authentication", async (
 		created: 0,
 		owned_by: "fake",
 	});
+});
+
+test("Management API is authenticated, bounded, and delegates exact update actions", async (t) => {
+	const calls = [];
+	const updater = {
+		async status() {
+			calls.push(["status"]);
+			return {
+				repository: "owner/repository",
+				channel: "stable",
+				automatic: false,
+				install_supported: true,
+				rollback_available: true,
+				restart_required: false,
+				pending_version: null,
+			};
+		},
+		async check() {
+			calls.push(["check"]);
+			return { status: "available", latest_version: "0.3.0" };
+		},
+		async install(version) {
+			calls.push(["install", version]);
+			return { status: "installed", version, restart_required: true };
+		},
+		async rollback() {
+			calls.push(["rollback"]);
+			return { status: "rolled_back", restart_required: true };
+		},
+	};
+	const { server, baseUrl } = await started(fakeRuntime(), {
+		account: "work",
+		updater,
+	});
+	t.after(() => closeServer(server));
+
+	const unauthenticated = await fetch(`${baseUrl}/management/api/status`);
+	assert.equal(unauthenticated.status, 401);
+	assert.equal(calls.length, 0);
+
+	const headers = { authorization: "Bearer local-test-key" };
+	const status = await fetch(`${baseUrl}/management/api/status`, { headers });
+	assert.equal(status.status, 200);
+	const statusBody = await status.json();
+	assert.equal(statusBody.object, "pi_router.management_status");
+	assert.deepEqual(statusBody.service, {
+		name: "pi-router",
+		version: "0.2.0",
+		status: "ok",
+		uptime_seconds: 0,
+	});
+	assert.deepEqual(statusBody.account, { id: "work", available_models: 1 });
+	assert.equal(statusBody.runtime.mode, "source");
+	assert.equal(statusBody.update.repository, "owner/repository");
+	assert.doesNotMatch(JSON.stringify(statusBody), /auth\.json|models\.json|local-test-key/);
+
+	const checked = await fetch(`${baseUrl}/management/api/updates/check`, {
+		method: "POST",
+		headers,
+	});
+	assert.deepEqual(await checked.json(), { status: "available", latest_version: "0.3.0" });
+
+	const installed = await fetch(`${baseUrl}/management/api/updates/install`, {
+		method: "POST",
+		headers: { ...headers, "content-type": "application/json" },
+		body: JSON.stringify({ version: "0.3.0" }),
+	});
+	assert.deepEqual(await installed.json(), {
+		status: "installed",
+		version: "0.3.0",
+		restart_required: true,
+	});
+
+	const rolledBack = await fetch(`${baseUrl}/management/api/updates/rollback`, {
+		method: "POST",
+		headers,
+	});
+	assert.deepEqual(await rolledBack.json(), {
+		status: "rolled_back",
+		restart_required: true,
+	});
+	assert.deepEqual(calls, [
+		["status"],
+		["check"],
+		["install", "0.3.0"],
+		["rollback"],
+	]);
+});
+
+test("management UI is self-contained, unauthenticated, and browser-hardened", async (t) => {
+	let modelReads = 0;
+	const runtime = fakeRuntime();
+	const originalListModels = runtime.listModels;
+	runtime.listModels = async () => {
+		modelReads += 1;
+		return originalListModels();
+	};
+	const { server, baseUrl } = await started(runtime);
+	t.after(() => closeServer(server));
+
+	for (const path of ["/", "/management.html"]) {
+		const response = await fetch(`${baseUrl}${path}`);
+		assert.equal(response.status, 200);
+		assert.match(response.headers.get("content-type"), /^text\/html; charset=utf-8$/);
+		assert.equal(response.headers.get("cache-control"), "no-store");
+		assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+		assert.equal(response.headers.get("x-frame-options"), "DENY");
+		const csp = response.headers.get("content-security-policy");
+		assert.match(csp, /default-src 'none'/);
+		assert.match(csp, /script-src 'sha256-/);
+		assert.match(csp, /style-src 'sha256-/);
+		assert.doesNotMatch(csp, /unsafe-inline/);
+		const body = await response.text();
+		assert.match(body, /<title>Pi Router · Management Center<\/title>/);
+		assert.match(body, /data-pi-router-ui/);
+		assert.match(body, /management-center/);
+		assert.match(body, /\/management\/api\/status/);
+		assert.doesNotMatch(body, /<script[^>]+src=/);
+		assert.doesNotMatch(body, /<link[^>]+href=/);
+		assert.doesNotMatch(body, /localStorage|sessionStorage|indexedDB|document\.cookie/);
+		assert.doesNotMatch(body, /local-test-key/);
+		for (const tag of ["script", "style"]) {
+			const opening = `<${tag}>`;
+			const source = body.slice(
+				body.indexOf(opening) + opening.length,
+				body.indexOf(`</${tag}>`),
+			);
+			const hash = createHash("sha256").update(source).digest("base64");
+			assert.ok(csp.includes(`${tag}-src 'sha256-${hash}'`));
+		}
+	}
+	const head = await fetch(`${baseUrl}/management.html`, { method: "HEAD" });
+	assert.equal(head.status, 200);
+	assert.equal(await head.text(), "");
+	assert.equal(modelReads, 0);
 });
 
 test("non-streaming responses return a Responses JSON object", async (t) => {

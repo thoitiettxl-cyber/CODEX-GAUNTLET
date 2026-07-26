@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "source": {
+    "router_version": "0.2.0",
+    "input_sha256": "f528b5c6d87ef9d75ccf608b403a0856f6c7a975db9098118cfa2aeeeddbedcb"
+  },
+  "base": {
+    "kind": "termux-package",
+    "package": "nodejs",
+    "version": "26.4.0",
+    "architecture": "aarch64",
+    "url": "https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_26.4.0_aarch64.deb",
+    "deb_sha256": "f2b8530d6d7ae72ee560d2791686f1849df9644396d56da915b31cd42c50a62d"
+  },
+  "build": {
+    "format": "node-sea",
+    "host": "android-aarch64",
+    "node": "26.4.0",
+    "sea_preparation": "pinned-termux-node-elf",
+    "postject": "1.0.0-alpha.6",
+    "bionic_main_image_patch": "dl-iterate-phdr-v1",
+    "code_cache": false,
+    "snapshot": false
+  },
+  "artifact": {
+    "path": "pi-router/bin/pi-router-android-aarch64",
+    "sha256": "51b3c92c3571bb71c6cfdf4403efa656d15a3874d7bf9ae22f094e05cf496db2",
+    "size": 57668352,
+    "mode": "0755",
+    "format": "ELF64",
+    "machine": "AArch64",
+    "interpreter": "/system/bin/linker64",
+    "android_api": 24
+  }
+}

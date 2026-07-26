@@ -82,15 +82,16 @@ self-update does not support `android/aarch64`.
 
 `pi-router/` is an optional repository-local service at the product boundary.
 It embeds Pi's provider/model/auth runtime but does not embed the Pi agent
-loop, session manager, tools, or extensions. Its only inbound application
-surface is a loopback OpenAI Responses HTTP API protected by a router-local
-bearer token.
+loop, session manager, tools, or extensions. Its inbound application surfaces
+are a static loopback operator page and an OpenAI Responses HTTP API. The page
+contains no state or credential data; every `/v1/*` request is protected by a
+router-local bearer token.
 
 Router credential and model state is separate from both repository state and
 Pi CLI state. The dependency direction is:
 
 ```text
-Codex or another Responses client
+Codex, the browser operator bench, or another Responses client
   → pi-router HTTP adapter
   → Pi ModelRuntime
   → configured upstream provider
@@ -99,3 +100,12 @@ Codex or another Responses client
 `pi-router` cannot mutate Harness lifecycle, invoke Gauntlet policy, or define
 verification success. The provider gateway contract is
 [`docs/product/pi-router.md`](product/pi-router.md).
+
+The packaged Termux artifact embeds the same HTTP adapter, Pi runtime bundle,
+and committed Management Center HTML in a Node SEA based on a pinned native
+Android AArch64 Node package. Its authenticated management adapter may inspect
+bounded runtime state and atomically replace only its own packaged executable.
+It cannot select arbitrary repositories or write arbitrary paths. Release
+selection and replacement follow
+[ADR 0006](decisions/0006-package-pi-router-as-a-verified-termux-sea.md);
+source mode is check-only and never replaces the Node interpreter.
