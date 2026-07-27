@@ -6,7 +6,7 @@ import CodeMirror, {
 } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LineCounter, parseDocument, stringify } from "yaml";
+import { LineCounter, parseDocument } from "yaml";
 
 import {
 	Badge,
@@ -23,45 +23,38 @@ import {
 import { cspNonce } from "../../lib/csp";
 import {
 	errorMessage,
-	type ConfigPreview,
-	type ConfigState,
 	type ManagementClient,
+	type ManagementStatus,
+	type RawConfigState,
 } from "../../lib/api";
 import { usePreferenceStore } from "../../stores/preferences";
 import styles from "./ConfigPage.module.scss";
 
-type ConfirmAction = "apply" | "restore" | null;
-
-function asDocument(
-	value: unknown,
-	invalidMessage: string,
-): Record<string, unknown> {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
-		throw new Error(invalidMessage);
+function parsedYaml(source: string, invalidMapping: string, yamlError: (
+	line: number,
+	column: number,
+	message: string,
+) => string): Record<string, unknown> {
+	const lineCounter = new LineCounter();
+	const document = parseDocument(source, { lineCounter, prettyErrors: false });
+	const issue = document.errors[0];
+	if (issue) {
+		const position = issue.pos[0] === undefined
+			? { line: 1, col: 1 }
+			: lineCounter.linePos(issue.pos[0]);
+		throw new Error(yamlError(position.line, position.col, issue.message));
+	}
+	const value: unknown = document.toJS({ maxAliasCount: 100 });
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(invalidMapping);
 	}
 	return value as Record<string, unknown>;
 }
 
-function yamlSource(document: Record<string, unknown>): string {
-	return stringify(document, {
-		indent: 2,
-		lineWidth: 100,
-		minContentWidth: 0,
-	});
-}
-
-function SourceDiff({
-	original,
-	modified,
-}: {
-	original: string;
-	modified: string;
-}) {
+function SourceDiff({ original, modified }: { original: string; modified: string }) {
 	const host = useRef<HTMLDivElement>(null);
 	const theme = usePreferenceStore((state) => state.theme);
-	const editorTheme = document.documentElement.dataset.theme === "dark"
-		? "dark"
-		: "light";
+	const editorTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 	const nonce = cspNonce();
 
 	useEffect(() => {
@@ -96,47 +89,51 @@ function SourceDiff({
 
 export function ConfigPage({
 	client,
+	status,
 	onMutation,
 	onDirtyChange,
 	notify,
 }: {
 	client: ManagementClient;
+	status: ManagementStatus;
 	onMutation: () => Promise<void>;
 	onDirtyChange: (dirty: boolean) => void;
 	notify: (message: string, tone?: "positive" | "negative") => void;
 }) {
 	const { t } = useTranslation();
-	const theme = usePreferenceStore((state) => state.theme);
 	const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
-	const [config, setConfig] = useState<ConfigState | null>(null);
+	const [config, setConfig] = useState<RawConfigState | null>(null);
 	const [draft, setDraft] = useState("");
 	const [previewSource, setPreviewSource] = useState("");
-	const [preview, setPreview] = useState<ConfigPreview | null>(null);
 	const [error, setError] = useState("");
 	const [busy, setBusy] = useState(false);
-	const [confirm, setConfirm] = useState<ConfirmAction>(null);
-	const original = useMemo(
-		() => config?.document ? yamlSource(config.document) : "",
-		[config],
-	);
-	const dirty = Boolean(config?.editable && draft !== original);
-	const editorTheme = document.documentElement.dataset.theme === "dark"
-		? "dark"
-		: "light";
+	const [confirm, setConfirm] = useState(false);
+	const original = config?.source ?? "";
+	const dirty = Boolean(config && draft !== original);
+	const editorTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 	const extensions = useMemo(
 		() => [yaml(), EditorView.lineWrapping, EditorView.cspNonce.of(cspNonce())],
 		[],
 	);
 
+	const parse = (source: string) => parsedYaml(
+		source,
+		t("config.yamlMappingError"),
+		(line, column, message) => t("config.yamlError", { line, column, message }),
+	);
+
 	const load = async () => {
+		if (!status.capabilities.raw_config) {
+			setPhase("ready");
+			return;
+		}
 		setPhase("loading");
 		setError("");
 		try {
-			const next = await client.getConfig();
+			const next = await client.rawConfig();
 			setConfig(next);
-			setDraft(next.document ? yamlSource(next.document) : "");
+			setDraft(next.source);
 			setPreviewSource("");
-			setPreview(null);
 			setPhase("ready");
 		} catch (caught) {
 			setError(errorMessage(caught));
@@ -146,7 +143,7 @@ export function ConfigPage({
 
 	useEffect(() => {
 		void load();
-	}, [client]);
+	}, [client, status.capabilities.raw_config]);
 
 	useEffect(() => {
 		onDirtyChange(dirty);
@@ -166,80 +163,49 @@ export function ConfigPage({
 	const changeDraft = (value: string) => {
 		setDraft(value);
 		setPreviewSource("");
-		setPreview(null);
 		setError("");
 	};
 
-	const parse = (): Record<string, unknown> => {
-		const lineCounter = new LineCounter();
-		const document = parseDocument(draft, {
-			lineCounter,
-			prettyErrors: false,
-		});
-		const issue = document.errors[0];
-		if (issue) {
-			const position = issue.pos[0] === undefined
-				? { line: 1, col: 1 }
-				: lineCounter.linePos(issue.pos[0]);
-			throw new Error(t("config.yamlError", {
-				line: position.line,
-				column: position.col,
-				message: issue.message,
-			}));
-		}
-		return asDocument(document.toJS(), t("config.yamlMappingError"));
-	};
-
-	const runPreview = async () => {
-		setBusy(true);
+	const preview = () => {
 		setError("");
 		try {
-			const parsed = parse();
-			const result = await client.previewConfig(parsed);
-			setPreview(result);
+			parse(draft);
 			setPreviewSource(draft);
 		} catch (caught) {
-			setPreview(null);
 			setPreviewSource("");
 			setError(errorMessage(caught));
-		} finally {
-			setBusy(false);
 		}
+	};
+
+	const lockoutRisk = () => {
+		const before = parse(original);
+		const after = parse(draft);
+		const beforeEnvironment = before.environment as Record<string, unknown> | undefined;
+		const afterEnvironment = after.environment as Record<string, unknown> | undefined;
+		return JSON.stringify({
+			host: before.host,
+			port: before.port,
+			remote: before["remote-management"],
+			managementEnvironment: beforeEnvironment?.PI_ROUTER_MANAGEMENT_KEY,
+		}) !== JSON.stringify({
+			host: after.host,
+			port: after.port,
+			remote: after["remote-management"],
+			managementEnvironment: afterEnvironment?.PI_ROUTER_MANAGEMENT_KEY,
+		});
 	};
 
 	const apply = async () => {
-		if (!preview?.valid || !preview.revision) {
-			return;
-		}
 		setBusy(true);
 		setError("");
 		try {
-			const result = await client.applyConfig(parse(), preview.revision);
+			const result = await client.putRawConfig(draft);
 			notify(result.restart_required ? t("config.appliedRestart") : t("config.applied"));
-			setConfirm(null);
+			setConfirm(false);
 			await Promise.all([load(), onMutation()]);
 		} catch (caught) {
 			setError(errorMessage(caught));
-			setConfirm(null);
-		} finally {
-			setBusy(false);
-		}
-	};
-
-	const restore = async () => {
-		if (!config?.revision) {
-			return;
-		}
-		setBusy(true);
-		setError("");
-		try {
-			const result = await client.restoreConfig(config.revision);
-			notify(result.restart_required ? t("config.restoredRestart") : t("config.restored"));
-			setConfirm(null);
-			await Promise.all([load(), onMutation()]);
-		} catch (caught) {
-			setError(errorMessage(caught));
-			setConfirm(null);
+			setConfirm(false);
 		} finally {
 			setBusy(false);
 		}
@@ -253,16 +219,14 @@ export function ConfigPage({
 				eyebrow={t("config.eyebrow")}
 				title={t("config.title")}
 			/>
-			<InlineNotice>
-				<strong>{t("config.safeTitle")}</strong>{" "}
-				{t("config.safeBody")}
+			<InlineNotice tone="warning">
+				<strong>{t("config.rawTitle")}</strong>{" "}
+				{t("config.rawBody")}
 			</InlineNotice>
 
 			{phase === "loading" ? <Card><LoadingState label={t("common.loading")} /></Card> : null}
-			{phase === "error" ? (
-				<Card><ErrorState message={error} onRetry={() => void load()} /></Card>
-			) : null}
-			{phase === "ready" && config && !config.supported ? (
+			{phase === "error" ? <Card><ErrorState message={error} onRetry={() => void load()} /></Card> : null}
+			{phase === "ready" && !status.capabilities.raw_config ? (
 				<Card>
 					<EmptyState
 						description={t("config.unsupportedBody")}
@@ -271,22 +235,7 @@ export function ConfigPage({
 					/>
 				</Card>
 			) : null}
-			{phase === "ready" && config?.supported && !config.editable ? (
-				<Card>
-					<ErrorState message={t("config.notEditable")} onRetry={() => void load()} />
-					{config.errors.length ? (
-						<ul className={styles.validation}>
-							{config.errors.map((item, index) => (
-								<li key={`${item.path}-${index}`}>
-									<code>{item.path}</code>
-									<span>{item.message}</span>
-								</li>
-							))}
-						</ul>
-					) : null}
-				</Card>
-			) : null}
-			{phase === "ready" && config?.editable ? (
+			{phase === "ready" && config ? (
 				<div className={styles.layout}>
 					<Card className={styles.editorCard}>
 						<SectionHeader
@@ -326,31 +275,19 @@ export function ConfigPage({
 							/>
 						</div>
 						<div className={styles.footer}>
-							<span>{t("config.revision")} <code>{config.revision?.slice(0, 12)}…</code></span>
+							<span>{t("config.revision")} <code>{config.revision.slice(0, 12)}…</code></span>
 							<span>{t("config.bytes", { count: new Blob([draft]).size })}</span>
 						</div>
 						{error ? <InlineNotice tone="negative">{error}</InlineNotice> : null}
 						<div className={styles.actions}>
-							{config.recovery_available ? (
-								<Button
-									disabled={busy}
-									onClick={() => setConfirm("restore")}
-									variant="danger"
-								>
-									{t("config.restore")}
-								</Button>
-							) : <span className="muted">{t("config.noRecovery")}</span>}
+							<span className="muted">{t("config.rawRecovery")}</span>
 							<div className="button-row">
-								<Button
-									disabled={!dirty || busy}
-									icon="shield"
-									onClick={() => void runPreview()}
-								>
-									{busy ? t("config.validating") : t("config.preview")}
+								<Button disabled={!dirty || busy} icon="shield" onClick={preview}>
+									{t("config.preview")}
 								</Button>
 								<Button
-									disabled={!preview?.valid || !preview.changed || busy}
-									onClick={() => setConfirm("apply")}
+									disabled={!previewSource || previewSource !== draft || busy}
+									onClick={() => setConfirm(true)}
 									variant="primary"
 								>
 									{t("config.apply")}
@@ -360,73 +297,36 @@ export function ConfigPage({
 					</Card>
 
 					<Card className={styles.diffCard}>
-						<SectionHeader
-							description={t("config.diffDescription")}
-							title={t("config.diff")}
-						/>
-						{!preview ? (
+						<SectionHeader description={t("config.diffDescription")} title={t("config.diff")} />
+						{!previewSource ? (
 							<EmptyState
 								description={t("config.noPreviewBody")}
 								icon="shield"
 								title={t("config.noPreview")}
 							/>
-						) : null}
-						{preview && !preview.valid ? (
+						) : (
 							<>
-								<InlineNotice tone="negative">{t("config.invalid")}</InlineNotice>
-								<ul className={styles.validation}>
-									{preview.errors.map((item, index) => (
-										<li key={`${item.path}-${index}`}>
-											<code>{item.path}</code>
-											<span>{item.message}</span>
-										</li>
-									))}
-								</ul>
-							</>
-						) : null}
-						{preview?.valid && !preview.changed ? (
-							<EmptyState
-								description={t("config.noChangesBody")}
-								icon="check"
-								title={t("config.noChanges")}
-							/>
-						) : null}
-						{preview?.valid && preview.changed && previewSource ? (
-							<>
-								<InlineNotice tone="positive">
-									{t("config.valid", { revision: preview.revision?.slice(0, 12) })}
-								</InlineNotice>
+								<InlineNotice tone="positive">{t("config.validRaw")}</InlineNotice>
 								<div className={styles.diffLabels}>
 									<span>{t("config.before")}</span>
 									<span>{t("config.after")}</span>
 								</div>
 								<SourceDiff modified={previewSource} original={original} />
-								<ol className={styles.fieldDiff}>
-									{preview.changes.map((change, index) => (
-										<li key={`${change.path}-${index}`}>
-											<code>{change.path}</code>
-											<div>
-												<span className={styles.before}>{change.before ?? t("config.emptyValue")}</span>
-												<span className={styles.after}>{change.after ?? t("config.emptyValue")}</span>
-											</div>
-										</li>
-									))}
-								</ol>
 							</>
-						) : null}
+						)}
 					</Card>
 				</div>
 			) : null}
 
 			<ConfirmDialog
 				busy={busy}
-				confirmLabel={confirm === "apply" ? t("config.applyConfirm") : t("config.restoreConfirm")}
-				danger={confirm === "restore"}
-				description={confirm === "apply" ? t("config.applyBody") : t("config.restoreBody")}
-				onCancel={() => setConfirm(null)}
-				onConfirm={() => void (confirm === "apply" ? apply() : restore())}
-				open={confirm !== null}
-				title={confirm === "apply" ? t("config.applyTitle") : t("config.restoreTitle")}
+				confirmLabel={t("config.applyConfirm")}
+				danger={confirm && lockoutRisk()}
+				description={confirm && lockoutRisk() ? t("config.lockoutBody") : t("config.applyBody")}
+				onCancel={() => setConfirm(false)}
+				onConfirm={() => void apply()}
+				open={confirm}
+				title={confirm && lockoutRisk() ? t("config.lockoutTitle") : t("config.applyTitle")}
 			/>
 		</>
 	);

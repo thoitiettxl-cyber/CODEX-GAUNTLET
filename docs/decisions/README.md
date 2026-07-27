@@ -20,3 +20,4 @@ documents here as real choices are accepted, then index them in this file.
 - [0007 — Bound the Pi Router operations console](0007-bound-pi-router-operations-console.md)
 - [0008 — Separate Pi Router keys and isolate provider accounts](0008-separate-pi-router-keys-and-isolate-provider-accounts.md)
 - [0009 — Use a modern single-file Pi Router console](0009-use-a-modern-single-file-pi-router-console.md)
+- [0010 — Enable Pi Router raw management and protocol adapters](0010-enable-pi-router-raw-management-and-protocol-adapters.md)

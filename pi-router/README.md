@@ -1,8 +1,9 @@
 # pi-router
 
-`pi-router` exposes Pi's provider runtime as a loopback OpenAI Responses API.
-This lets current Codex clients use Pi-supported API-key and OAuth providers
-through `wire_api = "responses"` without running a Pi agent session.
+`pi-router` exposes Pi's provider runtime through OpenAI Responses, OpenAI
+Chat Completions, and Anthropic Messages APIs. This lets Codex and other
+compatible clients use Pi-supported API-key and OAuth providers without
+running a Pi agent session.
 
 Each named account keeps one credential per provider in an isolated Pi store.
 The Management Center can create and label multiple accounts for the same
@@ -100,8 +101,9 @@ stored in `proxy-api-keys.json` when that store does not exist; after that,
 the environment value is not an implicit extra key. Create, label, replace,
 and remove proxy keys from Dashboard. The last proxy key cannot be removed.
 
-The default address is `http://127.0.0.1:8318`. Only `127.0.0.1` and `::1`
-are accepted.
+The default address is `http://127.0.0.1:8318`. `localhost` and `::1` are also
+accepted. A non-loopback host requires
+`remote-management.allow-remote: true` in raw `config.yaml`.
 
 Open the self-contained Management Center:
 
@@ -118,7 +120,9 @@ connection state, server version, available-model count, and separately
 manages proxy API keys. It also owns explicit stable-release check, verified
 install, and rollback actions without adding another top-level page.
 
-Credential lists are metadata-only. API-key and OAuth login use bounded,
+Credential lists are metadata-only by default, while Auth Files provides
+explicit raw import/export to management-key holders with a disclosure
+warning. Imports always create a new isolated account. API-key and OAuth login use bounded,
 expiring browser sessions; prompt responses are submitted once and never
 echoed. Codex, Claude, Kimi, and xAI/Grok use Pi-owned OAuth/device flows.
 Antigravity is available when `PI_ROUTER_ANTIGRAVITY_CLIENT_ID` and
@@ -130,11 +134,12 @@ Quota reads use fixed, bounded adapters for Codex, Claude, Antigravity, Kimi,
 and xAI/Grok and return one result per OAuth credential. Logs are sanitized,
 capped at 250 process-memory records, incrementally polled, and never contain
 prompts, bodies, headers, credentials, environment values, or paths. Config
-Panel projects the reviewed non-secret Pi provider model and router policy as
-CodeMirror YAML with client parse diagnostics and a confirmed source diff.
-AI Providers can add arbitrary OpenAI Responses or Chat Completions compatible
-provider IDs with base URL, safe headers, proxy, model alias, and exclusion
-patterns; credentials are entered separately.
+Panel edits exact raw `config.yaml` source with CodeMirror diagnostics,
+confirmed source diff, backend semantic validation, atomic replacement, and
+self-lockout warnings. AI Providers supports OpenAI Responses, Chat
+Completions, and Anthropic Messages provider IDs with base URL, API key,
+headers, proxy, prefix, model alias, exclusions, and a browser-direct protocol
+test.
 
 The UI has no external browser assets. By default the management bearer stays
 in current page memory. An explicit Remember choice may store it only in a
@@ -143,8 +148,9 @@ encryption, and System can clear it. Restoration only prefills the login form;
 the operator must submit before any authenticated request. Theme and language
 preferences may also be retained. Login input, filters, config drafts, proxy
 keys entered for the System model read, and API results are never persisted.
-The HTML itself is unauthenticated, while every `/v1/*` and
-`/management/api/*` request retains the normal bearer requirement.
+The HTML itself is unauthenticated, while every `/v1/*`,
+`/management/api/*`, and `/v0/management/*` request retains its bearer
+requirement.
 
 Useful checks:
 
@@ -156,6 +162,8 @@ curl -H "Authorization: Bearer $PI_ROUTER_MANAGEMENT_KEY" \
   http://127.0.0.1:8318/management/api/status
 curl -H "Authorization: Bearer $PI_ROUTER_MANAGEMENT_KEY" \
   http://127.0.0.1:8318/management/api/providers
+curl -H "Authorization: Bearer $PI_ROUTER_MANAGEMENT_KEY" \
+  http://127.0.0.1:8318/v0/management/config.yaml
 ```
 
 Source mode may check releases but refuses install and rollback so it can

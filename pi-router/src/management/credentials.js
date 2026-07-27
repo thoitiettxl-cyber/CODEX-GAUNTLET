@@ -89,5 +89,21 @@ export function createCredentialService({ runtime, coordinator } = {}) {
 				provider_id: selected.provider_id,
 			};
 		},
+		...(typeof runtime.exportAuthFile === "function"
+			? {
+				exportFile: (value) => coordinator.run(
+					`credential-file:export:${value}`,
+					() => runtime.exportAuthFile(value),
+				),
+			}
+			: {}),
+		...(typeof runtime.importAuthFile === "function"
+			? {
+				importFile: (source) => coordinator.run(
+					"credential-file:import",
+					() => runtime.importAuthFile(source),
+				),
+			}
+			: {}),
 	};
 }

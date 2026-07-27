@@ -1,4 +1,4 @@
-// Safe browser-editable subset of the pinned Pi models.json contract.
+// Validated Pi provider configuration compiled from the router-owned config.yaml.
 import { isRecord } from "./validation.js";
 
 export const MAX_CONFIG_BYTES = 128 * 1024;
@@ -6,6 +6,7 @@ export const MAX_CONFIG_BYTES = 128 * 1024;
 const PROVIDER_FIELDS = new Set([
 	"name",
 	"baseUrl",
+	"apiKey",
 	"api",
 	"oauth",
 	"headers",
@@ -14,6 +15,7 @@ const PROVIDER_FIELDS = new Set([
 	"models",
 	"modelOverrides",
 	"proxyUrl",
+	"prefix",
 	"modelAliases",
 	"excludedModels",
 ]);
@@ -88,9 +90,12 @@ const COMPAT_ENUM_FIELDS = new Map([
 	["sessionAffinityFormat", new Set(["openai", "openai-nosession", "openrouter"])],
 ]);
 const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,80}$/u;
-const SENSITIVE_HEADER_PATTERN =
-	/(?:^|[-_])(authorization|cookie|credential|key|secret|token)(?:$|[-_])/iu;
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+const PROVIDER_PROTOCOLS = new Set([
+	"openai-completions",
+	"openai-responses",
+	"anthropic-messages",
+]);
 const PROVIDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 
 function collector() {
@@ -168,10 +173,8 @@ function headers(value, path, state) {
 	for (const [name, headerValue] of entries) {
 		if (!HEADER_NAME_PATTERN.test(name)) {
 			state.add(`${path}.${name}`, "Header name is invalid.");
-		} else if (SENSITIVE_HEADER_PATTERN.test(name)) {
-			state.add(`${path}.${name}`, "Credential-bearing headers are not editable.");
 		}
-		stringValue(headerValue, `${path}.${name}`, state, 256);
+		stringValue(headerValue, `${path}.${name}`, state, 8192);
 	}
 }
 
@@ -314,9 +317,6 @@ function provider(value, path, state) {
 		state.add(path, "Must be an object.");
 		return;
 	}
-	if ("apiKey" in value) {
-		state.add(`${path}.apiKey`, "Secret-bearing apiKey is not editable.");
-	}
 	allowedKeys(value, PROVIDER_FIELDS, path, state);
 	if ("name" in value) {
 		stringValue(value.name, `${path}.name`, state, 160);
@@ -324,11 +324,32 @@ function provider(value, path, state) {
 	if ("baseUrl" in value) {
 		baseUrl(value.baseUrl, `${path}.baseUrl`, state);
 	}
+	if ("apiKey" in value) {
+		stringValue(value.apiKey, `${path}.apiKey`, state, 8192);
+	}
 	if ("proxyUrl" in value) {
 		baseUrl(value.proxyUrl, `${path}.proxyUrl`, state);
 	}
+	if ("prefix" in value) {
+		stringValue(value.prefix, `${path}.prefix`, state, 160);
+		if (
+			typeof value.prefix === "string"
+			&& (
+				value.prefix.includes("/")
+				|| /[\u0000-\u001f\u007f]/u.test(value.prefix)
+			)
+		) {
+			state.add(`${path}.prefix`, "Prefix must not contain a slash or control character.");
+		}
+	}
 	if ("api" in value) {
 		stringValue(value.api, `${path}.api`, state, 80);
+		if (typeof value.api === "string" && !PROVIDER_PROTOCOLS.has(value.api)) {
+			state.add(
+				`${path}.api`,
+				`Must be one of: ${[...PROVIDER_PROTOCOLS].join(", ")}.`,
+			);
+		}
 	}
 	if ("oauth" in value && value.oauth !== "radius") {
 		state.add(`${path}.oauth`, "Only the radius OAuth adapter is configurable.");
@@ -408,7 +429,12 @@ function provider(value, path, state) {
 	}
 }
 
-const ROUTER_PROVIDER_FIELDS = new Set(["proxyUrl", "modelAliases", "excludedModels"]);
+const ROUTER_PROVIDER_FIELDS = new Set([
+	"proxyUrl",
+	"prefix",
+	"modelAliases",
+	"excludedModels",
+]);
 
 export function splitConfigDocument(document) {
 	const models = { providers: {} };

@@ -175,7 +175,16 @@ export function SystemPage({
 							<SectionHeader title={t("system.requestLogging")} />
 							<p>{t("system.requestLoggingBody")}</p>
 						</div>
-						<Button disabled>{t("common.unsupported")}</Button>
+						<div className="button-row">
+							<Badge tone={status.activity.enabled ? "positive" : "neutral"}>
+								{status.activity.enabled
+									? t("system.loggingEnabled")
+									: t("system.loggingDisabled")}
+							</Badge>
+							<a className="button button-default" href="#/config">
+								{t("system.editLogging")}
+							</a>
+						</div>
 					</div>
 				</Card>
 			</div>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,11 +28,13 @@ async function started(runtime = fakeRuntime(), options = {}) {
 	return { server, baseUrl: addressUrl(address) };
 }
 
-test("startup accepts only explicit loopback hosts", () => {
+test("startup defaults to loopback and requires explicit remote-listener authority", () => {
 	assert.equal(validateListenHost("127.0.0.1"), "127.0.0.1");
 	assert.equal(validateListenHost("::1"), "::1");
-	for (const host of ["0.0.0.0", "::", "localhost", "192.168.1.2"]) {
+	assert.equal(validateListenHost("localhost"), "localhost");
+	for (const host of ["0.0.0.0", "::", "192.168.1.2"]) {
 		assert.throws(() => validateListenHost(host), /only/);
+		assert.equal(validateListenHost(host, { allowRemote: true }), host);
 	}
 	assert.throws(
 		() => createPiRouterServer({
@@ -49,7 +51,7 @@ test("health is bounded and v1 endpoints require bearer authentication", async (
 	t.after(() => closeServer(server));
 	const health = await fetch(`${baseUrl}/health`);
 	assert.equal(health.status, 200);
-	assert.deepEqual(await health.json(), { status: "ok", service: "pi-router", version: "0.4.0" });
+	assert.deepEqual(await health.json(), { status: "ok", service: "pi-router", version: "0.5.0" });
 	const unauthenticated = await fetch(`${baseUrl}/v1/models`);
 	assert.equal(unauthenticated.status, 401);
 	assert.equal((await unauthenticated.json()).error.code, "invalid_api_key");
@@ -118,7 +120,7 @@ test("Management API is authenticated, bounded, and delegates exact update actio
 	assert.equal(statusBody.object, "pi_router.management_status");
 	assert.deepEqual(statusBody.service, {
 		name: "pi-router",
-		version: "0.4.0",
+		version: "0.5.0",
 		status: "ok",
 		uptime_seconds: 0,
 	});
@@ -292,6 +294,7 @@ test("management UI is self-contained, unauthenticated, and browser-hardened", a
 		assert.match(csp, /script-src-attr 'none'/);
 		assert.match(csp, /style-src 'sha256-/);
 		assert.match(csp, /style-src-attr 'none'/);
+		assert.match(csp, /connect-src 'self' http: https:/);
 		assert.doesNotMatch(csp, /unsafe-inline/);
 		const body = await response.text();
 		assert.match(body, /<title>Pi Router · Management Center<\/title>/);
@@ -321,7 +324,16 @@ test("management UI is self-contained, unauthenticated, and browser-hardened", a
 		assert.match(body, /enc::v1::/);
 		assert.match(body, /localStorage/);
 		assert.match(body, /Proxy API keys/);
-		assert.match(body, /Custom OpenAI-compatible provider/);
+		assert.match(body, /Custom protocol provider/);
+		assert.match(body, /OpenAI Responses/);
+		assert.match(body, /OpenAI Chat Completions/);
+		assert.match(body, /Anthropic Messages/);
+		assert.match(body, /\/chat\/completions/);
+		assert.match(body, /\/messages/);
+		assert.match(body, /Import files/);
+		assert.match(body, /exported credential files contain plaintext API keys or OAuth tokens/);
+		assert.match(body, /Raw configuration and secrets/);
+		assert.match(body, /Apply a possible self-lockout change\?/);
 		assert.match(body, /Target account/);
 		assert.match(body, /credential-scoped/);
 		assert.doesNotMatch(body, /Responses workbench|Compose a probe/);
@@ -535,6 +547,179 @@ test("non-streaming responses return a Responses JSON object", async (t) => {
 	assert.equal(body.output[0].content[0].text, "hello");
 	assert.equal(captured.context.messages[0].content, "Hi");
 	assert.equal(captured.options.signal instanceof AbortSignal, true);
+});
+
+test("Chat Completions and Anthropic Messages share proxy auth and support JSON and SSE", async (t) => {
+	const captured = [];
+	const runtime = fakeRuntime({
+		stream(model, context, options) {
+			captured.push({ model, context, options });
+			return textStream("hello");
+		},
+	});
+	const { server, baseUrl } = await started(runtime);
+	t.after(() => closeServer(server));
+	const headers = {
+		authorization: "Bearer local-test-key",
+		"content-type": "application/json",
+	};
+
+	const unauthorizedChat = await fetch(`${baseUrl}/v1/chat/completions`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ model: "fake/model", messages: [{ role: "user", content: "Hi" }] }),
+	});
+	assert.equal(unauthorizedChat.status, 401);
+	const unauthorizedAnthropic = await fetch(`${baseUrl}/v1/messages`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({
+			model: "fake/model",
+			max_tokens: 16,
+			messages: [{ role: "user", content: "Hi" }],
+		}),
+	});
+	assert.equal(unauthorizedAnthropic.status, 401);
+	assert.equal((await unauthorizedAnthropic.json()).error.type, "authentication_error");
+
+	const chat = await fetch(`${baseUrl}/v1/chat/completions`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({
+			model: "fake/model",
+			messages: [{ role: "user", content: "Hi" }],
+		}),
+	});
+	assert.equal(chat.status, 200);
+	const chatBody = await chat.json();
+	assert.equal(chatBody.object, "chat.completion");
+	assert.equal(chatBody.choices[0].message.content, "hello");
+	assert.equal(captured[0].context.messages[0].content, "Hi");
+
+	const anthropic = await fetch(`${baseUrl}/v1/messages`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({
+			model: "fake/model",
+			max_tokens: 16,
+			messages: [{ role: "user", content: "Hi" }],
+		}),
+	});
+	assert.equal(anthropic.status, 200);
+	const anthropicBody = await anthropic.json();
+	assert.equal(anthropicBody.type, "message");
+	assert.equal(anthropicBody.content[0].text, "hello");
+
+	const chatStream = await fetch(`${baseUrl}/v1/chat/completions`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({
+			model: "fake/model",
+			messages: [{ role: "user", content: "Hi" }],
+			stream: true,
+		}),
+	});
+	const chatText = await chatStream.text();
+	assert.match(chatText, /"object":"chat\.completion\.chunk"/u);
+	assert.match(chatText, /data: \[DONE\]/u);
+
+	const anthropicStream = await fetch(`${baseUrl}/v1/messages`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({
+			model: "fake/model",
+			max_tokens: 16,
+			messages: [{ role: "user", content: "Hi" }],
+			stream: true,
+		}),
+	});
+	const anthropicText = await anthropicStream.text();
+	assert.match(anthropicText, /event: message_start/u);
+	assert.match(anthropicText, /event: content_block_delta/u);
+	assert.match(anthropicText, /event: message_stop/u);
+});
+
+test("raw config and auth-file Management routes preserve bytes and validate mutations", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "pi-router-raw-routes-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const configPath = join(root, "config.yaml");
+	const modelsPath = join(root, "models.json");
+	const providerPolicyPath = join(root, "provider-policy.json");
+	const source = [
+		"# retained",
+		"host: 127.0.0.1",
+		"port: 8318",
+		"remote-management:",
+		"  allow-remote: false",
+		"  secret-key: management-test-key",
+		"request-logging: true",
+		"environment: {}",
+		"providers: {}",
+		"",
+	].join("\n");
+	await writeFile(configPath, source);
+	let imported;
+	const runtime = fakeRuntime();
+	runtime.exportAuthFile = async () => ({
+		source: Buffer.from("{\n  \"fake\": {\"type\":\"api_key\",\"key\":\"secret\"}\n}\n"),
+		filename: "isolated-auth.json",
+	});
+	runtime.importAuthFile = async (value) => {
+		imported = value;
+		return { object: "pi_router.credential_import", status: "imported" };
+	};
+	const { server, baseUrl } = await started(runtime, {
+		configPath,
+		modelsPath,
+		providerPolicyPath,
+	});
+	t.after(() => closeServer(server));
+	const authorization = { authorization: "Bearer management-test-key" };
+
+	const rawConfig = await fetch(`${baseUrl}/v0/management/config.yaml`, {
+		headers: authorization,
+	});
+	assert.equal(rawConfig.status, 200);
+	assert.equal(await rawConfig.text(), source);
+	assert.match(rawConfig.headers.get("etag"), /^"[a-f0-9]{64}"$/u);
+
+	const invalidYaml = await fetch(`${baseUrl}/v0/management/config.yaml`, {
+		method: "PUT",
+		headers: { ...authorization, "content-type": "application/yaml" },
+		body: "host: [",
+	});
+	assert.equal(invalidYaml.status, 400);
+	assert.equal((await invalidYaml.json()).error.code, "invalid_yaml");
+	const invalidSemantic = await fetch(`${baseUrl}/v0/management/config.yaml`, {
+		method: "PUT",
+		headers: { ...authorization, "content-type": "application/yaml" },
+		body: source.replace("port: 8318", "port: 99999"),
+	});
+	assert.equal(invalidSemantic.status, 422);
+	assert.equal((await invalidSemantic.json()).error.code, "router_config_invalid");
+	assert.equal(await readFile(configPath, "utf8"), source);
+
+	const download = await fetch(
+		`${baseUrl}/v0/management/auth-files/download?name=credential-id`,
+		{ headers: authorization },
+	);
+	assert.equal(download.status, 200);
+	assert.equal(
+		await download.text(),
+		"{\n  \"fake\": {\"type\":\"api_key\",\"key\":\"secret\"}\n}\n",
+	);
+	assert.equal(
+		download.headers.get("content-disposition"),
+		"attachment; filename=\"isolated-auth.json\"",
+	);
+	const uploadSource = "{\n  \"fake\":{\"type\":\"api_key\",\"key\":\"new-secret\"}\n}\n";
+	const upload = await fetch(`${baseUrl}/v0/management/auth-files?name=one.json`, {
+		method: "POST",
+		headers: { ...authorization, "content-type": "application/json" },
+		body: uploadSource,
+	});
+	assert.equal(upload.status, 201);
+	assert.equal(imported, uploadSource);
 });
 
 test("streaming responses use SSE and end in response.completed", async (t) => {

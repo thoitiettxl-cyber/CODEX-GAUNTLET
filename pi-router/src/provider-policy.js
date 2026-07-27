@@ -6,7 +6,7 @@ export const PROVIDER_POLICY_VERSION = 1;
 export const MAX_PROVIDER_POLICY_BYTES = 128 * 1024;
 const UPSTREAM_MODEL = Symbol("pi-router-upstream-model");
 const PROVIDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
-const POLICY_FIELDS = new Set(["proxyUrl", "modelAliases", "excludedModels"]);
+const POLICY_FIELDS = new Set(["proxyUrl", "prefix", "modelAliases", "excludedModels"]);
 const MAX_PROVIDER_POLICIES = 128;
 const MAX_MODEL_RULES = 512;
 
@@ -55,6 +55,12 @@ function validProviderPolicy(value) {
 		return false;
 	}
 	if ("proxyUrl" in value && !validProxyUrl(value.proxyUrl)) {
+		return false;
+	}
+	if (
+		"prefix" in value
+		&& (!validRule(value.prefix) || value.prefix.includes("/"))
+	) {
 		return false;
 	}
 	if ("modelAliases" in value) {
@@ -199,7 +205,10 @@ export class ProviderPolicy {
 				continue;
 			}
 			const alias = policy.modelAliases?.[model.id];
-			const selected = alias ? { ...model, id: alias } : model;
+			const exposedId = policy.prefix
+				? `${policy.prefix}/${alias ?? model.id}`
+				: alias;
+			const selected = exposedId ? { ...model, id: exposedId } : model;
 			const key = `${selected.provider}\0${selected.id}`;
 			if (exposed.has(key)) {
 				throw new RouterError(

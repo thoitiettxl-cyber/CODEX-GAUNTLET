@@ -19,11 +19,26 @@ export async function routeManagement({
 	url,
 	management,
 	readJson,
+	readText,
 	json,
+	raw,
 	maxBodyBytes,
 } = {}) {
 	const method = request.method ?? "";
 	const path = url.pathname;
+	if (method === "GET" && path === "/v0/management/config.yaml") {
+		const result = await management.getRawConfig();
+		raw(response, 200, result.source, {
+			"content-type": "application/yaml; charset=utf-8",
+			etag: `"${result.revision}"`,
+		});
+		return true;
+	}
+	if (method === "PUT" && path === "/v0/management/config.yaml") {
+		const source = await readText(request, maxBodyBytes);
+		json(response, 200, await management.putRawConfig(source));
+		return true;
+	}
 	if (method === "GET" && path === "/management/api/status") {
 		json(response, 200, await management.status());
 		return true;
@@ -64,6 +79,31 @@ export async function routeManagement({
 	}
 	if (method === "GET" && path === "/management/api/credentials") {
 		json(response, 200, await management.listCredentials());
+		return true;
+	}
+	if (
+		method === "GET"
+		&& path === "/v0/management/auth-files/download"
+		&& typeof management.exportCredentialFile === "function"
+	) {
+		const name = url.searchParams.get("name");
+		if (!name) {
+			throw invalidRequest("Credential file name is required.");
+		}
+		const result = await management.exportCredentialFile(name);
+		raw(response, 200, result.source, {
+			"content-type": "application/json; charset=utf-8",
+			"content-disposition": `attachment; filename="${result.filename}"`,
+		});
+		return true;
+	}
+	if (
+		method === "POST"
+		&& path === "/v0/management/auth-files"
+		&& typeof management.importCredentialFile === "function"
+	) {
+		const source = await readText(request, maxBodyBytes);
+		json(response, 201, await management.importCredentialFile(source));
 		return true;
 	}
 	const credentialMatch = path.match(/^\/management\/api\/credentials\/([^/]+)$/u);

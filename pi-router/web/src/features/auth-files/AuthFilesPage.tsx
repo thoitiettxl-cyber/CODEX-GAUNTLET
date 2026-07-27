@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -19,17 +19,21 @@ import {
 	errorMessage,
 	type CredentialInfo,
 	type ManagementClient,
+	type ManagementStatus,
 } from "../../lib/api";
 import styles from "./AuthFilesPage.module.scss";
 
 const PAGE_SIZE = 6;
+let credentialExportWarned = false;
 
 export function AuthFilesPage({
 	client,
+	status,
 	onMutation,
 	notify,
 }: {
 	client: ManagementClient;
+	status: ManagementStatus;
 	onMutation: () => Promise<void>;
 	notify: (message: string, tone?: "positive" | "negative") => void;
 }) {
@@ -41,6 +45,8 @@ export function AuthFilesPage({
 	const [removing, setRemoving] = useState(false);
 	const [filter, setFilter] = useState("");
 	const [page, setPage] = useState(1);
+	const [transferring, setTransferring] = useState(false);
+	const input = useRef<HTMLInputElement>(null);
 
 	const load = async () => {
 		setPhase("loading");
@@ -100,6 +106,61 @@ export function AuthFilesPage({
 		}
 	};
 
+	const warnExport = () => {
+		if (!credentialExportWarned) {
+			notify(t("authFiles.exportWarning"), "negative");
+			credentialExportWarned = true;
+		}
+	};
+
+	const exportOne = async (credential: CredentialInfo) => {
+		warnExport();
+		const blob = await client.exportCredentialFile(credential.id);
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement("a");
+		anchor.href = url;
+		anchor.download = `${credential.account_id}-auth.json`;
+		anchor.click();
+		URL.revokeObjectURL(url);
+	};
+
+	const exportBatch = async () => {
+		setTransferring(true);
+		try {
+			const files = filtered.filter((credential, index, entries) =>
+				entries.findIndex((entry) => entry.account_id === credential.account_id) === index);
+			for (const credential of files) {
+				await exportOne(credential);
+			}
+			notify(t("authFiles.exported", { count: files.length }));
+		} catch (caught) {
+			notify(errorMessage(caught), "negative");
+		} finally {
+			setTransferring(false);
+		}
+	};
+
+	const importBatch = async (files: FileList | null) => {
+		if (!files?.length) {
+			return;
+		}
+		setTransferring(true);
+		try {
+			for (const file of files) {
+				await client.importCredentialFile(file);
+			}
+			notify(t("authFiles.imported", { count: files.length }));
+			await Promise.all([load(), onMutation()]);
+		} catch (caught) {
+			notify(errorMessage(caught), "negative");
+		} finally {
+			if (input.current) {
+				input.current.value = "";
+			}
+			setTransferring(false);
+		}
+	};
+
 	return (
 		<>
 			<PageHeader
@@ -112,6 +173,9 @@ export function AuthFilesPage({
 				<strong>{t("authFiles.boundaryTitle")}</strong>{" "}
 				{t("authFiles.boundaryBody")}
 			</InlineNotice>
+			{!status.capabilities.credential_import_export ? (
+				<InlineNotice tone="warning">{t("authFiles.transferUnavailable")}</InlineNotice>
+			) : null}
 			<Card>
 				<SectionHeader
 					actions={(
@@ -122,6 +186,30 @@ export function AuthFilesPage({
 								placeholder={t("authFiles.searchPlaceholder")}
 								value={filter}
 							/>
+							<input
+								accept="application/json,.json"
+								hidden
+								multiple
+								onChange={(event) => void importBatch(event.target.files)}
+								ref={input}
+								type="file"
+							/>
+							<Button
+								disabled={!status.capabilities.credential_import_export || transferring}
+								onClick={() => input.current?.click()}
+							>
+								{t("authFiles.import")}
+							</Button>
+							<Button
+								disabled={
+									!status.capabilities.credential_import_export
+									|| transferring
+									|| filtered.length === 0
+								}
+								onClick={() => void exportBatch()}
+							>
+								{t("authFiles.exportBatch")}
+							</Button>
 							<a className="button button-primary button-default" href="#/oauth">
 								<Icon name="login" /><span>{t("authFiles.add")}</span>
 							</a>
@@ -213,13 +301,30 @@ export function AuthFilesPage({
 												) : null}
 										</div>
 									</div>
-									<Button
-										aria-label={`${t("authFiles.logout")} ${credential.label}`}
-										onClick={() => setSelected(credential)}
-										variant="danger"
-									>
-										{t("authFiles.logout")}
-									</Button>
+									<div className="button-row">
+										<Button
+											disabled={
+												!status.capabilities.credential_import_export
+												|| transferring
+											}
+											onClick={() => {
+												setTransferring(true);
+												void exportOne(credential)
+													.catch((caught) =>
+														notify(errorMessage(caught), "negative"))
+													.finally(() => setTransferring(false));
+											}}
+										>
+											{t("authFiles.export")}
+										</Button>
+										<Button
+											aria-label={`${t("authFiles.logout")} ${credential.label}`}
+											onClick={() => setSelected(credential)}
+											variant="danger"
+										>
+											{t("authFiles.logout")}
+										</Button>
+									</div>
 								</article>
 							))}
 						</div>

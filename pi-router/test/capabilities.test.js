@@ -184,6 +184,86 @@ test("same-provider logins use isolated accounts and receive unique identity lab
 	);
 });
 
+test("raw auth files import into new isolated accounts and export exact source bytes", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "pi-router-auth-files-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const paths = statePaths({ stateDir: root, accountId: "default" });
+	const runtimeFor = (authPath) => {
+		let stored = {};
+		return {
+			async listModels() {
+				return [];
+			},
+			async listProviderMetadata() {
+				return Object.keys(stored).map((providerId) => ({
+					...PROVIDER,
+					id: providerId,
+					name: providerId,
+					configured: true,
+					credential_type: stored[providerId].type,
+				}));
+			},
+			async listCredentialMetadata() {
+				return Object.entries(stored).map(([providerId, credential]) => ({
+					provider_id: providerId,
+					provider_name: providerId,
+					type: credential.type,
+				}));
+			},
+			async reloadCredentials() {
+				try {
+					stored = JSON.parse(await readFile(authPath, "utf8"));
+				} catch (error) {
+					if (error?.code !== "ENOENT") {
+						throw error;
+					}
+				}
+			},
+			async refreshConfiguration() {},
+		};
+	};
+	const activeRuntime = runtimeFor(paths.authPath);
+	const pool = await AccountRuntimePool.create({
+		paths,
+		activeRuntime,
+		createRuntime: async ({ authPath }) => runtimeFor(authPath),
+		id: (() => {
+			let index = 0;
+			return () => `${String(++index).padStart(8, "0")}-0000-4000-8000-000000000000`;
+		})(),
+	});
+	const source = [
+		"{",
+		"  \"openai-codex\": {",
+		"    \"type\": \"oauth\",",
+		"    \"access\": \"test-secret-token\"",
+		"  }",
+		"}",
+		"",
+	].join("\n");
+	const first = await pool.importAuthFile(source);
+	assert.equal(first.status, "imported");
+	assert.notEqual(first.account_id, "default");
+	assert.equal(first.credentials.length, 1);
+	const exported = await pool.exportAuthFile(first.credentials[0].id);
+	assert.equal(exported.source.toString("utf8"), source);
+	assert.equal((await stat(join(root, "accounts", first.account_id, "auth.json"))).mode & 0o777, 0o600);
+
+	const second = await pool.importAuthFile(source);
+	assert.notEqual(second.account_id, first.account_id);
+	assert.notEqual(second.credentials[0].id, first.credentials[0].id);
+	assert.equal((await pool.listCredentialMetadata()).length, 2);
+	await assert.rejects(
+		pool.importAuthFile("{not-json"),
+		(error) => error.code === "credential_file_invalid",
+	);
+	assert.equal((await pool.listCredentialMetadata()).length, 2);
+	assert.doesNotMatch(
+		await readFile(paths.accountCatalogPath, "utf8"),
+		/test-secret-token/u,
+	);
+});
+
 test("fixed quota adapters normalize Codex, Claude, Antigravity, Kimi, and xAI independently", async () => {
 	const calls = [];
 	const fetchImpl = async (url, options) => {

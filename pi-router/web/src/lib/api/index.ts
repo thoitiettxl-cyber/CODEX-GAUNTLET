@@ -217,10 +217,18 @@ export interface ManagementStatus {
 		available_models: number;
 	};
 	activity: {
+		enabled: boolean;
 		requests: number;
 		errors: number;
 		last_event_at: string | null;
 		retention: "memory";
+	};
+	capabilities: {
+		raw_config: boolean;
+		credential_import_export: boolean;
+		custom_provider_protocols: string[];
+		inference_endpoints: string[];
+		request_logging: boolean;
 	};
 	quota: {
 		supported_providers: number;
@@ -235,6 +243,19 @@ export interface ManagementStatus {
 		state: "ready" | "invalid" | "unsupported";
 	};
 	update: UpdateStatus;
+}
+
+export interface RawConfigState {
+	source: string;
+	revision: string;
+}
+
+export interface RawConfigMutation {
+	object: "pi_router.raw_config_mutation";
+	status: "applied" | "unchanged";
+	revision: string;
+	activation: "reloaded" | "restart_required" | "unchanged";
+	restart_required: boolean;
 }
 
 export interface UpdateCandidate {
@@ -396,6 +417,75 @@ export class ManagementClient {
 		return this.request(`/management/api/credentials/${encodeURIComponent(credentialId)}`, {
 			method: "DELETE",
 		});
+	}
+
+	async rawConfig(): Promise<RawConfigState> {
+		try {
+			const response = await this.instance.get<string>("/v0/management/config.yaml", {
+				responseType: "text",
+				transformResponse: [(value) => value],
+			});
+			return {
+				source: response.data,
+				revision: String(response.headers.etag ?? "").replace(/^"|"$/gu, ""),
+			};
+		} catch (caught) {
+			throw this.apiError(caught);
+		}
+	}
+
+	async putRawConfig(source: string): Promise<RawConfigMutation> {
+		try {
+			const response = await this.instance.put<RawConfigMutation>(
+				"/v0/management/config.yaml",
+				source,
+				{ headers: { "content-type": "application/yaml; charset=utf-8" } },
+			);
+			return response.data;
+		} catch (caught) {
+			throw this.apiError(caught);
+		}
+	}
+
+	async importCredentialFile(file: File): Promise<unknown> {
+		try {
+			const response = await this.instance.post(
+				`/v0/management/auth-files?name=${encodeURIComponent(file.name)}`,
+				await file.text(),
+				{ headers: { "content-type": "application/json; charset=utf-8" } },
+			);
+			return response.data;
+		} catch (caught) {
+			throw this.apiError(caught);
+		}
+	}
+
+	async exportCredentialFile(credentialId: string): Promise<Blob> {
+		try {
+			const response = await this.instance.get(
+				`/v0/management/auth-files/download?name=${encodeURIComponent(credentialId)}`,
+				{ responseType: "blob" },
+			);
+			return response.data as Blob;
+		} catch (caught) {
+			throw this.apiError(caught);
+		}
+	}
+
+	private apiError(caught: unknown): Error {
+		if (!axios.isAxiosError(caught)) {
+			return caught instanceof Error ? caught : new Error(i18n.t("errors.requestFailed"));
+		}
+		if (!caught.response) {
+			return new ApiError(i18n.t("errors.network"), 0, "network_error");
+		}
+		const payload: unknown = caught.response.data;
+		const error = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
+		return new ApiError(
+			typeof error.message === "string" ? error.message : i18n.t("errors.requestFailed"),
+			caught.response.status,
+			typeof error.code === "string" ? error.code : "request_failed",
+		);
 	}
 
 	createAuthSession(

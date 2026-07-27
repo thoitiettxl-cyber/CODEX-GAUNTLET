@@ -6,6 +6,7 @@ import { ProviderMutationCoordinator } from "./mutations.js";
 import { createProviderService } from "./providers.js";
 import { createProxyKeyService } from "./proxy-keys.js";
 import { createQuotaService } from "./quota.js";
+import { RawConfigService } from "./raw-config.js";
 import { defaultQuotaAdapters } from "./quota-adapters/index.js";
 import { createStatusService } from "./status.js";
 
@@ -13,6 +14,7 @@ export function createManagementService({
 	runtime,
 	account = "default",
 	updater,
+	configPath,
 	modelsPath,
 	providerPolicyPath,
 	startedAt = Date.now(),
@@ -42,6 +44,13 @@ export function createManagementService({
 		now,
 	});
 	const config = new ConfigService({ modelsPath, providerPolicyPath, runtime });
+	const rawConfig = new RawConfigService({
+		configPath,
+		modelsPath,
+		providerPolicyPath,
+		runtime,
+		eventLog,
+	});
 	const authSessions = new AuthSessionService({
 		runtime,
 		providers,
@@ -55,7 +64,7 @@ export function createManagementService({
 		credentials,
 		quota,
 		events: eventLog,
-		config,
+		config: configPath ? rawConfig : config,
 		updater,
 		startedAt,
 		now,
@@ -71,6 +80,12 @@ export function createManagementService({
 		listProviders: () => providers.list(),
 		listCredentials: () => credentials.list(),
 		removeCredential: (providerId) => credentials.remove(providerId),
+		...(credentials.exportFile
+			? { exportCredentialFile: (credentialId) => credentials.exportFile(credentialId) }
+			: {}),
+		...(credentials.importFile
+			? { importCredentialFile: (source) => credentials.importFile(source) }
+			: {}),
 		createAuthSession: (body) => authSessions.create(body),
 		getAuthSession: (id) => authSessions.get(id),
 		respondAuthSession: (id, body) => authSessions.respond(id, body),
@@ -81,6 +96,8 @@ export function createManagementService({
 		previewConfig: (body) => config.preview(body),
 		applyConfig: (body) => config.apply(body),
 		restoreConfig: (body) => config.restore(body),
+		getRawConfig: () => rawConfig.get(),
+		putRawConfig: (source) => rawConfig.put(source),
 		checkUpdate: () => updater.check(),
 		installUpdate: (version) => updater.install(version),
 		rollbackUpdate: () => updater.rollback(),

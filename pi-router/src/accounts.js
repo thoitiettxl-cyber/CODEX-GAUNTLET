@@ -19,6 +19,7 @@ import { ensureStatePaths, statePaths, validateAccountId } from "./paths.js";
 
 const CATALOG_VERSION = 1;
 const MAX_CATALOG_BYTES = 256 * 1024;
+const MAX_AUTH_FILE_BYTES = 1024 * 1024;
 const MAX_ACCOUNTS = 256;
 const MAX_CREDENTIALS_PER_ACCOUNT = 128;
 const PROVIDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
@@ -162,6 +163,66 @@ async function atomicWrite(path, document) {
 		await unlink(temporary).catch(() => {});
 		throw error;
 	}
+}
+
+async function atomicWriteBytes(path, source) {
+	const directory = dirname(path);
+	await mkdir(directory, { recursive: true, mode: 0o700 });
+	const temporary = join(directory, `.${basename(path)}.${randomUUID()}.tmp`);
+	let handle;
+	try {
+		handle = await open(temporary, "wx", 0o600);
+		await handle.writeFile(source);
+		await handle.sync();
+		await handle.close();
+		handle = undefined;
+		await rename(temporary, path);
+		await chmod(path, 0o600);
+		await syncDirectory(directory);
+	} catch (error) {
+		await handle?.close().catch(() => {});
+		await unlink(temporary).catch(() => {});
+		throw error;
+	}
+}
+
+function validateAuthFile(source) {
+	const bytes = Buffer.isBuffer(source) ? source : Buffer.from(source ?? "");
+	if (bytes.length === 0 || bytes.length > MAX_AUTH_FILE_BYTES) {
+		throw invalidRequest(
+			`Credential file must be between 1 and ${MAX_AUTH_FILE_BYTES} bytes.`,
+			"credential_file_invalid",
+		);
+	}
+	let document;
+	try {
+		document = JSON.parse(bytes.toString("utf8"));
+	} catch {
+		throw invalidRequest("Credential file must be valid JSON.", "credential_file_invalid");
+	}
+	if (!document || typeof document !== "object" || Array.isArray(document)) {
+		throw invalidRequest(
+			"Credential file must contain a JSON object.",
+			"credential_file_invalid",
+		);
+	}
+	const entries = Object.entries(document);
+	if (
+		entries.length === 0
+		|| entries.length > MAX_CREDENTIALS_PER_ACCOUNT
+		|| entries.some(([providerId, credential]) =>
+			!PROVIDER_PATTERN.test(providerId)
+			|| !credential
+			|| typeof credential !== "object"
+			|| Array.isArray(credential)
+			|| !["api_key", "oauth"].includes(credential.type))
+	) {
+		throw invalidRequest(
+			"Credential file contains an invalid provider or credential.",
+			"credential_file_invalid",
+		);
+	}
+	return { bytes, providers: entries.map(([providerId]) => providerId) };
 }
 
 async function readCatalog(path) {
@@ -803,6 +864,66 @@ export class AccountRuntimePool {
 		if (credential) {
 			await this.catalog.removeCredential(credential.id);
 		}
+	}
+
+	async exportAuthFile(credentialId) {
+		const credential = this.catalog.findCredential(credentialId, this.activeAccount);
+		if (!credential) {
+			throw new RouterError("Credential file was not found.", {
+				status: 404,
+				code: "credential_file_not_found",
+				type: "invalid_request_error",
+			});
+		}
+		const paths = statePaths({
+			stateDir: this.paths.root,
+			accountId: credential.account_id,
+		});
+		const source = await readFile(paths.authPath);
+		validateAuthFile(source);
+		return {
+			source,
+			filename: `${credential.account_id}-auth.json`,
+			account_id: credential.account_id,
+			credential_id: credential.id,
+		};
+	}
+
+	async importAuthFile(source) {
+		const validated = validateAuthFile(source);
+		const account = await this.catalog.createAccount(validated.providers[0]);
+		const paths = statePaths({
+			stateDir: this.paths.root,
+			accountId: account.account_id,
+		});
+		await atomicWriteBytes(paths.authPath, validated.bytes);
+		const runtime = await this.#runtime(account.account_id);
+		if (typeof runtime.reloadCredentials === "function") {
+			await runtime.reloadCredentials();
+		}
+		const credentials = await runtime.listCredentialMetadata();
+		if (credentials.length !== validated.providers.length) {
+			throw invalidRequest(
+				"Credential file could not be loaded by the runtime.",
+				"credential_file_invalid",
+			);
+		}
+		for (const credential of credentials) {
+			await this.catalog.upsertCredential({
+				accountId: account.account_id,
+				providerId: credential.provider_id,
+				providerName: credential.provider_name,
+				type: credential.type,
+				activeAccount: this.activeAccount,
+			});
+		}
+		return {
+			object: "pi_router.credential_import",
+			status: "imported",
+			account_id: account.account_id,
+			credentials: this.catalog.listCredentials(this.activeAccount)
+				.filter((credential) => credential.account_id === account.account_id),
+		};
 	}
 
 	async quotaCredentialContexts() {

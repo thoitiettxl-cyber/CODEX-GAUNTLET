@@ -158,6 +158,7 @@ function Console() {
 									client={client}
 									notify={notify}
 									onMutation={refreshStatus}
+									status={status}
 								/>
 							)}
 						/>
@@ -168,6 +169,7 @@ function Console() {
 									client={client}
 									notify={notify}
 									onMutation={refreshStatus}
+									status={status}
 								/>
 							)}
 						/>
@@ -192,6 +194,7 @@ function Console() {
 									notify={notify}
 									onDirtyChange={setDirtyConfig}
 									onMutation={refreshStatus}
+									status={status}
 								/>
 							)}
 						/>

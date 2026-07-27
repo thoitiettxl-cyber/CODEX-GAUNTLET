@@ -48,6 +48,24 @@ export function createStatusService({
 					management_key_configured: true,
 					proxy_api_keys: proxyKeys?.count() ?? 0,
 				},
+				capabilities: {
+					raw_config: configSummary.raw === true,
+					credential_import_export: (
+						typeof credentials.exportFile === "function"
+						&& typeof credentials.importFile === "function"
+					),
+					custom_provider_protocols: [
+						"openai-completions",
+						"openai-responses",
+						"anthropic-messages",
+					],
+					inference_endpoints: [
+						"/v1/responses",
+						"/v1/chat/completions",
+						"/v1/messages",
+					],
+					request_logging: true,
+				},
 				runtime: {
 					mode: BINARY_BUILD ? "termux-binary" : "source",
 					node: process.versions.node,

@@ -10,6 +10,18 @@ import {
 	unauthorized,
 } from "./errors.js";
 import {
+	anthropicRequestToPi,
+	anthropicSseFrame,
+	collectAnthropicMessage,
+	translateAnthropicStream,
+} from "./anthropic-messages.js";
+import {
+	chatRequestToPi,
+	chatSseFrame,
+	collectChatCompletion,
+	translateChatStream,
+} from "./chat-completions.js";
+import {
 	createManagementService,
 	OperationalEventLog,
 } from "./management/index.js";
@@ -19,7 +31,7 @@ import { collectResponse, requestToPi, sseFrame, translatePiStream } from "./res
 import { GithubUpdateManager } from "./update.js";
 import { VERSION } from "./version.js";
 
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1"]);
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
 const MANAGEMENT_HTML = typeof __PI_ROUTER_MANAGEMENT_HTML__ === "string"
 	? __PI_ROUTER_MANAGEMENT_HTML__
@@ -46,7 +58,7 @@ function managementCsp(nonce) {
 		"script-src-attr 'none'",
 		`style-src ${MANAGEMENT_STYLE_HASH} 'nonce-${nonce}'`,
 		"style-src-attr 'none'",
-		"connect-src 'self'",
+		"connect-src 'self' http: https:",
 		"img-src data:",
 		"base-uri 'none'",
 		"form-action 'none'",
@@ -104,8 +116,13 @@ function bearerValue(header) {
 		: undefined;
 }
 
-export function validateListenHost(host) {
-	if (!LOOPBACK_HOSTS.has(host)) {
+export function validateListenHost(host, { allowRemote = false } = {}) {
+	if (
+		typeof host !== "string"
+		|| host.length === 0
+		|| host.length > 255
+		|| (!allowRemote && !LOOPBACK_HOSTS.has(host))
+	) {
 		throw new RouterError("Pi Router may listen only on 127.0.0.1 or ::1.", {
 			status: 400,
 			code: "non_loopback_host",
@@ -115,7 +132,7 @@ export function validateListenHost(host) {
 	return host;
 }
 
-async function readJson(request, maxBodyBytes) {
+async function readBody(request, maxBodyBytes) {
 	const declaredLength = Number(request.headers["content-length"]);
 	if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
 		throw new RouterError("Request body is too large.", {
@@ -137,8 +154,12 @@ async function readJson(request, maxBodyBytes) {
 		}
 		chunks.push(chunk);
 	}
+	return Buffer.concat(chunks);
+}
+
+async function readJson(request, maxBodyBytes) {
 	try {
-		return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+		return JSON.parse((await readBody(request, maxBodyBytes)).toString("utf8"));
 	} catch {
 		throw new RouterError("Request body must be valid JSON.", {
 			status: 400,
@@ -146,6 +167,20 @@ async function readJson(request, maxBodyBytes) {
 			type: "invalid_request_error",
 		});
 	}
+}
+
+async function readText(request, maxBodyBytes) {
+	return (await readBody(request, maxBodyBytes)).toString("utf8");
+}
+
+function raw(response, status, body, headers = {}) {
+	const payload = Buffer.isBuffer(body) ? body : Buffer.from(body ?? "");
+	response.writeHead(status, {
+		"content-length": payload.length,
+		"cache-control": "no-store",
+		...headers,
+	});
+	response.end(payload);
 }
 
 function requireManagementAuth(request, managementKey) {
@@ -169,8 +204,8 @@ function healthBody() {
 	};
 }
 
-async function writeSse(response, event) {
-	if (response.write(sseFrame(event))) {
+async function writeSse(response, event, frame = sseFrame) {
+	if (response.write(frame(event))) {
 		return;
 	}
 	await new Promise((resolve) => {
@@ -182,6 +217,20 @@ async function writeSse(response, event) {
 		response.once("drain", settled);
 		response.once("close", settled);
 	});
+}
+
+function inferenceStream(request, response, options, model, converted) {
+	request.piRouterEvent.model = `${model.provider}/${model.id}`;
+	request.piRouterEvent.provider = model.provider;
+	const abortController = new AbortController();
+	request.once("aborted", () => abortController.abort());
+	response.once("close", () => {
+		if (!response.writableEnded) {
+			abortController.abort();
+		}
+	});
+	converted.options.signal = abortController.signal;
+	return options.runtime.stream(model, converted.context, converted.options);
 }
 
 async function routeRequest(request, response, options) {
@@ -198,21 +247,32 @@ async function routeRequest(request, response, options) {
 		return;
 	}
 
-	if (url.pathname.startsWith("/management/api/")) {
+	if (
+		url.pathname.startsWith("/management/api/")
+		|| url.pathname.startsWith("/v0/management/")
+	) {
 		requireManagementAuth(request, options.managementKey);
 	} else if (url.pathname.startsWith("/v1/")) {
 		requireProxyAuth(request, options.proxyKeyStore);
 	}
 
-	if (url.pathname.startsWith("/management/api/") && await routeManagement({
+	if (
+		(
+			url.pathname.startsWith("/management/api/")
+			|| url.pathname.startsWith("/v0/management/")
+		)
+		&& await routeManagement({
 		request,
 		response,
 		url,
 		management: options.management,
 		readJson,
+		readText,
 		json,
+		raw,
 		maxBodyBytes: options.maxBodyBytes,
-	})) {
+		})
+	) {
 		return;
 	}
 
@@ -228,18 +288,8 @@ async function routeRequest(request, response, options) {
 	if (request.method === "POST" && url.pathname === "/v1/responses") {
 		const body = await readJson(request, options.maxBodyBytes);
 		const model = await options.runtime.resolveModel(body.model);
-		request.piRouterEvent.model = `${model.provider}/${model.id}`;
-		request.piRouterEvent.provider = model.provider;
 		const converted = requestToPi(body, model, options.now());
-		const abortController = new AbortController();
-		request.once("aborted", () => abortController.abort());
-		response.once("close", () => {
-			if (!response.writableEnded) {
-				abortController.abort();
-			}
-		});
-		converted.options.signal = abortController.signal;
-		const piStream = options.runtime.stream(model, converted.context, converted.options);
+		const piStream = inferenceStream(request, response, options, model, converted);
 		const events = translatePiStream(piStream, {
 			body,
 			modelName: `${model.provider}/${model.id}`,
@@ -270,6 +320,75 @@ async function routeRequest(request, response, options) {
 		return;
 	}
 
+	if (request.method === "POST" && url.pathname === "/v1/chat/completions") {
+		const body = await readJson(request, options.maxBodyBytes);
+		const model = await options.runtime.resolveModel(body.model);
+		const converted = chatRequestToPi(body, model, options.now());
+		const piStream = inferenceStream(request, response, options, model, converted);
+		const modelName = `${model.provider}/${model.id}`;
+		if (body.stream === true) {
+			response.writeHead(200, {
+				"content-type": "text/event-stream; charset=utf-8",
+				"cache-control": "no-cache, no-store",
+				connection: "keep-alive",
+				"x-accel-buffering": "no",
+			});
+			for await (const chunk of translateChatStream(piStream, {
+				body,
+				modelName,
+				now: options.now(),
+			})) {
+				if (response.destroyed) {
+					break;
+				}
+				await writeSse(response, chunk, chatSseFrame);
+			}
+			if (!response.destroyed) {
+				response.end("data: [DONE]\n\n");
+			}
+			return;
+		}
+		json(response, 200, await collectChatCompletion(piStream, {
+			modelName,
+			now: options.now(),
+		}));
+		return;
+	}
+
+	if (request.method === "POST" && url.pathname === "/v1/messages") {
+		const body = await readJson(request, options.maxBodyBytes);
+		const model = await options.runtime.resolveModel(body.model);
+		const converted = anthropicRequestToPi(body, model, options.now());
+		const piStream = inferenceStream(request, response, options, model, converted);
+		const modelName = `${model.provider}/${model.id}`;
+		if (body.stream === true) {
+			response.writeHead(200, {
+				"content-type": "text/event-stream; charset=utf-8",
+				"cache-control": "no-cache, no-store",
+				connection: "keep-alive",
+				"x-accel-buffering": "no",
+			});
+			for await (const event of translateAnthropicStream(piStream, {
+				modelName,
+				now: options.now(),
+			})) {
+				if (response.destroyed) {
+					break;
+				}
+				await writeSse(response, event, anthropicSseFrame);
+			}
+			if (!response.destroyed) {
+				response.end();
+			}
+			return;
+		}
+		json(response, 200, await collectAnthropicMessage(piStream, {
+			modelName,
+			now: options.now(),
+		}));
+		return;
+	}
+
 	throw notFound();
 }
 
@@ -281,12 +400,14 @@ export function createPiRouterServer({
 	updater = new GithubUpdateManager(),
 	management,
 	modelsPath,
+	configPath,
 	providerPolicyPath,
 	quotaAdapters,
 	authSessionOptions,
 	maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
 	now = Date.now,
-	eventLog = new OperationalEventLog({ now }),
+	requestLogging = true,
+	eventLog = new OperationalEventLog({ now, enabled: requestLogging }),
 } = {}) {
 	if (!runtime) {
 		throw new TypeError("runtime is required");
@@ -326,6 +447,7 @@ export function createPiRouterServer({
 		account,
 		updater,
 		modelsPath,
+		configPath,
 		providerPolicyPath,
 		startedAt: now(),
 		now,
@@ -374,13 +496,36 @@ export function createPiRouterServer({
 				response.destroy();
 				return;
 			}
+			let pathname = "";
+			try {
+				pathname = new URL(request.url ?? "/", "http://pi-router.local").pathname;
+			} catch {}
+			if (pathname === "/v1/messages") {
+				json(response, safe.status, {
+					type: "error",
+					error: {
+						type: safe.type === "authentication_error"
+							? "authentication_error"
+							: (
+								safe.type === "invalid_request_error"
+									? "invalid_request_error"
+									: "api_error"
+							),
+						message: safe.expose ? safe.message : "The provider request failed.",
+					},
+				});
+				return;
+			}
 			json(response, safe.status, errorEnvelope(safe));
 		});
 	});
 }
 
-export async function listenPiRouter(server, { host = "127.0.0.1", port = 8318 } = {}) {
-	validateListenHost(host);
+export async function listenPiRouter(
+	server,
+	{ host = "127.0.0.1", port = 8318, allowRemote = false } = {},
+) {
+	validateListenHost(host, { allowRemote });
 	if (!Number.isSafeInteger(port) || port < 0 || port > 65535) {
 		throw new RouterError("Port must be an integer from 0 to 65535.", {
 			status: 400,

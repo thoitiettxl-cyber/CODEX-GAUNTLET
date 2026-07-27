@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { parseDocument } from "yaml";
 
 import {
 	Badge,
@@ -18,6 +19,7 @@ import { Icon } from "../../components/ui/Icon";
 import {
 	errorMessage,
 	type ManagementClient,
+	type ManagementStatus,
 	type ProviderInfo,
 } from "../../lib/api";
 import { useQuery } from "../../lib/api/use-query";
@@ -40,9 +42,11 @@ interface CustomProviderDraft {
 	id: string;
 	name: string;
 	baseUrl: string;
-	api: "openai-responses" | "openai-completions";
+	api: "openai-responses" | "openai-completions" | "anthropic-messages";
+	apiKey: string;
 	modelId: string;
 	modelAlias: string;
+	prefix: string;
 	proxyUrl: string;
 	headers: string;
 	excludedModels: string;
@@ -53,8 +57,10 @@ const EMPTY_CUSTOM: CustomProviderDraft = {
 	name: "",
 	baseUrl: "",
 	api: "openai-responses",
+	apiKey: "",
 	modelId: "",
 	modelAlias: "",
+	prefix: "",
 	proxyUrl: "",
 	headers: "{}",
 	excludedModels: "",
@@ -62,10 +68,12 @@ const EMPTY_CUSTOM: CustomProviderDraft = {
 
 export function ProvidersPage({
 	client,
+	status,
 	onMutation,
 	notify,
 }: {
 	client: ManagementClient;
+	status: ManagementStatus;
 	onMutation: () => Promise<void>;
 	notify: (message: string, tone?: "positive" | "negative") => void;
 }) {
@@ -74,9 +82,9 @@ export function ProvidersPage({
 	const [custom, setCustom] = useState<CustomProviderDraft>(EMPTY_CUSTOM);
 	const [customError, setCustomError] = useState("");
 	const [customBusy, setCustomBusy] = useState(false);
+	const [testBusy, setTestBusy] = useState(false);
 	const [pendingCustom, setPendingCustom] = useState<{
-		document: Record<string, unknown>;
-		revision: string;
+		source: string;
 		providerId: string;
 	} | null>(null);
 	const query = useQuery("providers", () => client.providers());
@@ -116,27 +124,27 @@ export function ProvidersPage({
 			) {
 				throw new Error(t("providers.invalidHeaders"));
 			}
-			const config = await client.getConfig();
-			if (!config.editable || !config.document) {
+			if (!status.capabilities.custom_provider_protocols.includes(custom.api)) {
 				throw new Error(t("providers.configUnavailable"));
 			}
-			const document = structuredClone(config.document);
-			const providerMap = (
-				typeof document.providers === "object"
-				&& document.providers !== null
-				&& !Array.isArray(document.providers)
-			) ? document.providers as Record<string, unknown> : {};
-			if (providerMap[custom.id]) {
+			const config = await client.rawConfig();
+			const document = parseDocument(config.source);
+			const issue = document.errors[0];
+			if (issue) {
+				throw new Error(issue.message);
+			}
+			if (document.getIn(["providers", custom.id]) !== undefined) {
 				throw new Error(t("providers.duplicate"));
 			}
 			const excludedModels = custom.excludedModels
 				.split(/\r?\n|,/u)
 				.map((value) => value.trim())
 				.filter(Boolean);
-			providerMap[custom.id] = {
+			document.setIn(["providers", custom.id], {
 				name: custom.name.trim() || custom.id,
 				baseUrl: custom.baseUrl.trim(),
 				api: custom.api,
+				...(custom.apiKey ? { apiKey: custom.apiKey } : {}),
 				authHeader: true,
 				...(Object.keys(headers).length > 0 ? { headers } : {}),
 				models: [{
@@ -144,22 +152,14 @@ export function ProvidersPage({
 					name: custom.modelId.trim(),
 				}],
 				...(custom.proxyUrl.trim() ? { proxyUrl: custom.proxyUrl.trim() } : {}),
+				...(custom.prefix.trim() ? { prefix: custom.prefix.trim() } : {}),
 				...(custom.modelAlias.trim()
 					? { modelAliases: { [custom.modelId.trim()]: custom.modelAlias.trim() } }
 					: {}),
 				...(excludedModels.length > 0 ? { excludedModels } : {}),
-			};
-			document.providers = providerMap;
-			const preview = await client.previewConfig(document);
-			if (!preview.valid || !preview.revision) {
-				throw new Error(
-					preview.errors.map((item) => `${item.path}: ${item.message}`).join(" · ")
-						|| t("providers.validationFailed"),
-				);
-			}
+			});
 			setPendingCustom({
-				document,
-				revision: preview.revision,
+				source: document.toString(),
 				providerId: custom.id,
 			});
 		} catch (error) {
@@ -175,7 +175,7 @@ export function ProvidersPage({
 		}
 		setCustomBusy(true);
 		try {
-			await client.applyConfig(pendingCustom.document, pendingCustom.revision);
+			await client.putRawConfig(pendingCustom.source);
 			notify(t("providers.added", { id: pendingCustom.providerId }));
 			setCustom(EMPTY_CUSTOM);
 			setPendingCustom(null);
@@ -185,6 +185,62 @@ export function ProvidersPage({
 			setPendingCustom(null);
 		} finally {
 			setCustomBusy(false);
+		}
+	};
+
+	const testProtocol = async () => {
+		setTestBusy(true);
+		setCustomError("");
+		const controller = new AbortController();
+		const timer = window.setTimeout(() => controller.abort(), 20_000);
+		try {
+			const headers = JSON.parse(custom.headers) as Record<string, string>;
+			const base = custom.baseUrl.trim().replace(/\/+$/u, "");
+			const route = custom.api === "openai-responses"
+				? "/responses"
+				: custom.api === "openai-completions"
+					? "/chat/completions"
+					: "/messages";
+			const requestHeaders: Record<string, string> = {
+				"content-type": "application/json",
+				...headers,
+			};
+			if (custom.api === "anthropic-messages") {
+				if (custom.apiKey) {
+					requestHeaders["x-api-key"] = custom.apiKey;
+				}
+				requestHeaders["anthropic-version"] ??= "2023-06-01";
+			} else if (custom.apiKey) {
+				requestHeaders.authorization = `Bearer ${custom.apiKey}`;
+			}
+			const body = custom.api === "openai-responses"
+				? { model: custom.modelId, input: "Reply with OK.", max_output_tokens: 8 }
+				: custom.api === "openai-completions"
+					? {
+						model: custom.modelId,
+						messages: [{ role: "user", content: "Reply with OK." }],
+						max_tokens: 8,
+					}
+					: {
+						model: custom.modelId,
+						messages: [{ role: "user", content: "Reply with OK." }],
+						max_tokens: 8,
+					};
+			const response = await fetch(`${base}${route}`, {
+				method: "POST",
+				headers: requestHeaders,
+				body: JSON.stringify(body),
+				signal: controller.signal,
+			});
+			if (!response.ok) {
+				throw new Error(t("providers.testFailed", { status: response.status }));
+			}
+			notify(t("providers.testPassed"));
+		} catch (caught) {
+			setCustomError(errorMessage(caught));
+		} finally {
+			window.clearTimeout(timer);
+			setTestBusy(false);
 		}
 	};
 
@@ -217,6 +273,9 @@ export function ProvidersPage({
 					title={t("providers.customTitle")}
 				/>
 				<InlineNotice>{t("providers.customNotice")}</InlineNotice>
+				{!status.capabilities.raw_config ? (
+					<InlineNotice tone="warning">{t("providers.configUnavailable")}</InlineNotice>
+				) : null}
 				{customError ? <InlineNotice tone="negative">{customError}</InlineNotice> : null}
 				<form className="custom-provider-form" onSubmit={(event) => void previewCustom(event)}>
 					<label className="field">
@@ -263,7 +322,19 @@ export function ProvidersPage({
 						>
 							<option value="openai-responses">{t("providers.protocolResponses")}</option>
 							<option value="openai-completions">{t("providers.protocolCompletions")}</option>
+							<option value="anthropic-messages">{t("providers.protocolAnthropic")}</option>
 						</select>
+					</label>
+					<label className="field">
+						<span>{t("providers.apiKey")} <small>({t("providers.optional")})</small></span>
+						<input
+							autoComplete="off"
+							name="custom_provider_api_key"
+							onChange={(event) => updateCustom("apiKey", event.target.value)}
+							spellCheck={false}
+							type="password"
+							value={custom.apiKey}
+						/>
 					</label>
 					<label className="field">
 						<span>{t("providers.modelId")}</span>
@@ -284,6 +355,16 @@ export function ProvidersPage({
 							onChange={(event) => updateCustom("modelAlias", event.target.value)}
 							placeholder="fast"
 							value={custom.modelAlias}
+						/>
+					</label>
+					<label className="field">
+						<span>{t("providers.prefix")} <small>({t("providers.optional")})</small></span>
+						<input
+							maxLength={160}
+							name="custom_provider_prefix"
+							onChange={(event) => updateCustom("prefix", event.target.value)}
+							placeholder="team-a"
+							value={custom.prefix}
 						/>
 					</label>
 					<label className="field">
@@ -318,7 +399,19 @@ export function ProvidersPage({
 					<div className="field-wide button-row">
 						<Button
 							disabled={
+								testBusy
+								|| !custom.baseUrl.trim()
+								|| !custom.modelId.trim()
+							}
+							onClick={() => void testProtocol()}
+							type="button"
+						>
+							{testBusy ? t("providers.testing") : t("providers.testProtocol")}
+						</Button>
+						<Button
+							disabled={
 								customBusy
+								|| !status.capabilities.raw_config
 								|| !custom.id.trim()
 								|| !custom.baseUrl.trim()
 								|| !custom.modelId.trim()

@@ -5,6 +5,8 @@ const REQUEST_CLASSES = new Set([
 	"health",
 	"models",
 	"responses",
+	"chat_completions",
+	"anthropic_messages",
 	"management.status",
 	"management.providers",
 	"management.proxy_keys",
@@ -30,6 +32,12 @@ function requestClass(method, pathname) {
 	if (pathname === "/v1/responses") {
 		return "responses";
 	}
+	if (pathname === "/v1/chat/completions") {
+		return "chat_completions";
+	}
+	if (pathname === "/v1/messages") {
+		return "anthropic_messages";
+	}
 	if (pathname === "/management/api/status") {
 		return "management.status";
 	}
@@ -54,6 +62,12 @@ function requestClass(method, pathname) {
 	if (pathname.startsWith("/management/api/config")) {
 		return "management.config";
 	}
+	if (pathname.startsWith("/v0/management/config.yaml")) {
+		return "management.config";
+	}
+	if (pathname.startsWith("/v0/management/auth-files")) {
+		return "management.credentials";
+	}
 	if (pathname.startsWith("/management/api/updates/")) {
 		return "management.updates";
 	}
@@ -61,11 +75,16 @@ function requestClass(method, pathname) {
 }
 
 export class OperationalEventLog {
-	constructor({ capacity = 250, now = Date.now } = {}) {
+	constructor({ capacity = 250, now = Date.now, enabled = true } = {}) {
 		this.capacity = boundedInteger(capacity, "event capacity", { min: 1, max: 1000 });
 		this.now = now;
+		this.enabled = enabled === true;
 		this.events = [];
 		this.sequence = 0;
+	}
+
+	setEnabled(value) {
+		this.enabled = value === true;
 	}
 
 	classify(method, pathname) {
@@ -80,6 +99,9 @@ export class OperationalEventLog {
 		provider,
 		errorCode,
 	} = {}) {
+		if (!this.enabled) {
+			return undefined;
+		}
 		const normalizedClass = REQUEST_CLASSES.has(selectedClass)
 			? selectedClass
 			: "not_found";
@@ -136,6 +158,7 @@ export class OperationalEventLog {
 			errors,
 			last_event_at: this.events.at(-1)?.timestamp ?? null,
 			retention: "memory",
+			enabled: this.enabled,
 		};
 	}
 }

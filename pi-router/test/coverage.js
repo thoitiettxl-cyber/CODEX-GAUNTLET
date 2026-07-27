@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const sourcePrefix = `${pathToFileURL(join(packageRoot, "src")).href}/`;
 const coverageDir = await mkdtemp(join(tmpdir(), "pi-router-coverage-"));
+const MINIMUM_COVERAGE = 82.8;
 
 try {
 	const exitCode = await new Promise((resolve, reject) => {
@@ -74,8 +75,10 @@ try {
 		process.stdout.write(
 			`pi-router source line coverage: ${covered}/${total} (${percentage.toFixed(1)}%)\n`,
 		);
-		if (percentage < 80) {
-			process.stderr.write("pi-router source line coverage is below 80%.\n");
+		if (percentage < MINIMUM_COVERAGE) {
+			process.stderr.write(
+				`pi-router source line coverage is below ${MINIMUM_COVERAGE}%.\n`,
+			);
 			process.exitCode = 1;
 		}
 	}

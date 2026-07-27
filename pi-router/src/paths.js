@@ -36,6 +36,7 @@ export function statePaths({ stateDir, accountId = "default" }) {
 		accountDir,
 		authPath: join(accountDir, "auth.json"),
 		accountCatalogPath: join(root, "account-catalog.json"),
+		configPath: join(root, "config.yaml"),
 		modelsPath: join(root, "models.json"),
 		providerPolicyPath: join(root, "provider-policy.json"),
 		proxyKeysPath: join(root, "proxy-api-keys.json"),

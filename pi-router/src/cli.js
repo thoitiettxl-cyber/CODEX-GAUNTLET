@@ -10,11 +10,17 @@ import { createManagementService } from "./management/index.js";
 import { PiRuntime } from "./pi-runtime.js";
 import { ensureStatePaths, statePaths } from "./paths.js";
 import { ProxyKeyStore } from "./proxy-keys.js";
+import {
+	configuredEnvironment,
+	configuredManagementKey,
+	ensureRouterConfig,
+	readRouterConfig,
+} from "./router-config.js";
 import { createPiRouterServer, listenPiRouter } from "./server.js";
 import { GithubUpdateManager } from "./update.js";
 import { BINARY_BUILD, VERSION } from "./version.js";
 
-const HELP = `pi-router - local OpenAI Responses gateway backed by Pi providers
+const HELP = `pi-router - local OpenAI and Anthropic gateway backed by Pi providers
 
 Pi Router Management Center: providers, auth, quota, logs, config, and verified releases.
 
@@ -31,7 +37,8 @@ Usage:
   pi-router help
 
 Environment:
-  PI_ROUTER_MANAGEMENT_KEY Required by serve; protects only /management/api/*.
+  PI_ROUTER_MANAGEMENT_KEY Required unless config.yaml sets the management secret;
+                           protects /management/api/* and /v0/management/*.
   PI_ROUTER_API_KEY        Legacy one-time seed for the persisted proxy API-key store.
   PI_ROUTER_STATE_DIR      Overrides the default ~/.local/state/pi-router state directory.
   PI_ROUTER_MODEL_NETWORK  Set to 1 to allow Pi remote model-catalog refreshes.
@@ -84,11 +91,13 @@ export function parseArgs(argv) {
 		switch (name) {
 			case "--host":
 				parsed.host = takeValue(args, index, name);
+				Object.defineProperty(parsed, "_hostExplicit", { value: true });
 				index += 1;
 				break;
 			case "--port": {
 				const value = takeValue(args, index, name);
 				parsed.port = Number(value);
+				Object.defineProperty(parsed, "_portExplicit", { value: true });
 				index += 1;
 				break;
 			}
@@ -249,6 +258,7 @@ function runtimeOptions(parsed, env) {
 				clientId: env.PI_ROUTER_ANTIGRAVITY_CLIENT_ID,
 				clientSecret: env.PI_ROUTER_ANTIGRAVITY_CLIENT_SECRET,
 			},
+			environment: env,
 		},
 	};
 }
@@ -281,21 +291,7 @@ export async function runCli(
 			type: "invalid_request_error",
 		});
 	}
-	if (
-		parsed.command === "serve"
-		&& (
-			typeof env.PI_ROUTER_MANAGEMENT_KEY !== "string"
-			|| env.PI_ROUTER_MANAGEMENT_KEY.trim().length === 0
-		)
-	) {
-		throw new RouterError("PI_ROUTER_MANAGEMENT_KEY is required by the serve command.", {
-			status: 400,
-			code: "missing_management_key",
-			type: "authentication_error",
-		});
-	}
-
-	const updater = createUpdater({
+	let updater = createUpdater({
 		automatic: env.PI_ROUTER_AUTO_UPDATE === "1",
 		binaryPath: BINARY_BUILD ? process.execPath : null,
 	});
@@ -312,11 +308,50 @@ export async function runCli(
 		return { command: "update", action: parsed.updateAction, result };
 	}
 
-	const { paths, options } = runtimeOptions(parsed, env);
+	const preliminary = runtimeOptions(parsed, env);
+	const paths = preliminary.paths;
+	if (
+		parsed.command === "serve"
+		&& (
+			typeof env.PI_ROUTER_MANAGEMENT_KEY !== "string"
+			|| env.PI_ROUTER_MANAGEMENT_KEY.trim().length === 0
+		)
+	) {
+		let configured;
+		try {
+			configured = await readRouterConfig(paths.configPath);
+		} catch (error) {
+			if (error?.code !== "ENOENT") {
+				throw error;
+			}
+		}
+		if (!configuredManagementKey(configured?.document, "")) {
+			throw new RouterError("PI_ROUTER_MANAGEMENT_KEY or config.yaml secret-key is required by serve.", {
+				status: 400,
+				code: "missing_management_key",
+				type: "authentication_error",
+			});
+		}
+	}
 	await ensureStatePaths(paths);
+	const config = await ensureRouterConfig({
+		configPath: paths.configPath,
+		modelsPath: paths.modelsPath,
+		providerPolicyPath: paths.providerPolicyPath,
+		defaults: {
+			host: parsed.host,
+			port: parsed.port,
+		},
+	});
+	const effectiveEnv = configuredEnvironment(config.document, env);
+	updater = createUpdater({
+		automatic: effectiveEnv.PI_ROUTER_AUTO_UPDATE === "1",
+		binaryPath: BINARY_BUILD ? process.execPath : null,
+	});
+	const { options } = runtimeOptions(parsed, effectiveEnv);
 	const proxyKeyStore = await ProxyKeyStore.open({
 		path: paths.proxyKeysPath,
-		seedKey: env.PI_ROUTER_API_KEY,
+		seedKey: effectiveEnv.PI_ROUTER_API_KEY,
 		requireKey: parsed.command === "serve",
 	});
 	const activeRuntime = await createRuntime(options);
@@ -327,6 +362,7 @@ export async function runCli(
 		allowModelNetwork: options.allowModelNetwork,
 		additionalRuntimeOptions: {
 			antigravityOAuth: options.antigravityOAuth,
+			environment: effectiveEnv,
 		},
 	});
 
@@ -355,6 +391,7 @@ export async function runCli(
 			runtime,
 			account: paths.account,
 			updater,
+			configPath: paths.configPath,
 			modelsPath: paths.modelsPath,
 			providerPolicyPath: paths.providerPolicyPath,
 			proxyKeyStore,
@@ -366,14 +403,23 @@ export async function runCli(
 
 	const server = createServer({
 		runtime,
-		managementKey: env.PI_ROUTER_MANAGEMENT_KEY,
+		managementKey: configuredManagementKey(
+			config.document,
+			effectiveEnv.PI_ROUTER_MANAGEMENT_KEY,
+		),
 		proxyKeyStore,
 		account: paths.account,
 		updater,
+		configPath: paths.configPath,
 		modelsPath: paths.modelsPath,
 		providerPolicyPath: paths.providerPolicyPath,
+		requestLogging: config.document["request-logging"],
 	});
-	const address = await listen(server, { host: parsed.host, port: parsed.port });
+	const address = await listen(server, {
+		host: parsed._hostExplicit ? parsed.host : config.document.host,
+		port: parsed._portExplicit ? parsed.port : config.document.port,
+		allowRemote: config.document["remote-management"]["allow-remote"],
+	});
 	const displayHost = typeof address === "object" && address?.family === "IPv6"
 		? `[${address.address}]`
 		: address.address;

@@ -83,7 +83,8 @@ self-update does not support `android/aarch64`.
 `pi-router/` is an optional repository-local service at the product boundary.
 It embeds Pi's provider/model/auth runtime but does not embed the Pi agent
 loop, session manager, tools, or extensions. Its inbound application surfaces
-are a static loopback operations console and an OpenAI Responses HTTP API. The
+are a static loopback-default operations console plus OpenAI Responses, OpenAI
+Chat Completions, and Anthropic Messages HTTP APIs. The
 static document contains no credential data; the operator may explicitly
 retain only an obfuscated management bearer in same-origin browser storage as
 defined by ADR 0009. Every `/v1/*` and `/management/api/*` request remains
@@ -93,7 +94,7 @@ Router credential and model state is separate from both repository state and
 Pi CLI state. The dependency direction is:
 
 ```text
-Codex, the browser operator bench, or another Responses client
+Codex, the browser operator console, or another supported protocol client
   → pi-router HTTP adapter
   → Pi ModelRuntime
   → configured upstream provider
@@ -107,14 +108,18 @@ The packaged Termux artifact embeds the same HTTP adapter, Pi runtime bundle,
 and committed operations-console HTML in a Node SEA based on a pinned native
 Android AArch64 Node package. Its authenticated management domains may inspect
 bounded runtime state, orchestrate provider-owned login/logout, query reviewed
-quota adapters, retain sanitized in-memory events, atomically replace a
-validated router-owned `models.json`, and atomically replace only its own
-packaged executable. They cannot return stored credentials or raw provider
-bodies, select arbitrary repositories or paths, edit environment/process
-state, or define verification success. The management boundary follows
+quota adapters, retain sanitized in-memory events, atomically replace
+validated router-owned raw `config.yaml`, explicitly import/export fixed
+isolated-account credential files, and atomically replace only its own
+packaged executable. The management key is therefore a secret-file authority;
+it still cannot select arbitrary repositories or paths, execute commands,
+return raw provider bodies, restart the process, or define verification
+success. The original management boundary follows
 [ADR 0007](decisions/0007-bound-pi-router-operations-console.md), with the
 single-file frontend stack and opt-in browser-retention amendment in
 [ADR 0009](decisions/0009-use-a-modern-single-file-pi-router-console.md).
+Its raw-management and protocol expansion is defined by
+[ADR 0010](decisions/0010-enable-pi-router-raw-management-and-protocol-adapters.md).
 Release selection and replacement follow
 [ADR 0006](decisions/0006-package-pi-router-as-a-verified-termux-sea.md);
 source mode is check-only and never replaces the Node interpreter.

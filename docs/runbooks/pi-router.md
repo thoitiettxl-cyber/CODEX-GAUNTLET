@@ -3,9 +3,9 @@
 ## Scope
 
 This runbook covers the optional repository-local `pi-router` source package.
-The service is a loopback OpenAI Responses gateway backed by Pi
-`ModelRuntime`; it is not a Gauntlet verification authority or a Pi agent
-session.
+The service is a loopback-default OpenAI Responses, OpenAI Chat Completions,
+and Anthropic Messages gateway backed by Pi `ModelRuntime`; it is not a
+Gauntlet verification authority or a Pi agent session.
 
 The product contract is [Pi Router](../product/pi-router.md). Runtime
 ownership is recorded in
@@ -19,6 +19,9 @@ in [ADR 0008](../decisions/0008-separate-pi-router-keys-and-isolate-provider-acc
 The single-file frontend stack, YAML source projection, and explicit
 obfuscated browser-login retention are recorded in
 [ADR 0009](../decisions/0009-use-a-modern-single-file-pi-router-console.md).
+Raw management authority, three-protocol providers, and the additional inbound
+adapters are recorded in
+[ADR 0010](../decisions/0010-enable-pi-router-raw-management-and-protocol-adapters.md).
 
 ## Prerequisites
 
@@ -53,6 +56,8 @@ The default state root is `~/.local/state/pi-router`:
 ```text
 accounts/<account>/auth.json
 account-catalog.json
+config.yaml
+config.yaml.previous
 models.json
 provider-policy.json
 proxy-api-keys.json
@@ -69,6 +74,11 @@ Before backing up or moving state, stop the serving process. Treat
 state directory. `proxy-api-keys.json` contains digests rather than raw key
 values but is still private router state. Account and router-owned state files
 use mode `0600`; account directories use mode `0700`.
+
+`config.yaml` is the source of truth. On first use, Pi Router bootstraps it
+from existing `models.json` and `provider-policy.json`; after that it compiles
+those files from validated raw YAML. Back up `config.yaml`,
+`config.yaml.previous`, and every isolated account together.
 
 ## Setup and login
 
@@ -167,6 +177,14 @@ From another shell with a configured proxy key:
 curl http://127.0.0.1:8318/health
 curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
   http://127.0.0.1:8318/v1/models
+curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"PROVIDER/MODEL","messages":[{"role":"user","content":"hello"}]}' \
+  http://127.0.0.1:8318/v1/chat/completions
+curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"PROVIDER/MODEL","max_tokens":64,"messages":[{"role":"user","content":"hello"}]}' \
+  http://127.0.0.1:8318/v1/messages
 ```
 
 Expected health output contains only service name, version, and `status:
@@ -186,10 +204,12 @@ exposes:
 - **Dashboard** for connection, server version, available models, separately
   managed proxy API keys, account/activity/config/quota capability, update,
   and rollback posture;
-- **AI Providers** for provider/auth-mode/model inventory and validated
-  arbitrary OpenAI-compatible provider creation;
-- **Auth Files** for metadata-only, account-labelled stored credentials and
-  exact confirmed logout;
+- **AI Providers** for provider/auth-mode/model inventory, raw-config-backed
+  creation across OpenAI Responses, OpenAI Chat Completions, and Anthropic
+  Messages, plus a direct browser protocol probe;
+- **Auth Files** for account-labelled credential metadata, per-file or repeated
+  batch import/export, a once-per-page disclosure warning, and exact confirmed
+  logout;
 - **OAuth Login** for expiring, cancellable API-key or OAuth sessions in new
   or explicitly selected isolated accounts;
 - **Quota Management** for separate Codex, Claude, Antigravity, Kimi, and
@@ -198,10 +218,9 @@ exposes:
   polling, search/result filters, auto-refresh, management-traffic filtering,
   and a browser-view-only Clear action. File-log download/clear controls stay
   unavailable because the backend does not expose that capability;
-- **Config Panel** for the reviewed combined provider/model and router policy
-  schema with a CodeMirror YAML source projection, line/column parse errors,
-  source diff, validation, stale-write protection, atomic file replacement,
-  and restore;
+- **Config Panel** for exact raw `config.yaml` source with CodeMirror,
+  line/column parse errors, source diff, server semantic validation, atomic
+  replacement, and self-lockout confirmation for listener/management changes;
 - **System** for documentation/runbook links, explicit update check, runtime
   posture, capability-gated request logging, a one-shot `/v1/models` read using
   a separately entered proxy key, and scoped local-login cleanup.
@@ -214,15 +233,16 @@ but does not send an authenticated request until the operator submits it.
 Theme and language preferences may also be retained. Login input, filters,
 drafts, proxy keys entered for the System model read, results, and events are
 not persisted. Do not paste a provider credential into the local bearer field.
-Stored credential values, inference prompts, submitted auth responses,
-request/response bodies, environment values, upstream bodies, and raw state
-paths are absent from management responses and logs. Bounded auth prompt
+Except for the explicit raw config and auth-file actions, stored credential
+values, inference prompts, submitted auth responses, request/response bodies,
+environment values, upstream bodies, and raw state paths are absent from
+management responses and logs. Bounded auth prompt
 instructions, provider-owned sign-in URLs, and device codes are visible only
 during the current login session.
 
-Every `/management/api/*` request requires the management key. Every `/v1/*`
-request requires one persisted proxy API key. Neither key class is accepted
-at the other boundary.
+Every `/management/api/*` and `/v0/management/*` request requires the
+management key. Every `/v1/*` request requires one persisted proxy API key.
+Neither key class is accepted at the other boundary.
 Status does not contact GitHub or provider quota APIs. Update and quota checks
 are explicit actions. Update checks contact only the fixed public repository;
 the API never accepts a repository, asset name, download URL, or filesystem
@@ -237,6 +257,51 @@ external script/style dependency:
 npm --prefix pi-router run build
 npm --prefix pi-router run check
 ```
+
+## Raw configuration and credential files
+
+Treat the management bearer as authority over router secrets. Read or replace
+the fixed raw configuration target without letting shell history capture the
+bearer or file contents:
+
+```bash
+curl -fsS -H "Authorization: Bearer $PI_ROUTER_MANAGEMENT_KEY" \
+  http://127.0.0.1:8318/v0/management/config.yaml \
+  --output "$PREFIX/tmp/pi-router-config.yaml"
+curl -fsS -X PUT \
+  -H "Authorization: Bearer $PI_ROUTER_MANAGEMENT_KEY" \
+  -H "Content-Type: application/yaml" \
+  --data-binary "@$PREFIX/tmp/pi-router-config.yaml" \
+  http://127.0.0.1:8318/v0/management/config.yaml
+```
+
+Malformed YAML returns `400 invalid_yaml`; syntactically valid but unsupported
+listener, environment, provider, or model semantics return
+`422 router_config_invalid`. The source file is replaced only after
+validation. Provider and logging-only changes reload; host, port,
+remote-management key/policy, or environment changes report restart required.
+Changing the management secret invalidates the old bearer after restart.
+
+The Auth Files UI is the preferred import/export path. Each upload is one Pi
+credential JSON object and always creates a new isolated account. Each
+download is the exact containing account `auth.json`; if an account contains
+more than one provider credential, the file contains all of them. Batch
+actions repeat the operation per file/credential and may trigger browser
+multiple-download controls. Exported content is plaintext secret material:
+move it into protected storage immediately and delete unneeded copies.
+
+Remote listening is opt-in in raw YAML:
+
+```yaml
+host: 0.0.0.0
+remote-management:
+  allow-remote: true
+  secret-key: replace-with-a-strong-secret
+```
+
+This exposes both management and inference surfaces on the selected interface.
+Use network-layer controls appropriate to the device and revert to
+`127.0.0.1` if remote access is not required.
 
 ## Updates and rollback
 
@@ -314,10 +379,13 @@ and `.sha256` asset names. Building does not create a tag, push, or release.
 - No proxy keys at startup: set `PI_ROUTER_API_KEY` once only if the store is
   absent, then start the server and manage its lifecycle in Dashboard.
 - Unknown model: use the exact `provider/model` returned by `/v1/models`.
-- Corrupt custom provider config: if Config Panel reports a valid recovery
-  input, use its confirmed restore action. Otherwise stop the service and
-  restore the matching `models.json` and `provider-policy.json` state before
-  starting again. Credential state is independent.
+- Corrupt custom provider config: stop the service, validate and restore
+  `config.yaml.previous` to `config.yaml`, then start the service so compiled
+  `models.json` and `provider-policy.json` are regenerated. Credential state
+  is independent.
+- Self-lockout after a raw listener or management-key edit: stop the process,
+  restore the exact prior source from `config.yaml.previous`, preserve mode
+  `0600`, and restart on loopback with the previous management bearer.
 - Revoke one credential:
   `node pi-router/src/cli.js logout PROVIDER --account ACCOUNT`.
 - Update validation failure: keep running the current process; no installed

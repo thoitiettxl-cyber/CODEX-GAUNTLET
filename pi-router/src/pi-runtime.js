@@ -4,9 +4,10 @@ import { withProviderProxy } from "./provider-proxy.js";
 import { createAntigravityProviderConfig } from "./providers/antigravity-oauth.js";
 
 export class PiRuntime {
-	constructor(runtime, { providerPolicy } = {}) {
+	constructor(runtime, { providerPolicy, environment = {} } = {}) {
 		this.runtime = runtime;
 		this.providerPolicy = providerPolicy ?? new ProviderPolicy();
+		this.environment = { ...environment };
 	}
 
 	static async create({
@@ -15,6 +16,7 @@ export class PiRuntime {
 		allowModelNetwork = false,
 		antigravityOAuth,
 		providerPolicyPath,
+		environment = {},
 	} = {}) {
 		const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
 		const runtime = await ModelRuntime.create({
@@ -27,7 +29,7 @@ export class PiRuntime {
 			runtime.registerProvider("antigravity", antigravity);
 		}
 		const providerPolicy = await ProviderPolicy.open({ path: providerPolicyPath });
-		return new PiRuntime(runtime, { providerPolicy });
+		return new PiRuntime(runtime, { providerPolicy, environment });
 	}
 
 	async listModels() {
@@ -145,16 +147,19 @@ export class PiRuntime {
 	stream(model, context, options) {
 		const upstream = this.providerPolicy.unwrap(model);
 		const proxyUrl = this.providerPolicy.proxyUrl(upstream.provider);
-		const selectedOptions = proxyUrl
-			? {
-				...options,
-				env: {
-					...options?.env,
-					HTTP_PROXY: proxyUrl,
-					HTTPS_PROXY: proxyUrl,
-				},
-			}
-			: options;
+		const selectedOptions = {
+			...options,
+			env: {
+				...this.environment,
+				...options?.env,
+				...(proxyUrl
+					? {
+						HTTP_PROXY: proxyUrl,
+						HTTPS_PROXY: proxyUrl,
+					}
+					: {}),
+			},
+		};
 		return withProviderProxy(
 			proxyUrl,
 			() => this.runtime.streamSimple(upstream, context, selectedOptions),
@@ -176,6 +181,11 @@ export class PiRuntime {
 	async refreshConfiguration() {
 		await this.runtime.refresh({ allowNetwork: false });
 		await this.providerPolicy.reload();
+	}
+
+	async reloadCredentials() {
+		this.runtime.credentials?.store?.reload?.();
+		await this.runtime.refresh({ allowNetwork: false });
 	}
 }
 

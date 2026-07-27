@@ -3,8 +3,8 @@
 ## Purpose
 
 `pi-router` is a local provider gateway that reuses Pi's provider, model,
-credential, OAuth-refresh, and streaming runtime while presenting the OpenAI
-Responses HTTP contract required by current Codex clients.
+credential, OAuth-refresh, and streaming runtime while presenting OpenAI
+Responses, OpenAI Chat Completions, and Anthropic Messages HTTP contracts.
 
 It is a separate optional service. It is not a Pi agent session, a Pi
 extension, a Harness component, or a verification authority.
@@ -19,15 +19,18 @@ Pi Router provides:
   router-owned account store;
 - multiple isolated account stores, with stable non-secret credential metadata
   and labels for managing more than one account for the same provider;
-- Pi built-in providers plus custom providers declared in a router-owned
-  `models.json`;
-- arbitrary OpenAI-compatible provider ids plus router-owned provider policy
-  for model aliases, exclusions, and provider-scoped proxy selection;
+- Pi built-in providers plus custom providers declared in router-owned raw
+  `config.yaml`;
+- arbitrary custom provider ids using `openai-completions`,
+  `openai-responses`, or `anthropic-messages`, with base URL, API key, custom
+  headers, aliases, exclusions, model prefix, and provider-scoped proxy;
 - an AgentRouter custom-provider example with model-level
   `openai-completions` and `anthropic-messages` routing;
 - `GET /health`;
 - authenticated `GET /v1/models`;
 - authenticated `POST /v1/responses` in JSON and HTTP/SSE modes;
+- authenticated `POST /v1/chat/completions` in JSON and HTTP/SSE modes;
+- authenticated `POST /v1/messages` in JSON and HTTP/SSE modes;
 - a self-contained operations console at `/` and
   `/management.html`;
 - a bearer-authenticated Management API below `/management/api/`;
@@ -43,9 +46,9 @@ Pi Router provides:
   and xAI/Grok;
 - deterministic local tests that make no provider request.
 
-Automatic multi-account routing or rotation, automatic failover, inbound
-Anthropic Messages or Chat Completions endpoints, WebSocket transport, hosted
-deployment, and prompt/body logging are outside the current product surface.
+Automatic multi-account routing or rotation, automatic failover, WebSocket
+transport, hosted deployment, and prompt/body logging are outside the current
+product surface.
 
 ## Runtime and state
 
@@ -66,14 +69,19 @@ Router state defaults to `~/.local/state/pi-router` and may be overridden with
     <managed-account>/
       auth.json
   account-catalog.json
+  config.yaml
+  config.yaml.previous
   models.json
   provider-policy.json
   proxy-api-keys.json
 ```
 
-`auth.json` is owned and locked by Pi's credential store. Pi Router never
-copies credentials from `~/.pi/agent/auth.json`, returns an upstream
-credential to a client, or stores a credential in this repository.
+`auth.json` is owned by Pi's credential store. Pi Router never copies
+credentials from `~/.pi/agent/auth.json` or stores a credential in this
+repository. A holder of the management key may explicitly download an exact
+isolated-account auth file or import one bounded JSON auth file into a newly
+created isolated account. Batch UI actions repeat those per-file operations;
+there is no archive endpoint.
 `account-catalog.json` contains only stable account/credential ids, bounded
 labels, provider/type metadata, and timestamps. `proxy-api-keys.json` stores
 only key digests and metadata. Router-owned state files are written with mode
@@ -81,11 +89,14 @@ only key digests and metadata. Router-owned state files are written with mode
 
 ## Network and client authentication
 
-The server binds only to `127.0.0.1` or `::1`. Any other host is rejected
-before listening.
+The server defaults to `127.0.0.1`. `127.0.0.1`, `::1`, and `localhost` are
+accepted without additional authority. A non-loopback listener is accepted
+only when `remote-management.allow-remote` is explicitly true in validated
+raw configuration.
 
-`PI_ROUTER_MANAGEMENT_KEY` is required when serving. Every
-`/management/api/*` route requires
+One non-empty management key is required when serving. It may be supplied by
+`remote-management.secret-key` or `PI_ROUTER_MANAGEMENT_KEY`. Every
+`/management/api/*` and `/v0/management/*` route requires
 `Authorization: Bearer <PI_ROUTER_MANAGEMENT_KEY>`.
 
 All `/v1/*` routes require one enabled router-owned proxy API key. Proxy keys
@@ -99,23 +110,24 @@ closed when no management key or proxy key is available. `/health` is
 unauthenticated and returns bounded readiness metadata without provider,
 model, path, key, or credential details.
 
-The static operator page is also unauthenticated so a user can enter the local
+The static operator page is also unauthenticated so a user can enter the
 management bearer after it loads. Loading the page does not read models, touch
-provider state, or make an authenticated request. The page is served only by
-the same loopback listener; all model discovery and inference requests retain
+provider state, or make an authenticated request. The page is served by the
+same configured listener; all model discovery and inference requests retain
 the separate `/v1/*` proxy-key boundary.
 
-Management responses may report bounded service, runtime, account, proxy-key
+Most Management responses report bounded service, runtime, account, proxy-key
 metadata, provider, credential metadata, model-count, quota-capability,
-operational event, configuration, and release state. They never return a
-stored proxy-key value, stored upstream credential value, authorization
-header, inference prompt or body, environment value, raw upstream body, or
-raw state and executable path. A newly generated or replaced proxy key is
-returned exactly once in that mutation response.
+operational event, and release state. The explicit raw configuration and
+auth-file routes are exceptions: their purpose is to return or accept secrets
+under management-key authority. They never return a proxy API key value,
+inference prompt/body, raw upstream body, arbitrary state path, or executable
+path. A newly generated or replaced proxy key is returned exactly once in
+that mutation response.
 
-Request bodies and authorization headers are not logged. Error responses use
-an OpenAI-style bounded JSON error envelope and never include raw upstream
-response bodies or credential values.
+Request bodies and authorization headers are not logged. Errors use bounded
+OpenAI-style envelopes for OpenAI routes and Anthropic-style envelopes for
+`/v1/messages`; neither includes raw upstream bodies or credential values.
 
 Remote model-catalog refresh is disabled by default so startup and
 post-login refresh do not depend on unrelated configured providers or catalog
@@ -123,7 +135,8 @@ endpoints. `PI_ROUTER_MODEL_NETWORK=1` opts the process into Pi's remote
 catalog refresh. This setting does not disable the provider network traffic
 required for login, OAuth refresh, or inference.
 
-Provider and model headers declared in the router-owned `models.json` are
+Provider and model headers declared in raw `config.yaml` and compiled into
+router-owned `models.json` are
 forwarded by Pi's request runtime. The AgentRouter example sets
 `User-Agent: pi-coding-agent`, which identifies the pinned Pi runtime without
 injecting the Pi agent system prompt or loading an agent session.
@@ -161,7 +174,7 @@ Reload, browser back/forward, and copied loopback URLs restore the selected
 page. Unknown hashes resolve to Dashboard. The shell includes a skip link,
 visible keyboard focus, reduced-motion behavior, named form controls, status
 announcements, empty/loading/error states, and confirmation for credential,
-configuration-recovery, install, and rollback mutations.
+raw-configuration, install, and rollback mutations.
 
 The Dashboard reports bounded operational state rather than a decorative
 network topology: service/version/uptime, selected account, configured
@@ -194,20 +207,22 @@ keeps this route visible for its always-available bounded process event buffer;
 it does not claim file logging, raw-log download, or server-side log deletion
 without a later typed Management API capability.
 
-Config Panel offers a CodeMirror YAML source view of the existing combined
-non-secret configuration document, while AI Providers retains the visual-safe
-form for common custom-provider fields. YAML is parsed in the browser with
-line/column diagnostics, previewed as a source diff, then sent as the unchanged
-structured `document` to the existing preview/apply endpoints. Backend field
-validation and revision compare-and-set remain authoritative. Because the
-backend returns a structured document rather than raw source, comments and
-formatting are not round-tripped.
+Config Panel loads and edits exact raw `config.yaml` source through CodeMirror.
+YAML is parsed in the browser with line/column diagnostics and previewed as a
+source diff, but the backend reparses and semantically validates the unchanged
+source bytes before atomic replacement. Comments and formatting round-trip.
+Changing listener, port, remote-management access, or the management secret
+requires a dedicated self-lockout confirmation. AI Providers edits the same
+raw YAML document with YAML AST operations and offers all three protocol
+choices plus a direct browser protocol probe. The browser CSP therefore
+allows explicit HTTP/HTTPS `connect-src` destinations while retaining the
+management/proxy authentication split.
 
 System composes existing bounded capabilities: service/build posture, explicit
 release check, Pi Router documentation links, scoped local-login cleanup, and
 an operator-triggered `/v1/models` read using a separately entered proxy API
-key held only in memory. Request-logging mutation is rendered unavailable
-until a backend contract defines it.
+key held only in memory. It reports sanitized request logging as enabled or
+disabled and links to the raw config field that controls it.
 
 ## Management API
 
@@ -231,6 +246,11 @@ The Management API provides:
   account is selected for inference;
 - `DELETE /management/api/credentials/:credential`, which serializes with
   login for that exact account/provider pair and removes only that credential;
+- `GET /v0/management/auth-files/download?name=<credential-id>`, which returns
+  the exact raw `auth.json` bytes for that credential's isolated account with
+  an attachment name;
+- `POST /v0/management/auth-files`, which accepts one bounded valid Pi
+  credential JSON object and writes its exact bytes to a new isolated account;
 - `POST /management/api/auth/sessions`, which creates one bounded `api_key` or
   `oauth` login session for an exact provider in a new isolated account by
   default or an explicitly named existing account;
@@ -243,11 +263,14 @@ The Management API provides:
   returns a typed `unsupported` state for every other credential/provider;
 - `GET /management/api/events?limit=N`, which returns a newest-first view of
   the bounded sanitized in-memory operational event buffer;
+- `GET /v0/management/config.yaml`, which returns exact source bytes with a
+  SHA-256 ETag, and `PUT /v0/management/config.yaml`, which distinguishes
+  syntax (`400 invalid_yaml`) from semantic (`422 router_config_invalid`)
+  failures, preserves the prior raw source, and replaces only after validation;
 - `GET /management/api/config`, `POST /management/api/config/preview`,
   `POST /management/api/config/apply`, and
-  `POST /management/api/config/restore`, which expose the validated safe
-  `models.json` subset, produce a field diff, use a revision precondition, and
-  atomically replace or restore router-owned configuration;
+  `POST /management/api/config/restore`, retained as the structured
+  compatibility surface for compiled provider files;
 - `POST /management/api/updates/check`, which checks the latest stable GitHub
   release and returns a sanitized candidate summary;
 - `POST /management/api/updates/install` with the exact candidate `version`,
@@ -287,19 +310,15 @@ model/provider identity, and bounded error code. It never contains URL query
 strings, headers, credentials, prompts, request/response bodies, environment
 values, upstream bodies, or filesystem paths.
 
-The Config Panel is not a raw secret/file editor. Its schema accepts a
-router-owned `providers` object with arbitrary safe provider ids, Pi model
-fields, `baseUrl`, non-secret headers, `proxyUrl`, `modelAliases`, and
-`excludedModels`. An OpenAI-compatible custom provider is not restricted to a
-hard-coded provider list and may select `openai-completions` or
-`openai-responses`. It rejects `apiKey`, credential-bearing header names, unknown
-top-level or provider/model fields, oversized documents, and unsupported value
-shapes. Syntactically valid non-secret custom headers are editable, while
-authorization, cookie, key, token, secret, and credential header classes are
-rejected.
-Endpoint and proxy URLs cannot embed URL credentials, query parameters, or
-fragments. Complex chat-template compatibility objects remain CLI-only until
-their exact shapes receive a separate review.
+Raw `config.yaml` is the source of truth for listener host/port,
+`remote-management.allow-remote`, `remote-management.secret-key`,
+`request-logging`, a string-valued `environment` mapping, and `providers`.
+Unknown top-level fields are preserved. Provider definitions accept Pi model
+fields, `baseUrl`, `apiKey`, custom headers, `proxyUrl`, `prefix`,
+`modelAliases`, and `excludedModels`; their protocol must be
+`openai-completions`, `openai-responses`, or `anthropic-messages`. Endpoint
+and proxy URLs cannot embed URL credentials, query parameters, or fragments.
+The raw source is bounded to 512 KiB and YAML alias expansion is bounded.
 
 Router-only policy is persisted separately from Pi-compatible `models.json`.
 Aliases and exclusions affect `/v1/models` and model resolution; an alias
@@ -308,20 +327,18 @@ Provider-scoped proxy settings are applied through an async-context-scoped
 Undici dispatcher and are also passed as reviewed `HTTP_PROXY` and
 `HTTPS_PROXY` runtime overrides for transports that consume provider
 environment directly. Concurrent providers do not mutate process-global
-environment or inherit each other's proxy. Preview returns one bounded field
-diff and current combined revision. A draft with more than 200 field
-changes is rejected so a bounded preview never hides changes that Apply would
-write. Apply must present that revision, revalidates under a single mutation
-lock, retains the last validated combined document, writes each router-owned
-file with mode `0600` through same-directory atomic renames, and reports
-whether the runtime reloaded or restart is required. Restore uses the same
-revision and validation rules. Neither operation returns a state path.
+environment or inherit each other's proxy. A successful raw PUT compiles Pi
+provider and router-policy files, writes mode `0600` through same-directory
+atomic renames, and reports `reloaded` or `restart_required`. Provider-only and
+request-logging changes activate in process; listener, management-key, and
+environment changes require restart. Failure leaves the active raw source
+unchanged.
 
-The Management API does not expose raw credential import/export, arbitrary
-authenticated provider requests, arbitrary command execution, arbitrary path
-selection, inference-account switching, environment editing, executable
-targets, raw credential files, process restart, provider request bodies, or
-inference request history.
+The Management API does not expose arbitrary authenticated provider requests,
+arbitrary command execution or path selection, inference-account switching,
+executable targets, process restart, provider request bodies, inference
+history, or raw logs. Raw configuration and credential file disclosure exist
+only at the fixed router-owned targets described above.
 
 ## GitHub update contract
 
@@ -407,6 +424,22 @@ increasing `sequence_number`. The lifecycle contains:
 Client disconnect aborts the provider request. The MVP does not implement
 `previous_response_id` storage or Responses WebSocket transport.
 
+## Chat Completions and Anthropic Messages compatibility
+
+`POST /v1/chat/completions` accepts system/developer, user, assistant, and tool
+messages; function tools and assistant tool calls/results; `max_tokens` or
+`max_completion_tokens`; and JSON or `data:` SSE output terminated by
+`[DONE]`. It returns OpenAI-native completion objects, chunks, finish reasons,
+and usage.
+
+`POST /v1/messages` accepts Anthropic system text, user/assistant content
+blocks, tool definitions, `tool_use`/`tool_result` round trips, required
+positive `max_tokens`, and JSON or typed Anthropic SSE. It returns
+Anthropic-native message, content-block, stop-reason, usage, and bounded error
+shapes. Both endpoints use the same proxy API-key store, model resolver, Pi
+dispatch, provider policy, abort propagation, and sanitized event logging as
+`/v1/responses`.
+
 ## Model routing
 
 Model names use either:
@@ -414,6 +447,7 @@ Model names use either:
 - `provider/model`, which selects an exact Pi provider and model; or
 - `provider/alias`, when one configured alias resolves to one non-excluded
   original model in that provider; or
+- `provider/prefix/model-or-alias`, when a provider prefix is configured; or
 - an unqualified model ID only when it resolves to exactly one available
   model.
 
@@ -425,14 +459,14 @@ configured auth after exclusions and aliases are applied.
 
 Executable proof must cover:
 
-- loopback-only startup, mandatory management authentication, proxy-key
-  migration, separate inference authentication, one-time key disclosure, and
-  last-key removal protection;
+- loopback-default startup, explicit remote-listener authority, mandatory
+  management authentication, proxy-key migration, separate inference
+  authentication, one-time key disclosure, and last-key removal protection;
 - the self-contained operator page, browser security headers, and the
   unauthenticated page load not touching the authenticated model runtime;
 - management authentication and bounded status without release networking;
-- provider inventory, arbitrary custom OpenAI-compatible provider definitions,
-  aliases/exclusions/proxy policy, and metadata-only multi-account credential
+- provider inventory, all three custom-provider protocols, API keys, headers,
+  aliases/exclusions/prefix/proxy policy, and multi-account credential
   enumeration;
 - expiring, cancellable, single-use auth sessions, isolated same-provider
   accounts, unique labels, and serialized account/provider mutations without
@@ -442,13 +476,16 @@ Executable proof must cover:
   deterministic unsupported states;
 - bounded sanitized in-memory events without prompt, body, header, path, or
   credential leakage;
-- configuration schema rejection, preview/revision conflict, atomic apply,
-  retained restore, and activation reporting;
+- byte-preserving raw config read/write, syntax/semantic rejection, atomic
+  apply, retained previous source, self-lockout confirmation, and activation
+  reporting;
+- exact raw auth-file export, bounded import into new isolated accounts, batch
+  UI orchestration, and one warning per page session;
 - all eight stable hash routes, accessible desktop/drawer navigation,
   destructive confirmations, and narrow-screen states;
 - vi/en localization without reload, persisted theme selection, opt-in
   obfuscated management-key retention, and scoped local-login cleanup;
-- CodeMirror YAML parsing/diff over the safe structured config contract and
+- CodeMirror YAML parsing/diff over the raw config contract and
   incremental sanitized-event polling without persistent raw logs;
 - deterministic GitHub release selection, version matching, checksums,
   download bounds, Android ELF validation, atomic install, rollback, source
@@ -458,6 +495,9 @@ Executable proof must cover:
 - health and model listing without credential leakage;
 - request validation and model resolution;
 - JSON text responses;
+- Chat Completions JSON/SSE messages, tools, finish reasons, and usage;
+- Anthropic Messages JSON/typed-SSE content blocks, tools, stop reasons, usage,
+  and error shapes;
 - SSE text lifecycle and sequence ordering;
 - SSE function-call lifecycle;
 - function-call output conversion back into Pi context;

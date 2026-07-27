@@ -16,6 +16,7 @@ import { createManagementService } from "../src/management/index.js";
 import { ProviderMutationCoordinator } from "../src/management/mutations.js";
 import { createProviderService } from "../src/management/providers.js";
 import { createQuotaService } from "../src/management/quota.js";
+import { RawConfigService } from "../src/management/raw-config.js";
 
 const PROVIDER = Object.freeze({
 	id: "fake",
@@ -92,6 +93,7 @@ test("operational event log is fixed-shape, bounded, and newest-first", () => {
 	assert.equal(result.data[1].error_code, "provider_error");
 	assert.equal(result.data[1].duration_ms, 0);
 	assert.deepEqual(events.summary(), {
+		enabled: true,
 		requests: 2,
 		errors: 2,
 		last_event_at: new Date(now).toISOString(),
@@ -479,7 +481,7 @@ test("config service validates, previews, applies, restores, and protects revisi
 	assert.equal(unchanged.status, "unchanged");
 });
 
-test("config service refuses secret-bearing and malformed documents without echo", async (t) => {
+test("config service accepts management-authorized secrets and still rejects malformed documents", async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "pi-router-config-secret-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const modelsPath = join(root, "models.json");
@@ -493,9 +495,9 @@ test("config service refuses secret-bearing and malformed documents without echo
 	}));
 	const config = new ConfigService({ modelsPath });
 	const loaded = await config.get();
-	assert.equal(loaded.editable, false);
-	assert.equal(loaded.document, null);
-	assert.doesNotMatch(JSON.stringify(loaded), /must-not-be-returned|also-secret/);
+	assert.equal(loaded.editable, true);
+	assert.equal(loaded.document.providers.fake.apiKey, "must-not-be-returned");
+	assert.equal(loaded.document.providers.fake.headers.Authorization, "also-secret");
 	const invalid = validateConfigDocument({
 		providers: {
 			fake: {
@@ -525,6 +527,90 @@ test("config service refuses secret-bearing and malformed documents without echo
 	assert.equal(oversized.valid, false);
 	assert.ok(oversized.errors.some((item) => item.message.includes("exceeds")));
 	await chmod(modelsPath, 0o600);
+});
+
+test("raw config preserves source bytes, validates before replace, and retains recovery", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "pi-router-raw-config-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const configPath = join(root, "config.yaml");
+	const modelsPath = join(root, "models.json");
+	const providerPolicyPath = join(root, "provider-policy.json");
+	const initial = [
+		"# operator comment",
+		"host: 127.0.0.1",
+		"port: 8318",
+		"remote-management:",
+		"  allow-remote: false",
+		"  secret-key: management-secret",
+		"request-logging: true",
+		"environment:",
+		"  CUSTOM_TOKEN: literal-secret",
+		"providers:",
+		"  fake:",
+		"    baseUrl: https://api.example.test/v1",
+		"    api: openai-responses",
+		"    apiKey: provider-secret",
+		"    models:",
+		"      - id: model",
+		"",
+	].join("\n");
+	await writeFile(configPath, initial, { mode: 0o600 });
+	let refreshes = 0;
+	const eventLog = new OperationalEventLog();
+	const service = new RawConfigService({
+		configPath,
+		modelsPath,
+		providerPolicyPath,
+		runtime: {
+			async refreshConfiguration() {
+				refreshes += 1;
+			},
+		},
+		eventLog,
+	});
+	const loaded = await service.get();
+	assert.equal(loaded.source, initial);
+	assert.equal(loaded.document.environment.CUSTOM_TOKEN, "literal-secret");
+	assert.equal((await service.summary()).raw, true);
+
+	await assert.rejects(
+		service.put("host: ["),
+		(error) => error.status === 400 && error.code === "invalid_yaml",
+	);
+	await assert.rejects(
+		service.put(initial.replace("port: 8318", "port: -1")),
+		(error) => error.status === 422 && error.code === "router_config_invalid",
+	);
+	await assert.rejects(
+		service.put(initial.replace(
+			"  CUSTOM_TOKEN: literal-secret",
+			[
+				"  CUSTOM_TOKEN: literal-secret",
+				"  PI_ROUTER_API_KEY: management-secret",
+			].join("\n"),
+		)),
+		(error) => error.status === 422 && error.code === "router_config_invalid",
+	);
+	assert.equal(await readFile(configPath, "utf8"), initial);
+
+	const candidate = initial
+		.replace("# operator comment", "# operator comment retained")
+		.replace("request-logging: true", "request-logging: false")
+		.replace("api: openai-responses", "api: anthropic-messages");
+	const applied = await service.put(candidate);
+	assert.equal(applied.status, "applied");
+	assert.equal(applied.restart_required, false);
+	assert.equal(await readFile(configPath, "utf8"), candidate);
+	assert.equal(await readFile(`${configPath}.previous`, "utf8"), initial);
+	assert.equal(JSON.parse(await readFile(modelsPath, "utf8"))
+		.providers.fake.api, "anthropic-messages");
+	assert.equal(eventLog.summary().enabled, false);
+	assert.equal(refreshes, 1);
+	assert.equal((await stat(configPath)).mode & 0o777, 0o600);
+
+	const restart = await service.put(candidate.replace("port: 8318", "port: 9000"));
+	assert.equal(restart.restart_required, true);
+	assert.equal(refreshes, 1);
 });
 
 test("config service refuses an apply whose complete diff cannot be reviewed", async (t) => {

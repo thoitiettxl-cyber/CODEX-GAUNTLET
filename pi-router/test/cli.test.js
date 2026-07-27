@@ -159,8 +159,9 @@ test("serve wires separate management and proxy keys into the HTTP server", asyn
 	assert.equal(serverOptions.account, "default");
 	assert.equal(serverOptions.updater, updater);
 	assert.equal(serverOptions.modelsPath, join(root, "models.json"));
+	assert.equal(serverOptions.configPath, join(root, "config.yaml"));
 	assert.equal(serverOptions.providerPolicyPath, join(root, "provider-policy.json"));
-	assert.deepEqual(listenOptions, { host: "::1", port: 9000 });
+	assert.deepEqual(listenOptions, { host: "::1", port: 9000, allowRemote: false });
 	assert.match(output, /http:\/\/\[::1\]:9000/);
 	assert.match(output, /http:\/\/\[::1\]:9000\/management\.html/);
 	assert.doesNotMatch(output, /management-only-key|proxy-only-key/);
@@ -204,8 +205,8 @@ test("update and version commands do not initialize provider state", async () =>
 		["rollback"],
 	]);
 	assert.match(output, /"latest_version": "0.3.0"/);
-	assert.match(output, /pi-router 0\.4\.0/);
-	assert.deepEqual(version, { command: "version", version: "0.4.0" });
+	assert.match(output, /pi-router 0\.5\.0/);
+	assert.deepEqual(version, { command: "version", version: "0.5.0" });
 });
 
 test("help does not initialize state or runtime", async () => {
@@ -219,7 +220,7 @@ test("help does not initialize state or runtime", async () => {
 		},
 	});
 	assert.equal(created, false);
-	assert.match(output, /OpenAI Responses gateway/);
+	assert.match(output, /OpenAI and Anthropic gateway/);
 });
 
 test("secret login prompt requires a TTY and never echoes the entered value", async () => {
