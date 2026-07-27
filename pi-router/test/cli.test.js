@@ -31,10 +31,12 @@ test("CLI parses serve and login options", () => {
 	assert.throws(() => parseArgs(["update", "install"]), /requires a version/);
 });
 
-test("serve refuses to initialize the runtime without a management key", async () => {
+test("serve refuses to initialize the runtime without a management key", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "pi-router-missing-key-cli-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
 	let created = false;
 	await assert.rejects(
-		runCli(["serve"], {
+		runCli(["serve", "--state-dir", root], {
 			env: {},
 			createRuntime: async () => {
 				created = true;
