@@ -177,6 +177,12 @@
 	box-shadow: 0 0 0 4px rgba(102, 208, 165, 0.1);
 }
 
+.connection-dot.is-error {
+	border-color: var(--danger);
+	background: var(--danger);
+	box-shadow: 0 0 0 4px rgba(179, 61, 66, 0.1);
+}
+
 .sidebar-footer > div:last-child {
 	display: flex;
 	min-width: 0;
@@ -210,7 +216,7 @@
 	justify-content: space-between;
 	padding: 0 28px;
 	border-bottom: 1px solid var(--line);
-	background: rgba(255, 255, 255, 0.92);
+	background: var(--topbar);
 	backdrop-filter: blur(14px);
 }
 
@@ -272,8 +278,8 @@
 }
 
 .service-pill.is-offline .service-pulse {
-	background: #9aa6a2;
-	box-shadow: none;
+	background: var(--danger);
+	box-shadow: 0 0 0 4px rgba(179, 61, 66, 0.1);
 }
 
 .service-pill > div {
@@ -299,7 +305,7 @@
 	padding: 0 12px;
 	border: 1px solid var(--line);
 	border-radius: 9px;
-	background: white;
+	background: var(--surface);
 	color: var(--ink);
 	font-size: 13px;
 	font-weight: 650;
@@ -394,5 +400,15 @@
 
 	.page-content {
 		padding: 24px 14px 44px;
+	}
+
+	.topbar-actions {
+		gap: 6px;
+	}
+}
+
+@media (max-width: 540px) {
+	.breadcrumb {
+		display: none;
 	}
 }

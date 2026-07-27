@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
 	Badge,
@@ -20,6 +21,7 @@ import {
 import { formatDate, formatNumber } from "../../lib/format";
 
 export function QuotaPage({ client }: { client: ManagementClient }) {
+	const { t } = useTranslation();
 	const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "error">("idle");
 	const [results, setResults] = useState<QuotaResult[]>([]);
 	const [error, setError] = useState("");
@@ -49,30 +51,29 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 						onClick={() => void load()}
 						variant="primary"
 					>
-						{phase === "loading" ? "Reading account quota…" : "Refresh account quota"}
+						{phase === "loading" ? t("quota.reading") : t("quota.refresh")}
 					</Button>
 				}
-				description="Real provider-backed limits are read separately for every OAuth credential and provider."
-				eyebrow="Observe"
-				title="Quota Management"
+				description={t("quota.description")}
+				eyebrow={t("quota.eyebrow")}
+				title={t("quota.title")}
 			/>
 			<InlineNotice>
-				Quota reads are explicit, credential-scoped, and adapter-specific. Credentials without a reviewed adapter
-				return <strong>Unsupported</strong> without an exploratory network request.
+				{t("quota.notice")}
 			</InlineNotice>
 
 			{phase === "idle" ? (
 				<Card>
 					<EmptyState
-						action={<Button icon="quota" onClick={() => void load()} variant="primary">Read quota now</Button>}
-						description="No credential quota request runs when this page opens. Start a bounded read when you need current capacity."
+						action={<Button icon="quota" onClick={() => void load()} variant="primary">{t("quota.readNow")}</Button>}
+						description={t("quota.notRequestedBody")}
 						icon="quota"
-						title="Quota has not been requested"
+						title={t("quota.notRequested")}
 					/>
 				</Card>
 			) : null}
 			{phase === "loading" ? (
-				<Card><LoadingState label="Reading reviewed quota adapters…" /></Card>
+				<Card><LoadingState label={t("quota.loading")} /></Card>
 			) : null}
 			{phase === "error" ? (
 				<Card><ErrorState message={error} onRetry={() => void load()} /></Card>
@@ -80,24 +81,24 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 			{phase === "ready" ? (
 				<>
 					<div className="summary-strip">
-						<div><span>Credentials</span><strong>{formatNumber(results.length)}</strong></div>
-						<div><span>Quota available</span><strong>{formatNumber(supported)}</strong></div>
-						<div><span>Unsupported</span><strong>{formatNumber(unsupported)}</strong></div>
+						<div><span>{t("quota.credentials")}</span><strong>{formatNumber(results.length)}</strong></div>
+						<div><span>{t("quota.available")}</span><strong>{formatNumber(supported)}</strong></div>
+						<div><span>{t("quota.unsupported")}</span><strong>{formatNumber(unsupported)}</strong></div>
 						<div>
-							<span>Source</span>
-							<Badge tone="info">Provider adapters</Badge>
+							<span>{t("quota.source")}</span>
+							<Badge tone="info">{t("quota.providerAdapters")}</Badge>
 						</div>
 					</div>
 					<Card>
 						<SectionHeader
-							description="Each isolated account reports an independent typed capability and provider-specific windows."
-							title="Credential capacity"
+							description={t("quota.capacityBody")}
+							title={t("quota.capacity")}
 						/>
 						{results.length === 0 ? (
 							<EmptyState
-								description="No stored credential metadata is available."
+								description={t("quota.noneBody")}
 								icon="providers"
-								title="No providers to inspect"
+								title={t("quota.none")}
 							/>
 						) : (
 							<div className="quota-grid">
@@ -118,9 +119,9 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 														: result.status === "error" ? "negative" : "neutral"
 												}
 											>
-												{result.status}
+												{t(`quota.states.${result.status}`)}
 											</Badge>
-											{result.active ? <Badge tone="positive">Inference account</Badge> : null}
+											{result.active ? <Badge tone="positive">{t("quota.inferenceAccount")}</Badge> : null}
 										</header>
 										{result.status === "available" ? (
 											<>
@@ -134,18 +135,26 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 																<div>
 																	<span>{window.label}</span>
 																	<strong>
-																		{formatNumber(window.remaining)} <small>{window.unit} remaining</small>
+																		{t("quota.remaining", {
+																			count: formatNumber(window.remaining),
+																			unit: window.unit,
+																		})}
 																	</strong>
 																</div>
 																<progress
-																	aria-label={`${Math.round(percentage)} percent used`}
+																	aria-label={t("quota.percentUsed", { percent: Math.round(percentage) })}
 																	className="progress-track"
 																	max={100}
 																	value={percentage}
 																/>
 																<p>
-																	{formatNumber(window.used)} of {formatNumber(window.limit)} used
-																	{window.resets_at ? ` · resets ${formatDate(window.resets_at)}` : ""}
+																	{t("quota.used", {
+																		used: formatNumber(window.used),
+																		limit: formatNumber(window.limit),
+																	})}
+																	{window.resets_at
+																		? ` · ${t("quota.resets", { date: formatDate(window.resets_at) })}`
+																		: ""}
 																</p>
 															</div>
 														);
@@ -153,7 +162,7 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 												</div>
 												<footer>
 													<Icon name="clock" />
-													Checked {formatDate(result.checked_at)}
+													{t("quota.checked", { date: formatDate(result.checked_at) })}
 												</footer>
 											</>
 										) : (
@@ -162,13 +171,13 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 												<div>
 													<strong>
 														{result.status === "unsupported"
-															? "No reviewed adapter"
-															: "Adapter unavailable"}
+															? t("quota.noAdapter")
+															: t("quota.adapterUnavailable")}
 													</strong>
 													<p>
 														{result.status === "unsupported"
-															? "Pi Router made no quota request for this credential."
-															: "The bounded provider quota read failed without returning a raw response."}
+															? t("quota.unsupportedBody")
+															: t("quota.errorBody")}
 													</p>
 												</div>
 											</div>

@@ -110,9 +110,10 @@ http://127.0.0.1:8318/management.html
 ```
 
 Enter `PI_ROUTER_MANAGEMENT_KEY`; proxy API keys are deliberately rejected by
-the Management API. The console has seven stable hash-routed pages:
+the Management API. The Vite-built single-file console has eight stable
+hash-routed pages:
 **Dashboard**, **AI Providers**, **Auth Files**, **OAuth Login**, **Quota
-Management**, **Logs Viewer**, and **Config Panel**. Dashboard reports
+Management**, **Logs Viewer**, **Config Panel**, and **System**. Dashboard reports
 connection state, server version, available-model count, and separately
 manages proxy API keys. It also owns explicit stable-release check, verified
 install, and rollback actions without adding another top-level page.
@@ -127,15 +128,21 @@ credentials distinct.
 
 Quota reads use fixed, bounded adapters for Codex, Claude, Antigravity, Kimi,
 and xAI/Grok and return one result per OAuth credential. Logs are sanitized,
-capped at 250 process-memory records, and never contain prompts, bodies,
-headers, credentials, environment values, or paths. Config Panel combines the
-reviewed non-secret Pi provider model schema with router-owned proxy, alias,
-and exclusion policy. AI Providers can add arbitrary OpenAI Responses or Chat
-Completions compatible provider IDs with base URL, safe headers, proxy, model
-alias, and exclusion patterns; credentials are entered separately.
+capped at 250 process-memory records, incrementally polled, and never contain
+prompts, bodies, headers, credentials, environment values, or paths. Config
+Panel projects the reviewed non-secret Pi provider model and router policy as
+CodeMirror YAML with client parse diagnostics and a confirmed source diff.
+AI Providers can add arbitrary OpenAI Responses or Chat Completions compatible
+provider IDs with base URL, safe headers, proxy, model alias, and exclusion
+patterns; credentials are entered separately.
 
-The UI has no external browser assets and does not persist the bearer, login
-input, filters, config drafts, or API results. Reloading clears page memory.
+The UI has no external browser assets. By default the management bearer stays
+in current page memory. An explicit Remember choice may store it only in a
+Pi-specific reversible `enc::v1::` envelope; this is obfuscation rather than
+encryption, and System can clear it. Restoration only prefills the login form;
+the operator must submit before any authenticated request. Theme and language
+preferences may also be retained. Login input, filters, config drafts, proxy
+keys entered for the System model read, and API results are never persisted.
 The HTML itself is unauthenticated, while every `/v1/*` and
 `/management/api/*` request retains the normal bearer requirement.
 

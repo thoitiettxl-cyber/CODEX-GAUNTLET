@@ -1,4 +1,5 @@
 .connection-gate {
+	position: relative;
 	display: grid;
 	grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
 	overflow: hidden;
@@ -234,7 +235,7 @@
 	height: 138px;
 	place-items: center;
 	border-radius: 50%;
-	background: conic-gradient(var(--accent) var(--activity-success), #e9eeeb 0);
+	background: conic-gradient(var(--accent) var(--activity-success), var(--line) 0);
 }
 
 .activity-ring-0 { --activity-success: 0%; }
@@ -254,7 +255,7 @@
 	width: 106px;
 	height: 106px;
 	border-radius: 50%;
-	background: white;
+	background: var(--surface);
 	content: "";
 }
 
@@ -313,12 +314,16 @@
 }
 
 .one-time-key input {
-	padding-right: 130px;
+	padding-right: 195px;
 	font-family: var(--font-mono);
 	font-size: 11px;
 }
 
 .one-time-key button:first-of-type {
+	right: 135px;
+}
+
+.one-time-key button:nth-of-type(2) {
 	right: 70px;
 }
 
@@ -387,7 +392,7 @@
 
 .candidate-card {
 	justify-content: space-between;
-	background: white;
+	background: var(--surface);
 }
 
 .candidate-card h3 {
@@ -510,7 +515,7 @@
 
 .method-picker > label.selected {
 	border-color: #8fcbbb;
-	background: #f3fbf8;
+	background: var(--accent-soft);
 	box-shadow: inset 0 0 0 1px rgba(24, 124, 104, 0.08);
 }
 
@@ -524,7 +529,7 @@
 	height: 34px;
 	place-items: center;
 	border-radius: 9px;
-	background: white;
+	background: var(--surface);
 	color: var(--accent);
 }
 
@@ -592,7 +597,7 @@
 	padding: 17px;
 	border: 1px solid #a9cfc4;
 	border-radius: 11px;
-	background: #f4fbf8;
+	background: var(--accent-soft);
 }
 
 .prompt-heading {
@@ -658,7 +663,7 @@
 	margin-top: 6px;
 	border: 2px solid var(--accent);
 	border-radius: 50%;
-	background: white;
+	background: var(--surface);
 }
 
 .timeline-meta {
@@ -789,7 +794,7 @@
 	gap: 12px;
 	padding: 15px;
 	border-bottom: 1px solid var(--line);
-	background: white;
+	background: var(--surface);
 }
 
 .quota-windows {
@@ -913,13 +918,13 @@
 	height: 36px;
 	place-items: center;
 	border-radius: 9px;
-	background: white;
+	background: var(--surface);
 	color: var(--info);
 }
 
 .log-boundary p {
 	margin: 0;
-	color: #4f6475;
+	color: var(--ink-muted);
 	font-size: 11px;
 }
 
@@ -1045,7 +1050,7 @@
 	padding: 10px 12px;
 	border: 1px solid #ebc9ca;
 	border-radius: 8px;
-	background: #fff8f8;
+	background: var(--danger-soft);
 }
 
 .validation-list code {
@@ -1107,7 +1112,7 @@
 
 .diff-before {
 	background: var(--danger-soft);
-	color: #87373b;
+	color: var(--danger);
 }
 
 .diff-after {

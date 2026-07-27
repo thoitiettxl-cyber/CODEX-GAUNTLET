@@ -16,6 +16,9 @@ The browser management boundary is recorded in
 [ADR 0007](../decisions/0007-bound-pi-router-operations-console.md), and the
 split key, multi-account, quota, and provider-policy boundaries are recorded
 in [ADR 0008](../decisions/0008-separate-pi-router-keys-and-isolate-provider-accounts.md).
+The single-file frontend stack, YAML source projection, and explicit
+obfuscated browser-login retention are recorded in
+[ADR 0009](../decisions/0009-use-a-modern-single-file-pi-router-console.md).
 
 ## Prerequisites
 
@@ -191,19 +194,31 @@ exposes:
   or explicitly selected isolated accounts;
 - **Quota Management** for separate Codex, Claude, Antigravity, Kimi, and
   xAI/Grok OAuth-credential reads plus typed unsupported states;
-- **Logs Viewer** for at most 250 sanitized process-memory events;
+- **Logs Viewer** for at most 250 sanitized process-memory events, incremental
+  polling, search/result filters, auto-refresh, management-traffic filtering,
+  and a browser-view-only Clear action. File-log download/clear controls stay
+  unavailable because the backend does not expose that capability;
 - **Config Panel** for the reviewed combined provider/model and router policy
-  schema with base URLs, safe headers, per-provider proxy, aliases,
-  exclusions, validation, diff, stale-write protection, atomic file
-  replacement, and restore.
+  schema with a CodeMirror YAML source projection, line/column parse errors,
+  source diff, validation, stale-write protection, atomic file replacement,
+  and restore;
+- **System** for documentation/runbook links, explicit update check, runtime
+  posture, capability-gated request logging, a one-shot `/v1/models` read using
+  a separately entered proxy key, and scoped local-login cleanup.
 
-The bearer, login input, filters, drafts, and results stay only in current page
-memory; reload the page to clear them. Do not paste a provider credential into
-the local bearer field. Stored credential values, inference prompts, submitted
-auth responses, request/response bodies, environment values, upstream bodies,
-and raw state paths are absent from management responses and logs. Bounded
-auth prompt instructions, provider-owned sign-in URLs, and device codes are
-visible only during the current login session.
+The bearer stays only in current page memory unless the operator explicitly
+chooses Remember. In that case the same-origin value is stored only inside a
+Pi-specific reversible `enc::v1::` envelope; this is convenience obfuscation,
+not encryption, and System can clear it. Restoration prefills the login form
+but does not send an authenticated request until the operator submits it.
+Theme and language preferences may also be retained. Login input, filters,
+drafts, proxy keys entered for the System model read, results, and events are
+not persisted. Do not paste a provider credential into the local bearer field.
+Stored credential values, inference prompts, submitted auth responses,
+request/response bodies, environment values, upstream bodies, and raw state
+paths are absent from management responses and logs. Bounded auth prompt
+instructions, provider-owned sign-in URLs, and device codes are visible only
+during the current login session.
 
 Every `/management/api/*` request requires the management key. Every `/v1/*`
 request requires one persisted proxy API key. Neither key class is accepted
@@ -214,8 +229,9 @@ the API never accepts a repository, asset name, download URL, or filesystem
 target from browser input. Quota requests run only through reviewed
 provider-specific adapters.
 
-For UI source changes, rebuild the committed single HTML artifact and verify
-that it is current:
+For UI source changes, rebuild the committed Vite single-file HTML artifact and
+verify that it is current. The generated document contains no CDN, font, or
+external script/style dependency:
 
 ```bash
 npm --prefix pi-router run build

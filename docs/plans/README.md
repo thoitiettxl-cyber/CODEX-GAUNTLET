@@ -35,6 +35,7 @@ None.
 
 ## Recently Completed
 
+- `TERMUX-011` — [Port the Pi Router management UI stack and operator experience](completed/pi-router-management-ui-stack-port.md)
 - `TERMUX-010` — [Port CLI Proxy management capabilities to Pi Router](completed/pi-router-cli-proxy-capability-port.md)
 - `TERMUX-009` — [Rebuild Pi Router Management Center as an operations console](completed/pi-router-operations-console.md)
 - `TERMUX-007` — [Build the Pi Router MVP](completed/pi-router-mvp.md)

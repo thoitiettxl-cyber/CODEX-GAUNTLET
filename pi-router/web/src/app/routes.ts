@@ -5,73 +5,87 @@ export type RouteId =
 	| "oauth"
 	| "quota"
 	| "logs"
-	| "config";
+	| "config"
+	| "system";
 
 export interface RouteDefinition {
 	id: RouteId;
-	label: string;
-	description: string;
-	group: "Operate" | "Gateway" | "Observe" | "Control";
-	icon: "dashboard" | "providers" | "key" | "login" | "quota" | "logs" | "config";
+	path: string;
+	labelKey: string;
+	descriptionKey: string;
+	group: "operate" | "gateway" | "observe" | "control";
+	icon: "dashboard" | "providers" | "key" | "login" | "quota" | "logs" | "config" | "system";
 }
 
 export const ROUTES: RouteDefinition[] = [
 	{
 		id: "dashboard",
-		label: "Dashboard",
-		description: "Service posture",
-		group: "Operate",
+		path: "/dashboard",
+		labelKey: "nav.dashboard",
+		descriptionKey: "nav.dashboardMeta",
+		group: "operate",
 		icon: "dashboard",
 	},
 	{
 		id: "providers",
-		label: "AI Providers",
-		description: "Runtime inventory",
-		group: "Gateway",
+		path: "/providers",
+		labelKey: "nav.providers",
+		descriptionKey: "nav.providersMeta",
+		group: "gateway",
 		icon: "providers",
 	},
 	{
 		id: "auth-files",
-		label: "Auth Files",
-		description: "Credential metadata",
-		group: "Gateway",
+		path: "/auth-files",
+		labelKey: "nav.authFiles",
+		descriptionKey: "nav.authFilesMeta",
+		group: "gateway",
 		icon: "key",
 	},
 	{
 		id: "oauth",
-		label: "OAuth Login",
-		description: "Provider sign-in",
-		group: "Gateway",
+		path: "/oauth",
+		labelKey: "nav.oauth",
+		descriptionKey: "nav.oauthMeta",
+		group: "gateway",
 		icon: "login",
 	},
 	{
 		id: "quota",
-		label: "Quota Management",
-		description: "Provider capacity",
-		group: "Observe",
+		path: "/quota",
+		labelKey: "nav.quota",
+		descriptionKey: "nav.quotaMeta",
+		group: "observe",
 		icon: "quota",
 	},
 	{
 		id: "logs",
-		label: "Logs Viewer",
-		description: "Sanitized events",
-		group: "Observe",
+		path: "/logs",
+		labelKey: "nav.logs",
+		descriptionKey: "nav.logsMeta",
+		group: "observe",
 		icon: "logs",
 	},
 	{
 		id: "config",
-		label: "Config Panel",
-		description: "Validated models",
-		group: "Control",
+		path: "/config",
+		labelKey: "nav.config",
+		descriptionKey: "nav.configMeta",
+		group: "control",
 		icon: "config",
+	},
+	{
+		id: "system",
+		path: "/system",
+		labelKey: "nav.system",
+		descriptionKey: "nav.systemMeta",
+		group: "control",
+		icon: "system",
 	},
 ];
 
-export function routeFromHash(hash: string): RouteId {
-	const candidate = hash.replace(/^#\/?/u, "");
-	return ROUTES.some((route) => route.id === candidate)
-		? candidate as RouteId
-		: "dashboard";
+export function routeFromPath(pathname: string): RouteId {
+	return ROUTES.find((route) => route.path === pathname)?.id ?? "dashboard";
 }
 
 export function routeDefinition(id: RouteId): RouteDefinition {

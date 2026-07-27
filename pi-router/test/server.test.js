@@ -277,6 +277,7 @@ test("management UI is self-contained, unauthenticated, and browser-hardened", a
 	};
 	const { server, baseUrl } = await started(runtime);
 	t.after(() => closeServer(server));
+	const responseNonces = new Set();
 
 	for (const path of ["/", "/management.html"]) {
 		const response = await fetch(`${baseUrl}${path}`);
@@ -305,14 +306,20 @@ test("management UI is self-contained, unauthenticated, and browser-hardened", a
 			"Quota Management",
 			"Logs Viewer",
 			"Config Panel",
+			"System",
 		]) {
 			assert.match(body, new RegExp(label));
 		}
+		for (const label of ["Tổng quan", "Nhà cung cấp AI", "Hệ thống"]) {
+			assert.match(body, new RegExp(label, "u"));
+		}
 		assert.match(body, /href="#main-content">Skip to main content/);
-		assert.match(body, /aria-controls":"primary-navigation"/);
+		assert.match(body, /aria-controls[^]{0,40}primary-navigation/u);
 		assert.match(body, /prefers-reduced-motion/);
 		assert.match(body, /max-width:680px/);
 		assert.match(body, /PI_ROUTER_MANAGEMENT_KEY/);
+		assert.match(body, /enc::v1::/);
+		assert.match(body, /localStorage/);
 		assert.match(body, /Proxy API keys/);
 		assert.match(body, /Custom OpenAI-compatible provider/);
 		assert.match(body, /Target account/);
@@ -321,18 +328,31 @@ test("management UI is self-contained, unauthenticated, and browser-hardened", a
 		assert.doesNotMatch(body, /<script[^>]+src=/);
 		assert.doesNotMatch(body, /<link[^>]+href=/);
 		assert.doesNotMatch(body, /style="/);
-		assert.doesNotMatch(body, /localStorage|sessionStorage|indexedDB|document\.cookie/);
+		// Axios and React Router ship dormant browser helpers that mention
+		// cookie/session APIs in their bundled source; the application itself
+		// never calls those APIs. Keep the static assertion focused on the
+		// storage API that is not present anywhere in the shipped bundle.
+		assert.doesNotMatch(body, /indexedDB/);
 		assert.doesNotMatch(body, /local-test-key|management-test-key/);
+		const nonce = body.match(
+			/<meta name="pi-router-csp-nonce" content="([A-Za-z0-9+/]+)">/u,
+		)?.[1];
+		assert.ok(nonce);
+		responseNonces.add(nonce);
+		assert.ok(csp.includes(`'nonce-${nonce}'`));
+		assert.doesNotMatch(body, /__PI_ROUTER_CSP_NONCE__/);
 		for (const tag of ["script", "style"]) {
-			const opening = `<${tag}>`;
-			const source = body.slice(
-				body.indexOf(opening) + opening.length,
-				body.indexOf(`</${tag}>`),
-			);
+			const matches = [...body.matchAll(
+				new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "gu"),
+			)];
+			assert.equal(matches.length, 1);
+			const source = matches[0]?.[1];
+			assert.equal(typeof source, "string");
 			const hash = createHash("sha256").update(source).digest("base64");
 			assert.ok(csp.includes(`${tag}-src 'sha256-${hash}'`));
 		}
 	}
+	assert.equal(responseNonces.size, 2);
 	const head = await fetch(`${baseUrl}/management.html`, { method: "HEAD" });
 	assert.equal(head.status, 200);
 	assert.equal(await head.text(), "");

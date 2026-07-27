@@ -1,3 +1,7 @@
+import axios, { type AxiosInstance } from "axios";
+
+import i18n from "../../i18n";
+
 export type ProviderState = "available" | "configured" | "unconfigured" | "error";
 export type AuthType = "api_key" | "oauth";
 
@@ -26,6 +30,21 @@ export interface CredentialInfo {
 	active: boolean;
 	created_at: string | null;
 	updated_at: string | null;
+	models?: string[];
+	excluded_models?: string[];
+	model_aliases?: Record<string, string>;
+	runtime_only?: boolean;
+	capabilities?: {
+		models?: boolean;
+		excluded_models?: boolean;
+		model_aliases?: boolean;
+	};
+}
+
+export interface ModelInfo {
+	id: string;
+	object: "model";
+	owned_by: string;
 }
 
 export interface ProxyKeyInfo {
@@ -235,7 +254,7 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function expectRecord(value: unknown, label: string): JsonRecord {
 	if (!isRecord(value)) {
-		throw new Error(`${label} returned an invalid response.`);
+		throw new Error(i18n.t("errors.invalidResponse", { label }));
 	}
 	return value;
 }
@@ -243,7 +262,7 @@ function expectRecord(value: unknown, label: string): JsonRecord {
 function expectList<T>(value: unknown, label: string): T[] {
 	const record = expectRecord(value, label);
 	if (!Array.isArray(record.data)) {
-		throw new Error(`${label} returned an invalid list.`);
+		throw new Error(i18n.t("errors.invalidList", { label }));
 	}
 	return record.data as T[];
 }
@@ -262,49 +281,65 @@ export class ApiError extends Error {
 
 export class ManagementClient {
 	readonly bearer: string;
+	readonly instance: AxiosInstance;
 
 	constructor(bearer: string) {
 		this.bearer = bearer;
+		this.instance = axios.create({
+			baseURL: window.location.origin,
+			timeout: 20_000,
+			withXSRFToken: false,
+			headers: {
+				accept: "application/json",
+			},
+		});
+		this.instance.interceptors.request.use((config) => {
+			config.headers.Authorization = `Bearer ${this.bearer}`;
+			return config;
+		});
 	}
 
-	async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-		const headers = new Headers(options.headers);
-		headers.set("authorization", `Bearer ${this.bearer}`);
-		if (options.body !== undefined) {
-			headers.set("content-type", "application/json");
-		}
-		let response: Response;
+	async request<T>(
+		path: string,
+		options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: string } = {},
+	): Promise<T> {
 		try {
-			response = await fetch(path, {
-				...options,
-				cache: "no-store",
-				headers,
+			const response = await this.instance.request<T>({
+				url: path,
+				method: options.method ?? "GET",
+				data: options.body === undefined ? undefined : JSON.parse(options.body),
 			});
-		} catch {
-			throw new ApiError("Pi Router is not reachable on this loopback origin.", 0, "network_error");
-		}
-		let payload: unknown;
-		try {
-			payload = await response.json();
-		} catch {
-			throw new ApiError("Pi Router returned an invalid JSON response.", response.status, "invalid_response");
-		}
-		if (!response.ok) {
-			const error = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
+			return response.data;
+		} catch (caught) {
+			if (!axios.isAxiosError(caught)) {
+				throw caught;
+			}
+			if (!caught.response) {
+				throw new ApiError(
+					i18n.t("errors.network"),
+					0,
+					"network_error",
+				);
+			}
+			const payload: unknown = caught.response.data;
+			const error = isRecord(payload) && isRecord(payload.error)
+				? payload.error
+				: {};
 			throw new ApiError(
-				typeof error.message === "string" ? error.message : "The request failed.",
-				response.status,
+				typeof error.message === "string"
+					? error.message
+					: i18n.t("errors.requestFailed"),
+				caught.response.status,
 				typeof error.code === "string" ? error.code : "request_failed",
 			);
 		}
-		return payload as T;
 	}
 
 	async status(): Promise<ManagementStatus> {
 		const result = await this.request<unknown>("/management/api/status");
-		const record = expectRecord(result, "Status");
+		const record = expectRecord(result, i18n.t("errors.labels.status"));
 		if (record.object !== "pi_router.management_status") {
-			throw new Error("Status returned an unexpected object.");
+			throw new Error(i18n.t("errors.unexpectedStatus"));
 		}
 		return result as ManagementStatus;
 	}
@@ -312,21 +347,21 @@ export class ManagementClient {
 	async providers(): Promise<ProviderInfo[]> {
 		return expectList<ProviderInfo>(
 			await this.request<unknown>("/management/api/providers"),
-			"Providers",
+			i18n.t("errors.labels.providers"),
 		);
 	}
 
 	async credentials(): Promise<CredentialInfo[]> {
 		return expectList<CredentialInfo>(
 			await this.request<unknown>("/management/api/credentials"),
-			"Credentials",
+			i18n.t("errors.labels.credentials"),
 		);
 	}
 
 	async proxyKeys(): Promise<ProxyKeyInfo[]> {
 		return expectList<ProxyKeyInfo>(
 			await this.request<unknown>("/management/api/proxy-keys"),
-			"Proxy API keys",
+			i18n.t("errors.labels.proxyKeys"),
 		);
 	}
 
@@ -403,15 +438,50 @@ export class ManagementClient {
 	async quota(): Promise<QuotaResult[]> {
 		return expectList<QuotaResult>(
 			await this.request<unknown>("/management/api/quota"),
-			"Quota",
+			i18n.t("errors.labels.quota"),
 		);
 	}
 
 	async events(limit = 100): Promise<OperationalEvent[]> {
 		return expectList<OperationalEvent>(
 			await this.request<unknown>(`/management/api/events?limit=${limit}`),
-			"Events",
+			i18n.t("errors.labels.events"),
 		);
+	}
+
+	async models(proxyKey: string): Promise<ModelInfo[]> {
+		try {
+			const response = await axios.get<unknown>("/v1/models", {
+				baseURL: window.location.origin,
+				timeout: 20_000,
+				withXSRFToken: false,
+				headers: {
+					authorization: `Bearer ${proxyKey}`,
+					accept: "application/json",
+				},
+			});
+			return expectList<ModelInfo>(
+				response.data,
+				i18n.t("errors.labels.models"),
+			);
+		} catch (caught) {
+			if (axios.isAxiosError(caught)) {
+				const payload: unknown = caught.response?.data;
+				const error = isRecord(payload) && isRecord(payload.error)
+					? payload.error
+					: {};
+				throw new ApiError(
+					typeof error.message === "string"
+						? error.message
+						: (caught.response
+							? i18n.t("errors.modelRequestFailed")
+							: i18n.t("errors.network")),
+					caught.response?.status ?? 0,
+					typeof error.code === "string" ? error.code : "model_request_failed",
+				);
+			}
+			throw caught;
+		}
 	}
 
 	getConfig(): Promise<ConfigState> {
@@ -462,5 +532,5 @@ export class ManagementClient {
 }
 
 export function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : "The request failed.";
+	return error instanceof Error ? error.message : i18n.t("errors.requestFailed");
 }

@@ -8,6 +8,7 @@ type IconName =
 	| "quota"
 	| "logs"
 	| "config"
+	| "system"
 	| "menu"
 	| "close"
 	| "refresh"
@@ -30,6 +31,7 @@ const paths: Record<IconName, React.ReactNode> = {
 	quota: <><path d="M4 19V9M10 19V5M16 19v-7M22 19H2" /><path d="m4 6 6-3 6 6 5-4" /></>,
 	logs: <><path d="M4 5h16M4 12h16M4 19h10" /><circle cx="2" cy="5" r=".5" fill="currentColor" /><circle cx="2" cy="12" r=".5" fill="currentColor" /><circle cx="2" cy="19" r=".5" fill="currentColor" /></>,
 	config: <><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" /><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06-2.78 2.78-.06-.06A1.8 1.8 0 0 0 15 19.4a1.8 1.8 0 0 0-1.1 1.64V21H10v-.08A1.8 1.8 0 0 0 8.9 19.3a1.8 1.8 0 0 0-1.98.36l-.06.06-2.78-2.78.06-.06A1.8 1.8 0 0 0 4.5 15a1.8 1.8 0 0 0-1.64-1.1H2V10h.86A1.8 1.8 0 0 0 4.5 8.9a1.8 1.8 0 0 0-.36-1.98l-.06-.06 2.78-2.78.06.06A1.8 1.8 0 0 0 8.9 4.5 1.8 1.8 0 0 0 10 2.86V2h4v.86a1.8 1.8 0 0 0 1.1 1.64 1.8 1.8 0 0 0 1.98-.36l.06-.06 2.78 2.78-.06.06a1.8 1.8 0 0 0-.36 1.98A1.8 1.8 0 0 0 21.14 10H22v4h-.86A1.8 1.8 0 0 0 19.4 15Z" /></>,
+	system: <><rect x="4" y="3" width="16" height="12" rx="2" /><path d="M8 21h8M12 15v6M8 8h8M8 11h5" /></>,
 	menu: <path d="M4 7h16M4 12h16M4 17h16" />,
 	close: <path d="m6 6 12 12M18 6 6 18" />,
 	refresh: <><path d="M20 11a8 8 0 1 0-2.34 5.66" /><path d="M20 4v7h-7" /></>,

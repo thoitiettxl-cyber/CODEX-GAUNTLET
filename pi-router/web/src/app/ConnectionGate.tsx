@@ -1,40 +1,82 @@
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button, InlineNotice } from "../components/ui";
 import { Icon } from "../components/ui/Icon";
+import {
+	usePreferenceStore,
+	type Language,
+	type Theme,
+} from "../stores/preferences";
+import styles from "./ConnectionGate.module.scss";
 
 export function ConnectionGate({
 	value,
+	remember,
 	phase,
 	error,
 	onChange,
+	onRememberChange,
 	onConnect,
 }: {
 	value: string;
+	remember: boolean;
 	phase: "idle" | "checking" | "error";
 	error: string;
 	onChange: (value: string) => void;
+	onRememberChange: (value: boolean) => void;
 	onConnect: () => void;
 }) {
+	const { t } = useTranslation();
 	const [visible, setVisible] = useState(false);
+	const theme = usePreferenceStore((state) => state.theme);
+	const language = usePreferenceStore((state) => state.language);
+	const setTheme = usePreferenceStore((state) => state.setTheme);
+	const setLanguage = usePreferenceStore((state) => state.setLanguage);
 	const submit = (event: FormEvent) => {
 		event.preventDefault();
 		onConnect();
 	};
+
 	return (
 		<div className="connection-gate">
+			<div className={styles.toolbar}>
+				<label className={styles.preference}>
+					<Icon name="config" />
+					<span className="visually-hidden">{t("app.theme")}</span>
+					<select
+						aria-label={t("app.theme")}
+						onChange={(event) => setTheme(event.target.value as Theme)}
+						value={theme}
+					>
+						<option value="system">{t("app.themeSystem")}</option>
+						<option value="light">{t("app.themeLight")}</option>
+						<option value="dark">{t("app.themeDark")}</option>
+					</select>
+				</label>
+				<label className={styles.preference}>
+					<Icon name="logs" />
+					<span className="visually-hidden">{t("app.language")}</span>
+					<select
+						aria-label={t("app.language")}
+						onChange={(event) => setLanguage(event.target.value as Language)}
+						value={language}
+					>
+						<option value="vi">{t("app.languageVietnamese")}</option>
+						<option value="en">{t("app.languageEnglish")}</option>
+					</select>
+				</label>
+			</div>
 			<section className="gate-card" aria-labelledby="connect-title">
 				<div className="gate-mark"><Icon name="shield" /></div>
-				<p className="page-eyebrow">Loopback authentication</p>
-				<h1 id="connect-title">Connect to Pi Router</h1>
+				<p className="page-eyebrow">{t("login.eyebrow")}</p>
+				<h1 id="connect-title">{t("login.title")}</h1>
 				<p className="gate-intro">
-					Enter the management bearer configured in{" "}
-					<code>PI_ROUTER_MANAGEMENT_KEY</code>. It stays only in memory for this page
-					and is cleared when you reload or disconnect.
+					{t("login.intro")}
 				</p>
 				<form onSubmit={submit}>
 					<label className="field">
-						<span>Management bearer</span>
+						<span>{t("login.label")}</span>
 						<div className="secret-input">
 							<Icon name="key" />
 							<input
@@ -42,19 +84,29 @@ export function ConnectionGate({
 								autoFocus
 								name="router-bearer"
 								onChange={(event) => onChange(event.target.value)}
-								placeholder="Enter the management bearer"
+								placeholder={t("login.placeholder")}
 								spellCheck={false}
 								type={visible ? "text" : "password"}
 								value={value}
 							/>
 							<button
-								aria-label={visible ? "Hide bearer token" : "Show bearer token"}
+								aria-label={visible ? t("common.hide") : t("common.show")}
 								onClick={() => setVisible((current) => !current)}
 								type="button"
 							>
-								{visible ? "Hide" : "Show"}
+								{visible ? t("common.hide") : t("common.show")}
 							</button>
 						</div>
+					</label>
+					<label className={styles.remember}>
+						<input
+							checked={remember}
+							name="remember_management_bearer"
+							onChange={(event) => onRememberChange(event.target.checked)}
+							type="checkbox"
+						/>
+						<strong>{t("login.remember")}</strong>
+						<small>{t("login.rememberHelp")}</small>
 					</label>
 					<Button
 						className="gate-submit"
@@ -62,37 +114,30 @@ export function ConnectionGate({
 						variant="primary"
 						type="submit"
 					>
-						{phase === "checking" ? "Checking connection…" : "Open operations console"}
+						{phase === "checking" ? t("login.checking") : t("login.connect")}
 					</Button>
 				</form>
 				{phase === "error" ? (
 					<InlineNotice tone="negative">{error}</InlineNotice>
 				) : (
-					<InlineNotice>
-						The static page loads without touching provider state. Authentication begins
-						only when you submit this form. Inference clients use separately managed
-						proxy API keys.
-					</InlineNotice>
+					<InlineNotice>{t("login.notice")}</InlineNotice>
 				)}
 			</section>
-			<aside className="gate-aside" aria-label="Security boundary">
+			<aside className="gate-aside" aria-label={t("login.safeTitle")}>
 				<div>
 					<span className="gate-step">01</span>
-					<strong>Loopback only</strong>
-					<p>The service accepts only 127.0.0.1 or ::1 listeners.</p>
+					<strong>{t("login.loopbackTitle")}</strong>
+					<p>{t("login.loopbackBody")}</p>
 				</div>
 				<div>
 					<span className="gate-step">02</span>
-					<strong>Memory only</strong>
-					<p>No cookie, browser storage, telemetry, or remote asset is used.</p>
+					<strong>{t("login.storageTitle")}</strong>
+					<p>{t("login.storageBody")}</p>
 				</div>
 				<div>
 					<span className="gate-step">03</span>
-					<strong>Metadata bounded</strong>
-					<p>
-						Credential values, inference prompts, submitted auth responses, bodies, and
-						raw paths never enter console results.
-					</p>
+					<strong>{t("login.metadataTitle")}</strong>
+					<p>{t("login.metadataBody")}</p>
 				</div>
 			</aside>
 		</div>

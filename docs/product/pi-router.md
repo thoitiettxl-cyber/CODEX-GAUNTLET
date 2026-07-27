@@ -130,12 +130,15 @@ injecting the Pi agent system prompt or loading an agent session.
 
 ## Operations console
 
-The Web UI source uses React and TypeScript and builds to one committed,
-self-contained HTML file. It has no CDN, remote font, telemetry, or other
-browser-side dependency. The server provides a restrictive content security
-policy with hashes for the inline script and style, disables framing, and
-prevents caching. The console uses stable hash routes and exactly this primary
-navigation:
+The Web UI source uses React 19 and TypeScript 6 with Vite,
+`vite-plugin-singlefile`, Zustand, Axios, React Router `HashRouter`,
+CodeMirror 6, i18next, Motion, and SCSS Modules. It targets ES2020 and builds
+to one committed, self-contained HTML file. It has no CDN, remote font,
+telemetry, or other remote browser dependency. The server provides a
+restrictive content security policy with hashes for the build-time inline
+script/style and a per-response nonce for CodeMirror runtime styles, disables
+framing, and prevents caching. The console uses stable hash routes and exactly
+this primary navigation:
 
 ```text
 OPERATE
@@ -149,6 +152,7 @@ OBSERVE
   Logs Viewer
 CONTROL
   Config Panel
+  System
 ```
 
 Wide screens use a grouped sidebar. Narrow screens use a labelled,
@@ -169,12 +173,41 @@ replacement, label, and removal separately from the management key. Verified
 update check, install, and rollback remain available from Dashboard without
 becoming a separate top-level page.
 
-The bearer and all login input stay only in current page memory. The page does
-not use local storage, session storage, IndexedDB, cookies, or persistent
-browser caches. Reloading clears the bearer, transient auth sessions, filters,
-configuration drafts, and API results. The console does not provide an
-inference prompt bench or retain request history; `/v1/responses` behavior
-remains available to authenticated API clients.
+The bearer stays in current page memory by default. An explicit Remember
+choice may persist it in same-origin local storage only inside a reversible,
+Pi-specific `enc::v1::` obfuscation envelope; failure to obfuscate fails
+closed instead of writing plaintext. The UI states that this is convenience,
+not encryption, and System can clear the retained login envelope. Restoring
+that envelope only prefills the login form; no authenticated request occurs
+until the operator submits it. Theme and language preferences may also be
+retained locally. Provider credentials, proxy keys used for one System model
+read, auth prompt input, filters, configuration drafts, API results, and
+operational events are never persisted. The page does not use session
+storage, IndexedDB, cookies, or persistent browser caches. The console does
+not provide an inference prompt bench or retain request history;
+`/v1/responses` behavior remains available to authenticated API clients.
+
+Logs Viewer polls `GET /management/api/events` incrementally with
+operator-controlled auto-refresh, search, result filters, and an option to hide
+management traffic. Clearing resets the current browser view only. Pi Router
+keeps this route visible for its always-available bounded process event buffer;
+it does not claim file logging, raw-log download, or server-side log deletion
+without a later typed Management API capability.
+
+Config Panel offers a CodeMirror YAML source view of the existing combined
+non-secret configuration document, while AI Providers retains the visual-safe
+form for common custom-provider fields. YAML is parsed in the browser with
+line/column diagnostics, previewed as a source diff, then sent as the unchanged
+structured `document` to the existing preview/apply endpoints. Backend field
+validation and revision compare-and-set remain authoritative. Because the
+backend returns a structured document rather than raw source, comments and
+formatting are not round-tripped.
+
+System composes existing bounded capabilities: service/build posture, explicit
+release check, Pi Router documentation links, scoped local-login cleanup, and
+an operator-triggered `/v1/models` read using a separately entered proxy API
+key held only in memory. Request-logging mutation is rendered unavailable
+until a backend contract defines it.
 
 ## Management API
 
@@ -411,8 +444,12 @@ Executable proof must cover:
   credential leakage;
 - configuration schema rejection, preview/revision conflict, atomic apply,
   retained restore, and activation reporting;
-- all seven stable hash routes, accessible desktop/drawer navigation,
+- all eight stable hash routes, accessible desktop/drawer navigation,
   destructive confirmations, and narrow-screen states;
+- vi/en localization without reload, persisted theme selection, opt-in
+  obfuscated management-key retention, and scoped local-login cleanup;
+- CodeMirror YAML parsing/diff over the safe structured config contract and
+  incremental sanitized-event polling without persistent raw logs;
 - deterministic GitHub release selection, version matching, checksums,
   download bounds, Android ELF validation, atomic install, rollback, source
   mode refusal, and concurrent-mutation rejection;

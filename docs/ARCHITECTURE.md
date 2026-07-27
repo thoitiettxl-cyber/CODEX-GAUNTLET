@@ -84,8 +84,10 @@ self-update does not support `android/aarch64`.
 It embeds Pi's provider/model/auth runtime but does not embed the Pi agent
 loop, session manager, tools, or extensions. Its inbound application surfaces
 are a static loopback operations console and an OpenAI Responses HTTP API. The
-page contains no state or credential data; every `/v1/*` and
-`/management/api/*` request is protected by a router-local bearer token.
+static document contains no credential data; the operator may explicitly
+retain only an obfuscated management bearer in same-origin browser storage as
+defined by ADR 0009. Every `/v1/*` and `/management/api/*` request remains
+protected by its router-local bearer class.
 
 Router credential and model state is separate from both repository state and
 Pi CLI state. The dependency direction is:
@@ -110,7 +112,9 @@ validated router-owned `models.json`, and atomically replace only its own
 packaged executable. They cannot return stored credentials or raw provider
 bodies, select arbitrary repositories or paths, edit environment/process
 state, or define verification success. The management boundary follows
-[ADR 0007](decisions/0007-bound-pi-router-operations-console.md). Release
-selection and replacement follow
+[ADR 0007](decisions/0007-bound-pi-router-operations-console.md), with the
+single-file frontend stack and opt-in browser-retention amendment in
+[ADR 0009](decisions/0009-use-a-modern-single-file-pi-router-console.md).
+Release selection and replacement follow
 [ADR 0006](decisions/0006-package-pi-router-as-a-verified-termux-sea.md);
 source mode is check-only and never replaces the Node interpreter.

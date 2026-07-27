@@ -1,0 +1,151 @@
+.layout {
+	display: grid;
+	gap: 1rem;
+	grid-template-columns: minmax(0, 1.08fr) minmax(22rem, 0.92fr);
+}
+
+.editorCard,
+.diffCard {
+	min-width: 0;
+}
+
+.editor {
+	border: 1px solid var(--border);
+	border-radius: 0.85rem;
+	min-height: 36rem;
+	overflow: hidden;
+}
+
+.editor :global(.cm-editor) {
+	height: 36rem;
+}
+
+.editor :global(.cm-scroller) {
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.footer {
+	color: var(--text-muted);
+	display: flex;
+	font-size: 0.78rem;
+	gap: 1rem;
+	justify-content: space-between;
+	padding-top: 0.65rem;
+}
+
+.actions {
+	align-items: center;
+	display: flex;
+	gap: 0.75rem;
+	justify-content: space-between;
+	margin-top: 1rem;
+}
+
+.merge {
+	border: 1px solid var(--border);
+	border-radius: 0.85rem;
+	height: 32rem;
+	overflow: auto;
+}
+
+.merge :global(.cm-mergeView) {
+	height: 100%;
+}
+
+.merge :global(.cm-editor) {
+	height: 100%;
+	min-width: 0;
+}
+
+.merge :global(.cm-scroller) {
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	overflow: auto;
+}
+
+.diffLabels {
+	display: grid;
+	font-size: 0.78rem;
+	font-weight: 700;
+	grid-template-columns: 1fr 1fr;
+	padding: 0 0.4rem 0.5rem;
+}
+
+.diffLabels span:last-child {
+	text-align: right;
+}
+
+.validation {
+	display: grid;
+	gap: 0.55rem;
+	list-style: none;
+	margin: 1rem 0 0;
+	padding: 0;
+}
+
+.validation li {
+	background: var(--surface-muted);
+	border: 1px solid var(--border);
+	border-radius: 0.7rem;
+	display: grid;
+	gap: 0.35rem;
+	padding: 0.7rem;
+}
+
+.fieldDiff {
+	display: grid;
+	gap: 0.65rem;
+	list-style: none;
+	margin: 1rem 0 0;
+	padding: 0;
+}
+
+.fieldDiff li {
+	border-bottom: 1px solid var(--border);
+	padding-bottom: 0.65rem;
+}
+
+.fieldDiff div {
+	display: grid;
+	gap: 0.35rem;
+	grid-template-columns: 1fr 1fr;
+	margin-top: 0.4rem;
+}
+
+.before,
+.after {
+	border-radius: 0.45rem;
+	overflow-wrap: anywhere;
+	padding: 0.45rem;
+}
+
+.before {
+	background: var(--danger-soft);
+}
+
+.after {
+	background: var(--positive-soft);
+}
+
+@media (max-width: 1050px) {
+	.layout {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 680px) {
+	.actions,
+	.footer {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.editor,
+	.editor :global(.cm-editor) {
+		height: 28rem;
+		min-height: 28rem;
+	}
+
+	.merge {
+		height: 28rem;
+	}
+}

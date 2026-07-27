@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
@@ -26,29 +26,33 @@ const MANAGEMENT_HTML = typeof __PI_ROUTER_MANAGEMENT_HTML__ === "string"
 	: readFileSync(new URL("../web/dist/index.html", import.meta.url), "utf8");
 
 function inlineSourceHash(tag, html) {
-	const opening = `<${tag}>`;
-	const closing = `</${tag}>`;
-	const start = html.indexOf(opening);
-	const end = html.indexOf(closing, start + opening.length);
-	if (start < 0 || end < 0) {
+	const match = html.match(
+		new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "iu"),
+	);
+	if (!match) {
 		throw new Error(`Pi Router management HTML has no inline ${tag}.`);
 	}
-	const source = html.slice(start + opening.length, end);
+	const source = match[1];
 	return `'sha256-${createHash("sha256").update(source).digest("base64")}'`;
 }
 
-const MANAGEMENT_CSP = [
-	"default-src 'none'",
-	`script-src ${inlineSourceHash("script", MANAGEMENT_HTML)}`,
-	"script-src-attr 'none'",
-	`style-src ${inlineSourceHash("style", MANAGEMENT_HTML)}`,
-	"style-src-attr 'none'",
-	"connect-src 'self'",
-	"img-src data:",
-	"base-uri 'none'",
-	"form-action 'none'",
-	"frame-ancestors 'none'",
-].join("; ");
+const MANAGEMENT_SCRIPT_HASH = inlineSourceHash("script", MANAGEMENT_HTML);
+const MANAGEMENT_STYLE_HASH = inlineSourceHash("style", MANAGEMENT_HTML);
+
+function managementCsp(nonce) {
+	return [
+		"default-src 'none'",
+		`script-src ${MANAGEMENT_SCRIPT_HASH}`,
+		"script-src-attr 'none'",
+		`style-src ${MANAGEMENT_STYLE_HASH} 'nonce-${nonce}'`,
+		"style-src-attr 'none'",
+		"connect-src 'self'",
+		"img-src data:",
+		"base-uri 'none'",
+		"form-action 'none'",
+		"frame-ancestors 'none'",
+	].join("; ");
+}
 
 function json(response, status, body) {
 	const payload = JSON.stringify(body);
@@ -61,18 +65,20 @@ function json(response, status, body) {
 }
 
 function managementHtml(response, method) {
+	const nonce = randomBytes(18).toString("base64");
+	const html = MANAGEMENT_HTML.replaceAll("__PI_ROUTER_CSP_NONCE__", nonce);
 	response.writeHead(200, {
 		"content-type": "text/html; charset=utf-8",
-		"content-length": Buffer.byteLength(MANAGEMENT_HTML),
+		"content-length": Buffer.byteLength(html),
 		"cache-control": "no-store",
-		"content-security-policy": MANAGEMENT_CSP,
+		"content-security-policy": managementCsp(nonce),
 		"cross-origin-opener-policy": "same-origin",
 		"permissions-policy": "camera=(), geolocation=(), microphone=()",
 		"referrer-policy": "no-referrer",
 		"x-content-type-options": "nosniff",
 		"x-frame-options": "DENY",
 	});
-	response.end(method === "HEAD" ? undefined : MANAGEMENT_HTML);
+	response.end(method === "HEAD" ? undefined : html);
 }
 
 function digest(value) {

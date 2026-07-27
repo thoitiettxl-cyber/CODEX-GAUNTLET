@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
 	Badge,
@@ -52,6 +53,7 @@ export function OAuthPage({
 	onMutation: () => Promise<void>;
 	notify: (message: string, tone?: "positive" | "negative") => void;
 }) {
+	const { t } = useTranslation();
 	const providersQuery = useQuery("auth-providers", () => client.providers());
 	const credentialsQuery = useQuery("auth-accounts", () => client.credentials());
 	const [providerId, setProviderId] = useState("");
@@ -107,7 +109,9 @@ export function OAuthPage({
 				}
 				setSession(next);
 				if (next.state === "completed" && session.state !== "completed") {
-					notify(`${next.credential_label ?? next.provider_name} authentication completed.`);
+					notify(t("oauth.completed", {
+						label: next.credential_label ?? next.provider_name,
+					}));
 					void Promise.all([onMutation(), refreshAccounts()]);
 				}
 			}).catch((caught) => {
@@ -146,7 +150,9 @@ export function OAuthPage({
 			});
 			setSession(created);
 			if (created.state === "completed") {
-				notify(`${created.credential_label ?? created.provider_name} authentication completed.`);
+				notify(t("oauth.completed", {
+					label: created.credential_label ?? created.provider_name,
+				}));
 				await Promise.all([onMutation(), refreshAccounts()]);
 			}
 		} catch (caught) {
@@ -169,7 +175,9 @@ export function OAuthPage({
 			const next = await client.respondAuthSession(session.id, session.prompt.id, value);
 			setSession(next);
 			if (next.state === "completed") {
-				notify(`${next.credential_label ?? next.provider_name} authentication completed.`);
+				notify(t("oauth.completed", {
+					label: next.credential_label ?? next.provider_name,
+				}));
 				await Promise.all([onMutation(), refreshAccounts()]);
 			}
 		} catch (caught) {
@@ -197,45 +205,45 @@ export function OAuthPage({
 	const copy = async (value: string, label: string) => {
 		try {
 			await navigator.clipboard.writeText(value);
-			notify(`${label} copied.`);
+			notify(t("oauth.copied", { label }));
 		} catch {
-			notify(`Could not copy ${label.toLowerCase()}.`, "negative");
+			notify(t("oauth.copyFailed", { label: label.toLowerCase() }), "negative");
 		}
 	};
 
 	return (
 		<>
 			<PageHeader
-				description="Add a provider credential to a new isolated Pi account or explicitly update an existing one. Identity-derived labels keep same-provider accounts distinguishable."
-				eyebrow="Gateway"
-				title="OAuth Login"
+				description={t("oauth.description")}
+				eyebrow={t("oauth.eyebrow")}
+				title={t("oauth.title")}
 			/>
 			<InlineNotice>
-				<strong>Single-use session.</strong> Prompt values stay in current page memory, are
-				submitted once, and are never echoed by the Management API or event log.
+				<strong>{t("oauth.singleUseTitle")}</strong>{" "}
+				{t("oauth.singleUseBody")}
 			</InlineNotice>
 
 			<div className="auth-layout">
 				<Card>
 					<SectionHeader
-						description="Choose one provider and one runtime-supported authentication method."
-						title="Start authentication"
+						description={t("oauth.startBody")}
+						title={t("oauth.startTitle")}
 					/>
-					{providersQuery.phase === "loading" ? <LoadingState label="Loading auth methods…" /> : null}
+					{providersQuery.phase === "loading" ? <LoadingState label={t("oauth.loadingMethods")} /> : null}
 					{providersQuery.phase === "error" ? (
 						<ErrorState message={providersQuery.error} onRetry={providersQuery.refresh} />
 					) : null}
 					{providersQuery.phase === "ready" && providers.length === 0 ? (
 						<EmptyState
-							description="Add a custom provider configuration or inspect runtime startup."
+							description={t("oauth.noProvidersBody")}
 							icon="providers"
-							title="No providers registered"
+							title={t("oauth.noProviders")}
 						/>
 					) : null}
 					{providersQuery.phase === "ready" && providers.length > 0 ? (
 						<form className="auth-form" onSubmit={(event) => void start(event)}>
 							<label className="field">
-								<span>Provider</span>
+								<span>{t("oauth.provider")}</span>
 								<select
 									disabled={Boolean(session && ACTIVE_STATES.has(session.state))}
 									name="provider_id"
@@ -248,50 +256,50 @@ export function OAuthPage({
 											key={entry.id}
 											value={entry.id}
 										>
-											{entry.name}{availableModes(entry).length === 0 ? " — no interactive login" : ""}
+											{entry.name}{availableModes(entry).length === 0
+												? ` — ${t("oauth.noInteractive")}`
+												: ""}
 										</option>
 									))}
 								</select>
 							</label>
 							<label className="field">
-								<span>Target account</span>
+								<span>{t("oauth.targetAccount")}</span>
 								<select
 									disabled={Boolean(session && ACTIVE_STATES.has(session.state))}
 									name="account_id"
 									onChange={(event) => setAccountId(event.target.value)}
 									value={accountId}
 								>
-									<option value="">New isolated account</option>
+									<option value="">{t("oauth.newAccount")}</option>
 									{accounts.map((account) => (
 										<option key={account.id} value={account.id}>
 											{account.label} · {account.id}
-											{account.active ? " · inference account" : ""}
+											{account.active ? ` · ${t("oauth.inferenceAccount")}` : ""}
 										</option>
 									))}
 								</select>
 								<small>
-									Selecting an existing account replaces only that account/provider
-									credential; inference account selection does not change.
+									{t("oauth.accountHelp")}
 								</small>
 							</label>
 							<label className="field">
-								<span>Account / credential label <small>(optional)</small></span>
+								<span>{t("oauth.accountLabel")} <small>({t("oauth.optional")})</small></span>
 								<input
 									autoComplete="off"
 									disabled={Boolean(session && ACTIVE_STATES.has(session.state))}
 									maxLength={96}
 									name="account_label"
 									onChange={(event) => setAccountLabel(event.target.value)}
-									placeholder="Auto-detect email or account identity"
+									placeholder={t("oauth.accountPlaceholder")}
 									value={accountLabel}
 								/>
 								<small>
-									If omitted, Pi Router derives a label from provider identity and adds
-									a unique suffix when necessary.
+									{t("oauth.labelHelp")}
 								</small>
 							</label>
 							<fieldset className="method-picker">
-								<legend>Authentication method</legend>
+								<legend>{t("oauth.method")}</legend>
 								{modes.map((mode) => (
 									<label key={mode.type} className={authType === mode.type ? "selected" : ""}>
 										<input
@@ -304,11 +312,11 @@ export function OAuthPage({
 										/>
 										<span className="method-icon"><Icon name={mode.type === "oauth" ? "login" : "key"} /></span>
 										<span>
-											<strong>{mode.type === "oauth" ? "OAuth / device login" : "API key"}</strong>
+											<strong>{mode.type === "oauth" ? t("oauth.oauthMethod") : t("oauth.apiKeyMethod")}</strong>
 											<small>
 												{mode.type === "oauth"
-													? "Follow the provider-owned browser or device flow."
-													: "Submit the provider key through one secret prompt."}
+													? t("oauth.oauthHelp")
+													: t("oauth.apiKeyHelp")}
 											</small>
 										</span>
 									</label>
@@ -320,7 +328,13 @@ export function OAuthPage({
 								type="submit"
 								variant="primary"
 							>
-								{busy ? "Starting…" : `Start ${authType === "oauth" ? "OAuth" : "API key"} session`}
+								{busy
+									? t("oauth.starting")
+									: t("oauth.startSession", {
+										type: authType === "oauth"
+											? t("oauth.oauthShort")
+											: t("oauth.apiKeyShort"),
+									})}
 							</Button>
 						</form>
 					) : null}
@@ -329,37 +343,37 @@ export function OAuthPage({
 				<Card className="session-card">
 					<SectionHeader
 						actions={session && ACTIVE_STATES.has(session.state) ? (
-							<Button disabled={busy} onClick={() => void cancel()} variant="danger">Cancel session</Button>
+							<Button disabled={busy} onClick={() => void cancel()} variant="danger">{t("oauth.cancelSession")}</Button>
 						) : null}
-						description="Safe progress and prompt metadata from the current in-memory session."
-						title="Session activity"
+						description={t("oauth.sessionActivityBody")}
+						title={t("oauth.sessionActivity")}
 					/>
 					{error ? <InlineNotice tone="negative">{error}</InlineNotice> : null}
 					{!session ? (
 						<EmptyState
-							description="Select a provider and start a session. No background login begins on page load."
+							description={t("oauth.noSessionBody")}
 							icon="login"
-							title="No active session"
+							title={t("oauth.noSession")}
 						/>
 					) : (
 						<div className="session-view">
 							<div className="session-summary">
 								<div>
-									<span>Provider</span>
+									<span>{t("oauth.provider")}</span>
 									<strong>{session.provider_name}</strong>
 									<code>{session.provider_id}</code>
 								</div>
 								<div>
-									<span>Account</span>
+									<span>{t("oauth.account")}</span>
 									<strong>{session.credential_label ?? session.account_label}</strong>
 									<code>{session.account_id}</code>
 								</div>
 								<div>
-									<span>Status</span>
-									<Badge tone={sessionTone(session.state)}>{session.state.replaceAll("_", " ")}</Badge>
+									<span>{t("oauth.status")}</span>
+									<Badge tone={sessionTone(session.state)}>{t(`oauth.states.${session.state}`)}</Badge>
 								</div>
 								<div>
-									<span>Expires</span>
+									<span>{t("oauth.expires")}</span>
 									<strong>{formatDate(session.expires_at)}</strong>
 								</div>
 							</div>
@@ -369,20 +383,20 @@ export function OAuthPage({
 									<div className="prompt-heading">
 										<div className="prompt-icon"><Icon name={session.prompt.type === "secret" ? "key" : "login"} /></div>
 										<div>
-											<span>Provider prompt</span>
+											<span>{t("oauth.providerPrompt")}</span>
 											<h3>{session.prompt.message}</h3>
 										</div>
 									</div>
 									{session.prompt.type === "select" ? (
 										<label className="field">
-											<span>Choose an option</span>
+											<span>{t("oauth.chooseOption")}</span>
 											<select
 												autoFocus
 												name="prompt_response"
 												onChange={(event) => setPromptValue(event.target.value)}
 												value={promptValue}
 											>
-												<option value="">Select one</option>
+												<option value="">{t("oauth.selectOne")}</option>
 												{session.prompt.options?.map((option) => (
 													<option key={option.id} value={option.id}>{option.label}</option>
 												))}
@@ -390,7 +404,7 @@ export function OAuthPage({
 										</label>
 									) : (
 										<label className="field">
-											<span>{session.prompt.type === "secret" ? "Secret response" : "Response"}</span>
+											<span>{session.prompt.type === "secret" ? t("oauth.secretResponse") : t("oauth.response")}</span>
 											<div className={session.prompt.type === "secret" ? "secret-input" : ""}>
 												{session.prompt.type === "secret" ? <Icon name="key" /> : null}
 												<input
@@ -398,14 +412,14 @@ export function OAuthPage({
 													autoFocus
 													name="prompt_response"
 													onChange={(event) => setPromptValue(event.target.value)}
-													placeholder={session.prompt.placeholder ?? "Enter the requested value"}
+													placeholder={session.prompt.placeholder ?? t("oauth.responsePlaceholder")}
 													spellCheck={false}
 													type={session.prompt.type === "secret" && !showSecret ? "password" : "text"}
 													value={promptValue}
 												/>
 												{session.prompt.type === "secret" ? (
 													<button onClick={() => setShowSecret((value) => !value)} type="button">
-														{showSecret ? "Hide" : "Show"}
+														{showSecret ? t("common.hide") : t("common.show")}
 													</button>
 												) : null}
 											</div>
@@ -422,7 +436,7 @@ export function OAuthPage({
 										type="submit"
 										variant="primary"
 									>
-										{busy ? "Submitting…" : "Submit once"}
+										{busy ? t("oauth.submitting") : t("oauth.submitOnce")}
 									</Button>
 								</form>
 							) : null}
@@ -434,37 +448,37 @@ export function OAuthPage({
 											<span className="timeline-dot" />
 											<div>
 												<div className="timeline-meta">
-													<Badge tone="neutral">{event.type.replaceAll("_", " ")}</Badge>
+													<Badge tone="neutral">{t(`oauth.events.${event.type}`)}</Badge>
 													<time>{formatDate(event.created_at)}</time>
 												</div>
 												{event.message ? <p>{event.message}</p> : null}
 												{event.instructions ? <p>{event.instructions}</p> : null}
 												{event.url ? (
 													<a href={event.url} rel="noreferrer" target="_blank">
-														Open provider sign-in <Icon name="external" />
+														{t("oauth.openSignIn")} <Icon name="external" />
 													</a>
 												) : null}
 												{event.user_code && event.verification_uri ? (
 													<div className="device-code">
 														<div>
-															<span>Device code</span>
+															<span>{t("oauth.deviceCode")}</span>
 															<code>{event.user_code}</code>
 														</div>
 														<Button
 															icon="copy"
-															onClick={() => void copy(event.user_code!, "Device code")}
+															onClick={() => void copy(event.user_code!, t("oauth.deviceCode"))}
 															size="compact"
 														>
-															Copy
+															{t("common.copy")}
 														</Button>
 														<a href={event.verification_uri} rel="noreferrer" target="_blank">
-															Open verification page <Icon name="external" />
+															{t("oauth.openVerification")} <Icon name="external" />
 														</a>
 													</div>
 												) : null}
 												{event.links?.map((link) => (
 													<a href={link.url} key={link.url} rel="noreferrer" target="_blank">
-														{link.label ?? "Provider information"} <Icon name="external" />
+														{link.label ?? t("oauth.providerInformation")} <Icon name="external" />
 													</a>
 												))}
 											</div>
@@ -475,8 +489,8 @@ export function OAuthPage({
 								<p className="waiting-copy">
 									<span className={ACTIVE_STATES.has(session.state) ? "spinner" : ""} />
 									{ACTIVE_STATES.has(session.state)
-										? "Waiting for the provider interaction…"
-										: "The session emitted no public progress events."}
+										? t("oauth.waiting")
+										: t("oauth.noProgress")}
 								</p>
 							)}
 
@@ -486,13 +500,19 @@ export function OAuthPage({
 									<div>
 										<strong>
 											{session.state === "completed"
-												? "Authentication saved"
-												: `Session ${session.state}`}
+												? t("oauth.saved")
+												: t("oauth.sessionState", {
+													state: t(`oauth.states.${session.state}`),
+												})}
 										</strong>
 										<p>
 											{session.state === "completed"
-												? `Saved as ${session.credential_label ?? session.account_label}; provider inventory will refresh without exposing the credential.`
-												: `No credential value was returned. ${session.error_code ?? ""}`}
+												? t("oauth.savedBody", {
+													label: session.credential_label ?? session.account_label,
+												})
+												: t("oauth.failedBody", {
+													code: session.error_code ?? "",
+												})}
 										</p>
 									</div>
 									<Button onClick={() => {
@@ -500,7 +520,7 @@ export function OAuthPage({
 										setError("");
 										setPromptValue("");
 									}}>
-										Start another
+										{t("oauth.startAnother")}
 									</Button>
 								</div>
 							) : null}

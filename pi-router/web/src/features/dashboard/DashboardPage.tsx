@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
 	Badge,
@@ -39,6 +40,7 @@ export function DashboardPage({
 	onRefreshStatus: () => Promise<void>;
 	notify: (message: string, tone?: "positive" | "negative") => void;
 }) {
+	const { t } = useTranslation();
 	const [candidate, setCandidate] = useState<UpdateCandidate | null>(null);
 	const [updatePhase, setUpdatePhase] = useState<"idle" | "checking" | "mutating">("idle");
 	const [updateError, setUpdateError] = useState("");
@@ -49,6 +51,7 @@ export function DashboardPage({
 	const [newKeyLabel, setNewKeyLabel] = useState("");
 	const [keyLabels, setKeyLabels] = useState<Record<string, string>>({});
 	const [revealedKey, setRevealedKey] = useState("");
+	const [revealedKeyVisible, setRevealedKeyVisible] = useState(false);
 	const [pendingKeyAction, setPendingKeyAction] = useState<PendingKeyAction>(null);
 	const [keyBusy, setKeyBusy] = useState(false);
 	const activitySuccess = status.activity.requests === 0
@@ -90,9 +93,10 @@ export function DashboardPage({
 		try {
 			const created = await client.createProxyKey(newKeyLabel);
 			setRevealedKey(created.value ?? "");
+			setRevealedKeyVisible(false);
 			setNewKeyLabel("");
 			await Promise.all([loadProxyKeys(), onRefreshStatus()]);
-			notify("Proxy API key created. Copy its value now; it will not be shown again.");
+			notify(t("dashboard.keyCreated"));
 		} catch (error) {
 			setProxyKeyError(errorMessage(error));
 		} finally {
@@ -109,7 +113,7 @@ export function DashboardPage({
 		try {
 			await client.updateProxyKey(key.id, next);
 			await loadProxyKeys();
-			notify("Proxy API-key label updated.");
+			notify(t("dashboard.keyLabelUpdated"));
 		} catch (error) {
 			setProxyKeyError(errorMessage(error));
 		} finally {
@@ -127,10 +131,11 @@ export function DashboardPage({
 			if (pendingKeyAction.action === "replace") {
 				const replaced = await client.replaceProxyKey(pendingKeyAction.key.id);
 				setRevealedKey(replaced.value ?? "");
-				notify("Proxy API key replaced. Existing clients must use the new value.");
+				setRevealedKeyVisible(false);
+				notify(t("dashboard.keyReplaced"));
 			} else {
 				await client.removeProxyKey(pendingKeyAction.key.id);
-				notify("Proxy API key removed.");
+				notify(t("dashboard.keyRemoved"));
 			}
 			setPendingKeyAction(null);
 			await Promise.all([loadProxyKeys(), onRefreshStatus()]);
@@ -145,9 +150,9 @@ export function DashboardPage({
 	const copyRevealedKey = async () => {
 		try {
 			await navigator.clipboard.writeText(revealedKey);
-			notify("Proxy API key copied.");
+			notify(t("dashboard.keyCopied"));
 		} catch {
-			notify("Could not copy the proxy API key.", "negative");
+			notify(t("dashboard.keyCopyFailed"), "negative");
 		}
 	};
 
@@ -172,10 +177,10 @@ export function DashboardPage({
 		try {
 			if (pendingAction === "install" && candidate) {
 				await client.installUpdate(candidate.latest_version);
-				notify(`Version ${candidate.latest_version} installed. Restart Pi Router to activate it.`);
+				notify(t("dashboard.versionInstalled", { version: candidate.latest_version }));
 			} else if (pendingAction === "rollback") {
 				await client.rollbackUpdate();
-				notify("Previous verified binary restored. Restart Pi Router to activate it.");
+				notify(t("dashboard.binaryRestored"));
 			}
 			setPendingAction(null);
 			await onRefreshStatus();
@@ -190,62 +195,80 @@ export function DashboardPage({
 	return (
 		<>
 			<PageHeader
-				actions={<Button icon="refresh" onClick={() => void onRefreshStatus()}>Refresh status</Button>}
-				description="A bounded view of the local gateway, active account, operational activity, and recovery posture."
-				eyebrow="Operate"
-				title="Dashboard"
+				actions={<Button icon="refresh" onClick={() => void onRefreshStatus()}>{t("dashboard.refreshStatus")}</Button>}
+				description={t("dashboard.description")}
+				eyebrow={t("dashboard.eyebrow")}
+				title={t("dashboard.title")}
 			/>
 
 			{status.update.restart_required ? (
 				<InlineNotice tone="warning">
-					<strong>Restart required.</strong> Version {status.update.pending_version ?? "change"} is
-					pending activation; this console cannot restart the process.
+					<strong>{t("dashboard.restartRequired")}</strong>{" "}
+					{t("dashboard.restartMessage", {
+						version: status.update.pending_version ?? "—",
+					})}
 				</InlineNotice>
 			) : null}
 			<InlineNotice tone="positive">
-				<strong>{status.connection.status === "connected" ? "Connected" : "Unavailable"}.</strong>{" "}
-				Management authentication is separate from the {status.authentication.proxy_api_keys} proxy
-				API key{status.authentication.proxy_api_keys === 1 ? "" : "s"} accepted by inference clients.
+				<strong>
+					{status.connection.status === "connected"
+						? t("dashboard.connected")
+						: t("dashboard.unavailable")}.
+				</strong>{" "}
+				{t("dashboard.connectionNotice", {
+					count: status.authentication.proxy_api_keys,
+				})}
 			</InlineNotice>
 
 			<div className="stat-grid">
 				<StatCard
-					detail={`Server v${status.service.version} · ${formatUptime(status.service.uptime_seconds)} uptime`}
+					detail={t("dashboard.serverDetail", {
+						version: status.service.version,
+						uptime: formatUptime(status.service.uptime_seconds),
+					})}
 					icon="server"
-					label="Connection"
+					label={t("dashboard.connection")}
 					tone="positive"
-					value={status.connection.status}
+					value={t("app.connected")}
 				/>
 				<StatCard
-					detail={`${status.account.configured_providers} configured of ${status.account.providers}`}
+					detail={t("dashboard.providersDetail", {
+						configured: status.account.configured_providers,
+						total: status.account.providers,
+					})}
 					icon="providers"
-					label="AI providers"
+					label={t("dashboard.providers")}
 					value={formatNumber(status.account.providers)}
 				/>
 				<StatCard
-					detail={`${status.account.stored_credentials} stored credential metadata records`}
+					detail={t("dashboard.modelsDetail", {
+						count: status.account.stored_credentials,
+					})}
 					icon="server"
-					label="Available models"
+					label={t("dashboard.models")}
 					tone="positive"
 					value={formatNumber(status.account.available_models)}
 				/>
 				<StatCard
-					detail="Managed independently from the management key"
+					detail={t("dashboard.proxyKeysDetail")}
 					icon="key"
-					label="Proxy API keys"
+					label={t("dashboard.proxyKeys")}
 					value={formatNumber(status.authentication.proxy_api_keys)}
 				/>
 				<StatCard
-					detail={`${status.activity.errors} errors in the in-memory buffer`}
+					detail={t("dashboard.activityDetail", { count: status.activity.errors })}
 					icon="logs"
-					label="Recorded activity"
+					label={t("dashboard.activity")}
 					tone={status.activity.errors > 0 ? "warning" : "default"}
 					value={formatNumber(status.activity.requests)}
 				/>
 				<StatCard
-					detail={`${status.quota.supported_providers} reviewed adapters of ${status.quota.total_providers}`}
+					detail={t("dashboard.quotaDetail", {
+						supported: status.quota.supported_providers,
+						total: status.quota.total_providers,
+					})}
 					icon="quota"
-					label="Quota coverage"
+					label={t("dashboard.quotaCoverage")}
 					value={formatNumber(status.quota.supported_providers)}
 				/>
 			</div>
@@ -253,40 +276,42 @@ export function DashboardPage({
 			<div className="dashboard-grid">
 				<Card>
 					<SectionHeader
-						description="Current process identity. Values are bounded and contain no raw state paths."
-						title="Runtime posture"
+						description={t("dashboard.runtimePostureBody")}
+						title={t("dashboard.runtimePosture")}
 					/>
 					<dl className="detail-list">
 						<div>
-							<dt>Service</dt>
+							<dt>{t("dashboard.service")}</dt>
 							<dd>
 								<span className="health-dot" />
 								{status.service.name} v{status.service.version}
 							</dd>
 						</div>
 						<div>
-							<dt>Uptime</dt>
+							<dt>{t("dashboard.uptime")}</dt>
 							<dd>{formatUptime(status.service.uptime_seconds)}</dd>
 						</div>
 						<div>
-							<dt>Selected account</dt>
+							<dt>{t("dashboard.selectedAccount")}</dt>
 							<dd><code>{status.account.id}</code></dd>
 						</div>
 						<div>
-							<dt>Runtime</dt>
+							<dt>{t("dashboard.runtime")}</dt>
 							<dd>{status.runtime.mode} · Node {status.runtime.node}</dd>
 						</div>
 						<div>
-							<dt>Platform</dt>
+							<dt>{t("dashboard.platform")}</dt>
 							<dd>{status.runtime.platform} / {status.runtime.arch}</dd>
 						</div>
 						<div>
-							<dt>Configuration</dt>
+							<dt>{t("dashboard.configuration")}</dt>
 							<dd>
 								<Badge tone={status.config.state === "ready" ? "positive" : "warning"}>
-									{status.config.state}
+									{t(`dashboard.configStates.${status.config.state}`)}
 								</Badge>
-								{status.config.recovery_available ? "Recovery available" : "No recovery snapshot"}
+								{status.config.recovery_available
+									? t("dashboard.recoveryAvailable")
+									: t("dashboard.noRecovery")}
 							</dd>
 						</div>
 					</dl>
@@ -294,104 +319,113 @@ export function DashboardPage({
 
 				<Card>
 					<SectionHeader
-						description="Recent counts from the sanitized process-memory event buffer."
-						title="Activity summary"
+						description={t("dashboard.activitySummaryBody")}
+						title={t("dashboard.activitySummary")}
 					/>
 					<div className="activity-visual">
 						<div
 							aria-label={
 								activitySuccess === null
-									? "No requests retained"
-									: `${activitySuccess} percent successful`
+									? t("dashboard.noRequests")
+									: t("dashboard.percentSuccessful", { percent: activitySuccess })
 							}
 							className={`activity-ring activity-ring-${activityStep}`}
 							role="img"
 						>
 							<div>
 								<strong>{activitySuccess === null ? "—" : `${activitySuccess}%`}</strong>
-								<span>successful</span>
+								<span>{t("dashboard.successful")}</span>
 							</div>
 						</div>
 						<div className="activity-copy">
 							<div>
-								<span>Requests retained</span>
+								<span>{t("dashboard.requestsRetained")}</span>
 								<strong>{formatNumber(status.activity.requests)}</strong>
 							</div>
 							<div>
-								<span>Error responses</span>
+								<span>{t("dashboard.errorResponses")}</span>
 								<strong>{formatNumber(status.activity.errors)}</strong>
 							</div>
 							<div>
-								<span>Last event</span>
+								<span>{t("dashboard.lastEvent")}</span>
 								<strong>{formatDate(status.activity.last_event_at)}</strong>
 							</div>
 						</div>
 					</div>
-					<a className="text-link" href="#logs">
-						Open sanitized logs <Icon name="arrow" />
+					<a className="text-link" href="#/logs">
+						{t("dashboard.openLogs")} <Icon name="arrow" />
 					</a>
 				</Card>
 			</div>
 
 			<Card>
 				<SectionHeader
-					description="These keys authenticate /v1 clients only. Values are generated server-side and disclosed once on create or replace."
-					title="Proxy API keys"
+					description={t("dashboard.keySectionBody")}
+					title={t("dashboard.proxyKeys")}
 				/>
 				{proxyKeyError ? <InlineNotice tone="negative">{proxyKeyError}</InlineNotice> : null}
 				{revealedKey ? (
 					<InlineNotice tone="warning">
-						<strong>Copy this key now.</strong> It will disappear when you dismiss it or
-						reload the page.
+						<strong>{t("dashboard.copyNow")}</strong>{" "}
+						{t("dashboard.copyNowBody")}
 						<div className="secret-input one-time-key">
 							<Icon name="key" />
 							<input
-								aria-label="New proxy API key"
+								aria-label={t("dashboard.newProxyKey")}
 								readOnly
 								spellCheck={false}
-								type="text"
+								type={revealedKeyVisible ? "text" : "password"}
 								value={revealedKey}
 							/>
-							<button onClick={() => void copyRevealedKey()} type="button">Copy</button>
-							<button onClick={() => setRevealedKey("")} type="button">Dismiss</button>
+							<button
+								onClick={() => setRevealedKeyVisible((visible) => !visible)}
+								type="button"
+							>
+								{t(revealedKeyVisible ? "common.hide" : "common.show")}
+							</button>
+							<button onClick={() => void copyRevealedKey()} type="button">{t("common.copy")}</button>
+							<button onClick={() => {
+								setRevealedKey("");
+								setRevealedKeyVisible(false);
+							}} type="button">{t("common.dismiss")}</button>
 						</div>
 					</InlineNotice>
 				) : null}
 				<form className="key-create-row" onSubmit={(event) => void createProxyKey(event)}>
 					<label className="field">
-						<span>New key label</span>
+						<span>{t("dashboard.newKeyLabel")}</span>
 						<input
 							autoComplete="off"
 							maxLength={80}
 							name="proxy_key_label"
 							onChange={(event) => setNewKeyLabel(event.target.value)}
-							placeholder="Codex on this device"
+							placeholder={t("dashboard.keyPlaceholder")}
 							value={newKeyLabel}
 						/>
 					</label>
 					<Button disabled={keyBusy || !newKeyLabel.trim()} type="submit" variant="primary">
-						Generate proxy key
+						{t("dashboard.generateKey")}
 					</Button>
 				</form>
-				{proxyKeyPhase === "loading" ? <p className="muted">Loading proxy API-key metadata…</p> : null}
+				{proxyKeyPhase === "loading" ? <p className="muted">{t("dashboard.loadingKeys")}</p> : null}
 				{proxyKeyPhase === "ready" ? (
 					<div className="table-wrap">
 						<table>
-							<caption className="visually-hidden">Proxy API-key metadata</caption>
+							<caption className="visually-hidden">{t("dashboard.keyTable")}</caption>
 							<thead>
 								<tr>
-									<th scope="col">Label</th>
-									<th scope="col">Created</th>
-									<th scope="col">Last changed</th>
-									<th scope="col"><span className="visually-hidden">Actions</span></th>
+									<th scope="col">{t("dashboard.label")}</th>
+									<th scope="col">{t("dashboard.created")}</th>
+									<th scope="col">{t("dashboard.lastChanged")}</th>
+									<th scope="col"><span className="visually-hidden">{t("common.actions")}</span></th>
 								</tr>
 							</thead>
 							<tbody>
 								{proxyKeys.map((key) => (
 									<tr key={key.id}>
-										<td data-label="Label">
+										<td data-label={t("dashboard.label")}>
 											<label className="visually-hidden" htmlFor={`proxy-label-${key.id}`}>
-												Label for {key.label}
+												{t("dashboard.labelFor", { label: key.label })}
 											</label>
 											<input
 												id={`proxy-label-${key.id}`}
@@ -404,8 +438,8 @@ export function DashboardPage({
 											/>
 											<code>{key.id.slice(0, 16)}…</code>
 										</td>
-										<td data-label="Created">{formatDate(key.created_at)}</td>
-										<td data-label="Last changed">{formatDate(key.updated_at)}</td>
+										<td data-label={t("dashboard.created")}>{formatDate(key.created_at)}</td>
+										<td data-label={t("dashboard.lastChanged")}>{formatDate(key.updated_at)}</td>
 										<td className="table-action">
 											<div className="button-row">
 												<Button
@@ -413,14 +447,14 @@ export function DashboardPage({
 													onClick={() => void saveKeyLabel(key)}
 													size="compact"
 												>
-													Save label
+													{t("dashboard.saveLabel")}
 												</Button>
 												<Button
 													disabled={keyBusy}
 													onClick={() => setPendingKeyAction({ action: "replace", key })}
 													size="compact"
 												>
-													Replace
+													{t("dashboard.replace")}
 												</Button>
 												<Button
 													disabled={keyBusy || proxyKeys.length <= 1}
@@ -428,7 +462,7 @@ export function DashboardPage({
 													size="compact"
 													variant="danger"
 												>
-													Remove
+													{t("dashboard.remove")}
 												</Button>
 											</div>
 										</td>
@@ -449,7 +483,7 @@ export function DashboardPage({
 								icon="refresh"
 								onClick={() => void checkUpdate()}
 							>
-								{updatePhase === "checking" ? "Checking…" : "Check stable release"}
+								{updatePhase === "checking" ? t("common.checking") : t("dashboard.checkRelease")}
 							</Button>
 							{status.update.rollback_available ? (
 								<Button
@@ -457,25 +491,25 @@ export function DashboardPage({
 									onClick={() => setPendingAction("rollback")}
 									variant="danger"
 								>
-									Roll back
+									{t("dashboard.rollBack")}
 								</Button>
 							) : null}
 						</div>
 					}
-					description="Release discovery is explicit. Install and rollback keep the existing verified recovery boundary."
-					title="Update & recovery"
+					description={t("dashboard.updateRecoveryBody")}
+					title={t("dashboard.updateRecovery")}
 				/>
 				{updateError ? <InlineNotice tone="negative">{updateError}</InlineNotice> : null}
 				<div className="update-layout">
 					<div className="update-posture">
 						<div className="update-icon"><Icon name="server" /></div>
 						<div>
-							<span>Installed version</span>
+							<span>{t("dashboard.installedVersion")}</span>
 							<strong>v{status.service.version}</strong>
 							<p>
 								{status.update.install_supported
-									? "Native Termux binary; verified install is available."
-									: "Source mode; release checks are available but install is disabled."}
+									? t("dashboard.binaryInstallAvailable")
+									: t("dashboard.sourceInstallDisabled")}
 							</p>
 						</div>
 					</div>
@@ -483,11 +517,16 @@ export function DashboardPage({
 						<div className="candidate-card">
 							<div>
 								<Badge tone={candidate.status === "available" ? "info" : "positive"}>
-									{candidate.status === "available" ? "Update available" : "Current"}
+									{candidate.status === "available"
+										? t("dashboard.updateAvailable")
+										: t("dashboard.current")}
 								</Badge>
 								<h3>Pi Router v{candidate.latest_version}</h3>
 								<p>
-									Published {formatDate(candidate.published_at)} · {formatBytes(candidate.asset.size)}
+									{t("dashboard.published", {
+										date: formatDate(candidate.published_at),
+										size: formatBytes(candidate.asset.size),
+									})}
 								</p>
 							</div>
 							<div className="candidate-actions">
@@ -497,7 +536,7 @@ export function DashboardPage({
 									rel="noreferrer"
 									target="_blank"
 								>
-									<Icon name="external" /><span>Release notes</span>
+									<Icon name="external" /><span>{t("dashboard.releaseNotes")}</span>
 								</a>
 								{candidate.status === "available" && status.update.install_supported ? (
 									<Button
@@ -505,7 +544,7 @@ export function DashboardPage({
 										onClick={() => setPendingAction("install")}
 										variant="primary"
 									>
-										Install v{candidate.latest_version}
+										{t("dashboard.installVersion", { version: candidate.latest_version })}
 									</Button>
 								) : null}
 							</div>
@@ -513,7 +552,7 @@ export function DashboardPage({
 					) : (
 						<div className="candidate-placeholder">
 							<Icon name="clock" />
-							<p>No release check has run in this page session.</p>
+							<p>{t("dashboard.noReleaseCheck")}</p>
 						</div>
 					)}
 				</div>
@@ -521,31 +560,33 @@ export function DashboardPage({
 
 			<ConfirmDialog
 				busy={updatePhase === "mutating"}
-				confirmLabel={pendingAction === "install" ? "Install verified binary" : "Restore previous binary"}
+				confirmLabel={pendingAction === "install" ? t("dashboard.installConfirm") : t("dashboard.restoreBinary")}
 				danger={pendingAction === "rollback"}
 				description={
 					pendingAction === "install"
-						? `Install v${candidate?.latest_version ?? ""} after fresh checksum and Android AArch64 validation? The running process will still require restart.`
-						: "Replace the installed binary with its retained verified predecessor? The running process will still require restart."
+						? t("dashboard.installBody", { version: candidate?.latest_version ?? "" })
+						: t("dashboard.rollbackBody")
 				}
 				onCancel={() => setPendingAction(null)}
 				onConfirm={() => void confirmMutation()}
 				open={pendingAction !== null}
-				title={pendingAction === "install" ? "Install stable update?" : "Roll back Pi Router?"}
+				title={pendingAction === "install" ? t("dashboard.installTitle") : t("dashboard.rollbackTitle")}
 			/>
 			<ConfirmDialog
 				busy={keyBusy}
-				confirmLabel={pendingKeyAction?.action === "replace" ? "Replace key" : "Remove key"}
+				confirmLabel={pendingKeyAction?.action === "replace" ? t("dashboard.replaceKey") : t("dashboard.removeKey")}
 				danger
 				description={
 					pendingKeyAction?.action === "replace"
-						? `Replace ${pendingKeyAction.key.label}? Its current value stops working immediately and the new value is shown once.`
-						: `Remove ${pendingKeyAction?.key.label ?? "this key"}? Clients using it will lose inference access.`
+						? t("dashboard.replaceKeyBody", { label: pendingKeyAction.key.label })
+						: t("dashboard.removeKeyBody", {
+							label: pendingKeyAction?.key.label ?? t("dashboard.proxyKeys"),
+						})
 				}
 				onCancel={() => setPendingKeyAction(null)}
 				onConfirm={() => void mutateProxyKey()}
 				open={pendingKeyAction !== null}
-				title={pendingKeyAction?.action === "replace" ? "Replace proxy API key?" : "Remove proxy API key?"}
+				title={pendingKeyAction?.action === "replace" ? t("dashboard.replaceKeyTitle") : t("dashboard.removeKeyTitle")}
 			/>
 		</>
 	);

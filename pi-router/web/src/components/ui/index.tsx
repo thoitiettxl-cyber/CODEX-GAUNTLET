@@ -5,6 +5,7 @@ import {
 	useEffect,
 	useRef,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Icon } from "./Icon";
 
@@ -144,13 +145,14 @@ export function StatCard({
 	);
 }
 
-export function LoadingState({ label = "Loading current state…" }: { label?: string }) {
+export function LoadingState({ label }: { label?: string }) {
+	const { t } = useTranslation();
 	return (
 		<div className="state-panel" aria-live="polite" aria-busy="true">
 			<span className="spinner" aria-hidden="true" />
 			<div>
-				<strong>{label}</strong>
-				<p>Reading the authenticated loopback service.</p>
+				<strong>{label ?? t("common.loading")}</strong>
+				<p>{t("states.reading")}</p>
 			</div>
 		</div>
 	);
@@ -163,13 +165,14 @@ export function ErrorState({
 	message: string;
 	onRetry?: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="state-panel state-error" role="alert">
 			<div className="state-icon"><Icon name="warning" /></div>
 			<div>
-				<strong>Unable to load this view</strong>
+				<strong>{t("states.unable")}</strong>
 				<p>{message}</p>
-				{onRetry ? <Button size="compact" onClick={onRetry} icon="refresh">Try again</Button> : null}
+				{onRetry ? <Button size="compact" onClick={onRetry} icon="refresh">{t("common.retry")}</Button> : null}
 			</div>
 		</div>
 	);
@@ -256,6 +259,7 @@ export function ConfirmDialog({
 	onCancel: () => void;
 	onConfirm: () => void;
 }) {
+	const { t } = useTranslation();
 	const dialogRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		if (!open) {
@@ -308,13 +312,13 @@ export function ConfirmDialog({
 				<h2 id="confirm-title">{title}</h2>
 				<p id="confirm-description">{description}</p>
 				<div className="dialog-actions">
-					<Button disabled={busy} onClick={onCancel}>Cancel</Button>
+					<Button disabled={busy} onClick={onCancel}>{t("common.cancel")}</Button>
 					<Button
 						disabled={busy}
 						onClick={onConfirm}
 						variant={danger ? "danger" : "primary"}
 					>
-						{busy ? "Working…" : confirmLabel}
+						{busy ? t("common.working") : confirmLabel}
 					</Button>
 				</div>
 			</div>

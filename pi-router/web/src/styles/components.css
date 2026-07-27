@@ -91,7 +91,7 @@
 
 .button-danger {
 	border-color: #dfb5b7;
-	background: white;
+	background: var(--surface);
 	color: var(--danger);
 }
 
@@ -210,8 +210,8 @@
 
 .badge-neutral {
 	border-color: var(--line);
-	background: #f1f4f2;
-	color: #5e7068;
+	background: var(--surface-soft);
+	color: var(--ink-muted);
 }
 
 .inline-notice {
@@ -223,7 +223,7 @@
 	border: 1px solid #c9dbee;
 	border-radius: 10px;
 	background: var(--info-soft);
-	color: #34536f;
+	color: var(--info);
 	font-size: 13px;
 }
 
@@ -247,13 +247,13 @@
 .notice-warning {
 	border-color: #edd1ad;
 	background: var(--warning-soft);
-	color: #7d4b17;
+	color: var(--warning);
 }
 
 .notice-negative {
 	border-color: #e6bec0;
 	background: var(--danger-soft);
-	color: #8f3035;
+	color: var(--danger);
 }
 
 .state-panel {
@@ -286,7 +286,7 @@
 
 .state-error {
 	border-color: #e4bfc1;
-	background: #fffafa;
+	background: var(--danger-soft);
 }
 
 .state-icon,
@@ -485,7 +485,7 @@ th {
 
 td {
 	padding: 15px 12px;
-	border-bottom: 1px solid #e8ecea;
+	border-bottom: 1px solid var(--line);
 	vertical-align: middle;
 }
 
@@ -494,7 +494,7 @@ tbody tr:last-child td {
 }
 
 tbody tr:hover {
-	background: #fbfcfb;
+	background: var(--surface-soft);
 }
 
 .table-action {
@@ -566,7 +566,7 @@ tbody tr:hover {
 	padding: 27px;
 	border: 1px solid var(--line);
 	border-radius: 16px;
-	background: white;
+	background: var(--surface);
 	box-shadow: 0 28px 80px rgba(9, 29, 34, 0.22);
 }
 
@@ -615,7 +615,7 @@ tbody tr:hover {
 	padding: 13px 14px;
 	border: 1px solid #aed7bf;
 	border-radius: 11px;
-	background: #f4fff8;
+	background: var(--positive-soft);
 	box-shadow: var(--shadow-md);
 	color: var(--positive);
 	font-size: 13px;
@@ -624,7 +624,7 @@ tbody tr:hover {
 
 .toast-negative {
 	border-color: #e0adaf;
-	background: #fff7f7;
+	background: var(--danger-soft);
 	color: var(--danger);
 }
 

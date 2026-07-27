@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
 	Badge,
@@ -68,6 +69,7 @@ export function ProvidersPage({
 	onMutation: () => Promise<void>;
 	notify: (message: string, tone?: "positive" | "negative") => void;
 }) {
+	const { t } = useTranslation();
 	const [filter, setFilter] = useState("");
 	const [custom, setCustom] = useState<CustomProviderDraft>(EMPTY_CUSTOM);
 	const [customError, setCustomError] = useState("");
@@ -103,7 +105,7 @@ export function ProvidersPage({
 		setCustomError("");
 		try {
 			if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(custom.id)) {
-				throw new Error("Provider id may contain only letters, numbers, dot, underscore, or hyphen.");
+				throw new Error(t("providers.invalidId"));
 			}
 			const headers = JSON.parse(custom.headers) as unknown;
 			if (
@@ -112,11 +114,11 @@ export function ProvidersPage({
 				|| Array.isArray(headers)
 				|| Object.values(headers).some((value) => typeof value !== "string")
 			) {
-				throw new Error("Headers must be a JSON object whose values are strings.");
+				throw new Error(t("providers.invalidHeaders"));
 			}
 			const config = await client.getConfig();
 			if (!config.editable || !config.document) {
-				throw new Error("Provider configuration is not currently editable.");
+				throw new Error(t("providers.configUnavailable"));
 			}
 			const document = structuredClone(config.document);
 			const providerMap = (
@@ -125,7 +127,7 @@ export function ProvidersPage({
 				&& !Array.isArray(document.providers)
 			) ? document.providers as Record<string, unknown> : {};
 			if (providerMap[custom.id]) {
-				throw new Error("That provider id already exists. Edit it in Config Panel.");
+				throw new Error(t("providers.duplicate"));
 			}
 			const excludedModels = custom.excludedModels
 				.split(/\r?\n|,/u)
@@ -152,7 +154,7 @@ export function ProvidersPage({
 			if (!preview.valid || !preview.revision) {
 				throw new Error(
 					preview.errors.map((item) => `${item.path}: ${item.message}`).join(" · ")
-						|| "Provider configuration did not pass validation.",
+						|| t("providers.validationFailed"),
 				);
 			}
 			setPendingCustom({
@@ -174,7 +176,7 @@ export function ProvidersPage({
 		setCustomBusy(true);
 		try {
 			await client.applyConfig(pendingCustom.document, pendingCustom.revision);
-			notify(`Custom provider ${pendingCustom.providerId} added and reloaded.`);
+			notify(t("providers.added", { id: pendingCustom.providerId }));
 			setCustom(EMPTY_CUSTOM);
 			setPendingCustom(null);
 			await Promise.all([query.refresh(), onMutation()]);
@@ -189,37 +191,36 @@ export function ProvidersPage({
 	return (
 		<>
 			<PageHeader
-				actions={<Button icon="refresh" onClick={query.refresh}>Refresh inventory</Button>}
-				description="Registered provider capabilities, authentication posture, and model availability from the pinned Pi runtime."
-				eyebrow="Gateway"
-				title="AI Providers"
+				actions={<Button icon="refresh" onClick={query.refresh}>{t("providers.refresh")}</Button>}
+				description={t("providers.description")}
+				eyebrow={t("providers.eyebrow")}
+				title={t("providers.title")}
 			/>
 			<div className="summary-strip">
-				<div><span>Registered</span><strong>{formatNumber(providers.length)}</strong></div>
-				<div><span>Configured</span><strong>{formatNumber(configured)}</strong></div>
-				<div><span>Available models</span><strong>{formatNumber(availableModels)}</strong></div>
+				<div><span>{t("providers.registered")}</span><strong>{formatNumber(providers.length)}</strong></div>
+				<div><span>{t("providers.configured")}</span><strong>{formatNumber(configured)}</strong></div>
+				<div><span>{t("providers.availableModels")}</span><strong>{formatNumber(availableModels)}</strong></div>
 				<div>
-					<span>Inventory state</span>
+					<span>{t("providers.inventoryState")}</span>
 					<Badge tone={providers.some((provider) => provider.state === "error") ? "warning" : "positive"}>
-						{providers.some((provider) => provider.state === "error") ? "Needs review" : "Operational"}
+						{providers.some((provider) => provider.state === "error")
+							? t("providers.needsReview")
+							: t("providers.operational")}
 					</Badge>
 				</div>
 			</div>
 
 			<Card>
 				<SectionHeader
-					actions={<a className="text-link" href="#config">Advanced JSON editor <Icon name="arrow" /></a>}
-					description="Add any safe provider id using an OpenAI-compatible protocol. Authentication is added separately through OAuth Login."
-					title="Custom OpenAI-compatible provider"
+					actions={<a className="text-link" href="#/config">{t("providers.advancedEditor")} <Icon name="arrow" /></a>}
+					description={t("providers.customDescription")}
+					title={t("providers.customTitle")}
 				/>
-				<InlineNotice>
-					Base URL, non-secret headers, provider proxy, alias, and exclusions are validated
-					before apply. API-key values and credential-bearing headers are intentionally not accepted here.
-				</InlineNotice>
+				<InlineNotice>{t("providers.customNotice")}</InlineNotice>
 				{customError ? <InlineNotice tone="negative">{customError}</InlineNotice> : null}
 				<form className="custom-provider-form" onSubmit={(event) => void previewCustom(event)}>
 					<label className="field">
-						<span>Provider id</span>
+						<span>{t("providers.providerId")}</span>
 						<input
 							maxLength={64}
 							name="custom_provider_id"
@@ -230,17 +231,17 @@ export function ProvidersPage({
 						/>
 					</label>
 					<label className="field">
-						<span>Display name</span>
+						<span>{t("providers.displayName")}</span>
 						<input
 							maxLength={160}
 							name="custom_provider_name"
 							onChange={(event) => updateCustom("name", event.target.value)}
-							placeholder="My OpenAI provider"
+							placeholder={t("providers.displayNamePlaceholder")}
 							value={custom.name}
 						/>
 					</label>
 					<label className="field field-wide">
-						<span>Base URL</span>
+						<span>{t("providers.baseUrl")}</span>
 						<input
 							name="custom_provider_base_url"
 							onChange={(event) => updateCustom("baseUrl", event.target.value)}
@@ -251,7 +252,7 @@ export function ProvidersPage({
 						/>
 					</label>
 					<label className="field">
-						<span>Protocol</span>
+						<span>{t("providers.protocol")}</span>
 						<select
 							name="custom_provider_api"
 							onChange={(event) => updateCustom(
@@ -260,12 +261,12 @@ export function ProvidersPage({
 							)}
 							value={custom.api}
 						>
-							<option value="openai-responses">OpenAI Responses</option>
-							<option value="openai-completions">OpenAI Chat Completions</option>
+							<option value="openai-responses">{t("providers.protocolResponses")}</option>
+							<option value="openai-completions">{t("providers.protocolCompletions")}</option>
 						</select>
 					</label>
 					<label className="field">
-						<span>Upstream model id</span>
+						<span>{t("providers.modelId")}</span>
 						<input
 							maxLength={160}
 							name="custom_provider_model"
@@ -276,7 +277,7 @@ export function ProvidersPage({
 						/>
 					</label>
 					<label className="field">
-						<span>Model alias <small>(optional)</small></span>
+						<span>{t("providers.modelAlias")} <small>({t("providers.optional")})</small></span>
 						<input
 							maxLength={160}
 							name="custom_provider_alias"
@@ -286,7 +287,7 @@ export function ProvidersPage({
 						/>
 					</label>
 					<label className="field">
-						<span>Provider proxy URL <small>(optional)</small></span>
+						<span>{t("providers.proxyUrl")} <small>({t("providers.optional")})</small></span>
 						<input
 							name="custom_provider_proxy"
 							onChange={(event) => updateCustom("proxyUrl", event.target.value)}
@@ -296,7 +297,7 @@ export function ProvidersPage({
 						/>
 					</label>
 					<label className="field">
-						<span>Non-secret headers JSON</span>
+						<span>{t("providers.headers")}</span>
 						<textarea
 							name="custom_provider_headers"
 							onChange={(event) => updateCustom("headers", event.target.value)}
@@ -305,7 +306,7 @@ export function ProvidersPage({
 						/>
 					</label>
 					<label className="field">
-						<span>Excluded model patterns</span>
+						<span>{t("providers.excludedModels")}</span>
 						<textarea
 							name="custom_provider_exclusions"
 							onChange={(event) => updateCustom("excludedModels", event.target.value)}
@@ -326,7 +327,7 @@ export function ProvidersPage({
 							type="submit"
 							variant="primary"
 						>
-							{customBusy ? "Validating…" : "Validate provider"}
+							{customBusy ? t("providers.validating") : t("providers.validate")}
 						</Button>
 					</div>
 				</form>
@@ -336,51 +337,51 @@ export function ProvidersPage({
 				<SectionHeader
 					actions={
 						<SearchField
-							label="Filter providers"
+							label={t("providers.filter")}
 							onChange={setFilter}
-							placeholder="Filter by provider name or id"
+							placeholder={t("providers.filterPlaceholder")}
 							value={filter}
 						/>
 					}
-					description="Model totals include the known catalog; available totals require configured authentication."
-					title="Provider inventory"
+					description={t("providers.inventoryBody")}
+					title={t("providers.inventory")}
 				/>
-				{query.phase === "loading" ? <LoadingState label="Loading providers…" /> : null}
+				{query.phase === "loading" ? <LoadingState label={t("providers.loading")} /> : null}
 				{query.phase === "error" ? (
 					<ErrorState message={query.error} onRetry={query.refresh} />
 				) : null}
 				{query.phase === "ready" && providers.length === 0 ? (
 					<EmptyState
-						action={<a className="text-link" href="#config">Open Config Panel <Icon name="arrow" /></a>}
-						description="Built-in or custom providers will appear after the runtime registers them."
+						action={<a className="text-link" href="#/config">{t("providers.openConfig")} <Icon name="arrow" /></a>}
+						description={t("providers.noneBody")}
 						icon="providers"
-						title="No providers registered"
+						title={t("providers.none")}
 					/>
 				) : null}
 				{query.phase === "ready" && providers.length > 0 && visible.length === 0 ? (
 					<EmptyState
-						description="Clear or broaden the filter to see the provider inventory."
+						description={t("providers.noMatchBody")}
 						icon="search"
-						title="No providers match"
+						title={t("providers.noMatch")}
 					/>
 				) : null}
 				{query.phase === "ready" && visible.length > 0 ? (
 					<div className="table-wrap">
 						<table>
-							<caption className="visually-hidden">AI provider inventory</caption>
+							<caption className="visually-hidden">{t("providers.inventory")}</caption>
 							<thead>
 								<tr>
-									<th scope="col">Provider</th>
-									<th scope="col">State</th>
-									<th scope="col">Authentication</th>
-									<th scope="col">Models</th>
-									<th scope="col"><span className="visually-hidden">Actions</span></th>
+									<th scope="col">{t("providers.provider")}</th>
+									<th scope="col">{t("providers.state")}</th>
+									<th scope="col">{t("providers.authentication")}</th>
+									<th scope="col">{t("providers.models")}</th>
+									<th scope="col"><span className="visually-hidden">{t("common.actions")}</span></th>
 								</tr>
 							</thead>
 							<tbody>
 								{visible.map((provider) => (
 									<tr key={provider.id}>
-										<td data-label="Provider">
+										<td data-label={t("providers.provider")}>
 											<div className="provider-cell">
 												<span className="provider-avatar">{provider.name.slice(0, 2).toUpperCase()}</span>
 												<div>
@@ -389,42 +390,48 @@ export function ProvidersPage({
 												</div>
 											</div>
 										</td>
-										<td data-label="State">
-											<Badge tone={providerTone(provider.state)}>{provider.state}</Badge>
+										<td data-label={t("providers.state")}>
+											<Badge tone={providerTone(provider.state)}>
+												{t(`providers.states.${provider.state}`)}
+											</Badge>
 											{provider.configured_source ? (
 												<small className="cell-detail">{provider.configured_source}</small>
 											) : null}
 										</td>
-										<td data-label="Authentication">
+										<td data-label={t("providers.authentication")}>
 											<div className="badge-row">
 												{provider.auth_modes.map((mode) => (
 													<Badge key={mode.type} tone={mode.login_supported ? "info" : "neutral"}>
-														{mode.type === "api_key" ? "API key" : "OAuth"}
+														{mode.type === "api_key" ? t("providers.apiKey") : t("providers.oauth")}
 													</Badge>
 												))}
 											</div>
 											<small className="cell-detail">
 												{provider.credential_count > 0
-													? `${provider.credential_count} credential${provider.credential_count === 1 ? "" : "s"} stored`
-													: "No stored credential metadata"}
+													? t("providers.credentialsStored", { count: provider.credential_count })
+													: t("providers.noCredentials")}
 											</small>
 											{provider.configuration_required ? (
 												<small className="cell-detail">
-													Requires <code>{provider.configuration_required}</code>
+													{t("providers.requires", {
+														value: provider.configuration_required,
+													})}
 												</small>
 											) : null}
 										</td>
-										<td data-label="Models">
-											<strong>{provider.available_model_count}</strong>
-											<span className="muted"> available / {provider.model_count} known</span>
+										<td data-label={t("providers.models")}>
+											<span>{t("providers.modelCounts", {
+												available: provider.available_model_count,
+												known: provider.model_count,
+											})}</span>
 										</td>
 										<td className="table-action">
 											<a
-												aria-label={`Authenticate ${provider.name}`}
+												aria-label={t("providers.authenticate", { name: provider.name })}
 												className="row-action"
-												href="#oauth"
+												href="#/oauth"
 											>
-												<span>{provider.configured ? "Replace login" : "Set up"}</span>
+												<span>{provider.configured ? t("providers.replaceLogin") : t("providers.setUp")}</span>
 												<Icon name="arrow" />
 											</a>
 										</td>
@@ -437,12 +444,12 @@ export function ProvidersPage({
 			</Card>
 			<ConfirmDialog
 				busy={customBusy}
-				confirmLabel="Add custom provider"
-				description={`Apply the validated ${pendingCustom?.providerId ?? ""} definition and router policy? Add its API key separately through OAuth Login.`}
+				confirmLabel={t("providers.addCustom")}
+				description={t("providers.applyBody", { id: pendingCustom?.providerId ?? "" })}
 				onCancel={() => setPendingCustom(null)}
 				onConfirm={() => void applyCustom()}
 				open={pendingCustom !== null}
-				title="Apply custom provider?"
+				title={t("providers.applyTitle")}
 			/>
 		</>
 	);

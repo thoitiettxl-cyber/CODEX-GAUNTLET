@@ -1,0 +1,34 @@
+.preferences {
+	align-items: center;
+	display: flex;
+	gap: 0.45rem;
+}
+
+.select {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 0.65rem;
+	color: var(--text);
+	font: inherit;
+	font-size: 0.82rem;
+	min-height: 2.35rem;
+	padding: 0 0.55rem;
+}
+
+@media (max-width: 760px) {
+	.preferences {
+		gap: 0.3rem;
+	}
+
+	.select {
+		padding: 0 0.35rem;
+	}
+
+	.select:first-child {
+		width: 3rem;
+	}
+
+	.select:last-child {
+		width: 4.5rem;
+	}
+}
