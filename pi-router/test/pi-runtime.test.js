@@ -87,7 +87,7 @@ test("PiRuntime delegates streaming and credential operations", async () => {
 test("PiRuntime exposes only provider and credential metadata to management", async () => {
 	const { runtime } = wrapped();
 	const providers = await runtime.listProviderMetadata();
-	assert.deepEqual(providers, [{
+	assert.deepEqual(providers[0], {
 		id: "fake",
 		name: "Fake Provider",
 		auth_modes: [
@@ -100,7 +100,19 @@ test("PiRuntime exposes only provider and credential metadata to management", as
 		model_count: 1,
 		available_model_count: 1,
 		state: "available",
-	}]);
+	});
+	assert.deepEqual(providers[1], {
+		id: "antigravity",
+		name: "Antigravity",
+		auth_modes: [{ type: "oauth", login_supported: false }],
+		configured: false,
+		configured_source: undefined,
+		credential_type: undefined,
+		model_count: 0,
+		available_model_count: 0,
+		state: "unconfigured",
+		configuration_required: "PI_ROUTER_ANTIGRAVITY_CLIENT_ID",
+	});
 	assert.doesNotMatch(JSON.stringify(providers), /must-not-expose|auth\\.json/);
 	assert.deepEqual(await runtime.listCredentialMetadata(), [{
 		provider_id: "fake",

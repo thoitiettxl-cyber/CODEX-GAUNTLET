@@ -1,4 +1,4 @@
-export const VERSION = "0.3.0";
+export const VERSION = "0.4.0";
 export const RELEASE_REPOSITORY = "thoitiettxl-cyber/codex-gauntlet-termux";
 export const RELEASE_TAG_PREFIX = "pi-router-v";
 export const RELEASE_ASSET = "pi-router-android-aarch64";

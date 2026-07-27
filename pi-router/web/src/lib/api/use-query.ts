@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { errorMessage } from "./index";
 
@@ -39,9 +39,10 @@ export function useQuery<T>(
 			active = false;
 		};
 	}, [key, nonce]);
+	const refresh = useCallback(() => setNonce((value) => value + 1), []);
 
 	return {
 		...state,
-		refresh: () => setNonce((value) => value + 1),
+		refresh,
 	};
 }

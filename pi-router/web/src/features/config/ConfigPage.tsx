@@ -165,13 +165,15 @@ export function ConfigPage({
 		<>
 			<PageHeader
 				actions={<Button icon="refresh" onClick={() => void load()}>Reload configuration</Button>}
-				description="Edit the reviewed non-secret models.json surface with validation, stale-write protection, and atomic recovery."
+				description="Edit the reviewed non-secret provider model and router-policy surface with validation, stale-write protection, and recovery."
 				eyebrow="Control"
 				title="Config Panel"
 			/>
 			<InlineNotice>
 				<strong>Allowlisted editor.</strong> Secret-bearing <code>apiKey</code>, sensitive
-				headers, arbitrary paths, environment state, credential files, and executables are rejected.
+				headers, arbitrary paths, environment state, credential files, and executables are
+				rejected. Safe fields include provider base URL, headers, proxy, aliases, exclusions,
+				and OpenAI-compatible custom models.
 			</InlineNotice>
 
 			{phase === "loading" ? <Card><LoadingState label="Loading safe configuration…" /></Card> : null}
@@ -221,8 +223,8 @@ export function ConfigPage({
 									</Button>
 								</div>
 							}
-							description="JSON draft remains in page memory until a validated apply."
-							title="models.json"
+							description="The combined JSON view maps safely to models.json and provider-policy.json only after a validated apply."
+							title="Provider configuration"
 						/>
 						<label className="config-editor">
 							<span className="visually-hidden">Router models configuration JSON</span>

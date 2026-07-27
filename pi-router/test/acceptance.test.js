@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createPiRouterServer, listenPiRouter } from "../src/server.js";
-import { MODEL, addressUrl, closeServer, fakeRuntime, message, textStream } from "./helpers.js";
+import {
+	MODEL,
+	addressUrl,
+	closeServer,
+	fakeProxyKeyStore,
+	fakeRuntime,
+	message,
+	textStream,
+} from "./helpers.js";
 
 test("function call and function output complete a two-request Responses round trip", async (t) => {
 	const contexts = [];
@@ -36,7 +44,11 @@ test("function call and function output complete a two-request Responses round t
 			return textStream("It is sunny.");
 		},
 	};
-	const server = createPiRouterServer({ runtime, apiKey: "acceptance-key" });
+	const server = createPiRouterServer({
+		runtime,
+		managementKey: "acceptance-management-key",
+		proxyKeyStore: fakeProxyKeyStore("acceptance-key"),
+	});
 	const address = await listenPiRouter(server, { port: 0 });
 	t.after(() => closeServer(server));
 	const endpoint = `${addressUrl(address)}/v1/responses`;

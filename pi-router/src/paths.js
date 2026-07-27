@@ -27,13 +27,18 @@ export function validateAccountId(accountId = "default") {
 export function statePaths({ stateDir, accountId = "default" }) {
 	const root = resolveStateDir(stateDir);
 	const account = validateAccountId(accountId);
-	const accountDir = join(root, "accounts", account);
+	const accountsDir = join(root, "accounts");
+	const accountDir = join(accountsDir, account);
 	return {
 		root,
 		account,
+		accountsDir,
 		accountDir,
 		authPath: join(accountDir, "auth.json"),
+		accountCatalogPath: join(root, "account-catalog.json"),
 		modelsPath: join(root, "models.json"),
+		providerPolicyPath: join(root, "provider-policy.json"),
+		proxyKeysPath: join(root, "proxy-api-keys.json"),
 	};
 }
 

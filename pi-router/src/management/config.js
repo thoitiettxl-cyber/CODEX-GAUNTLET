@@ -9,7 +9,13 @@ import {
 import { basename, dirname, join } from "node:path";
 
 import { RouterError, invalidRequest } from "../errors.js";
-import { MAX_CONFIG_BYTES, validateConfigDocument } from "./config-policy.js";
+import { readProviderPolicy } from "../provider-policy.js";
+import {
+	MAX_CONFIG_BYTES,
+	mergeConfigDocument,
+	splitConfigDocument,
+	validateConfigDocument,
+} from "./config-policy.js";
 import { conflict, exactKeys, requireRecord } from "./validation.js";
 
 const MAX_CONFIG_CHANGES = 200;
@@ -215,8 +221,10 @@ async function readBounded(path, { missing = false } = {}) {
 }
 
 export class ConfigService {
-	constructor({ modelsPath, runtime } = {}) {
+	constructor({ modelsPath, providerPolicyPath, runtime } = {}) {
 		this.modelsPath = modelsPath;
+		this.providerPolicyPath = providerPolicyPath
+			?? (modelsPath ? join(dirname(modelsPath), "provider-policy.json") : undefined);
 		this.recoveryPath = modelsPath ? `${modelsPath}.previous` : undefined;
 		this.runtime = runtime;
 		this.active = false;
@@ -226,18 +234,34 @@ export class ConfigService {
 		if (!this.modelsPath) {
 			return undefined;
 		}
-		const found = await readBounded(this.modelsPath, { missing: true });
-		if (found) {
+		const [found, policy] = await Promise.all([
+			readBounded(this.modelsPath, { missing: true }),
+			readProviderPolicy(this.providerPolicyPath).catch(() => undefined),
+		]);
+		if (found && !found.valid) {
 			return { ...found, exists: true };
 		}
-		const document = { providers: {} };
-		const bytes = Buffer.alloc(0);
+		if (!policy) {
+			const bytes = found?.bytes ?? Buffer.alloc(0);
+			return {
+				valid: false,
+				errors: [{ path: "root", message: "Current provider policy is invalid." }],
+				bytes,
+				revision: revision(bytes),
+				exists: found !== undefined,
+			};
+		}
+		const models = found?.document ?? { providers: {} };
+		const document = mergeConfigDocument(models, policy);
+		const validation = validateConfigDocument(document);
+		const combined = validation.valid ? serialized(validation.document) : "";
+		const bytes = Buffer.from(combined);
 		return {
-			...validateConfigDocument(document),
+			...validation,
 			bytes,
 			revision: revision(bytes),
-			serialized: serialized(document),
-			exists: false,
+			serialized: validation.valid ? combined : undefined,
+			exists: found !== undefined,
 		};
 	}
 
@@ -419,8 +443,10 @@ export class ConfigService {
 			if (current.exists) {
 				await atomicWrite(this.recoveryPath, current.serialized);
 			}
+			const split = splitConfigDocument(candidate.document);
 			const next = serialized(candidate.document);
-			await atomicWrite(this.modelsPath, next);
+			await atomicWrite(this.providerPolicyPath, serialized(split.policy));
+			await atomicWrite(this.modelsPath, serialized(split.models));
 			const activation = await this.#activate();
 			return {
 				object: "pi_router.config_mutation",
@@ -451,7 +477,9 @@ export class ConfigService {
 				throw conflict("No validated recovery configuration is available.", "config_recovery_unavailable");
 			}
 			const diff = reviewedDiff(current.document, recovery.document);
-			await atomicWrite(this.modelsPath, recovery.serialized);
+			const split = splitConfigDocument(recovery.document);
+			await atomicWrite(this.providerPolicyPath, serialized(split.policy));
+			await atomicWrite(this.modelsPath, serialized(split.models));
 			await atomicWrite(this.recoveryPath, current.serialized);
 			const activation = await this.#activate();
 			return {

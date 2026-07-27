@@ -56,8 +56,8 @@ export function AuthFilesPage({
 		}
 		setRemoving(true);
 		try {
-			await client.removeCredential(selected.provider_id);
-			notify(`Authentication metadata removed for ${selected.provider_name}.`);
+			await client.removeCredential(selected.id);
+			notify(`Authentication removed for ${selected.label}.`);
 			setSelected(null);
 			await Promise.all([load(), onMutation()]);
 		} catch (caught) {
@@ -72,7 +72,7 @@ export function AuthFilesPage({
 		<>
 			<PageHeader
 				actions={<Button icon="refresh" onClick={() => void load()}>Refresh metadata</Button>}
-				description="Stored authentication is represented by provider and type only. Credential values and file paths never cross this API."
+				description="Credential metadata is grouped by isolated account, provider, type, and label. Values and file paths never cross this API."
 				eyebrow="Gateway"
 				title="Auth Files"
 			/>
@@ -83,7 +83,7 @@ export function AuthFilesPage({
 			<Card>
 				<SectionHeader
 					actions={<a className="button button-primary button-default" href="#oauth"><Icon name="login" /><span>Add authentication</span></a>}
-					description="One provider-keyed credential can be stored for the selected account."
+					description="Multiple credentials for one provider remain separate in isolated Pi account stores."
 					title="Stored credentials"
 				/>
 				{phase === "loading" ? <LoadingState label="Loading credential metadata…" /> : null}
@@ -99,12 +99,18 @@ export function AuthFilesPage({
 				{phase === "ready" && credentials.length > 0 ? (
 					<div className="credential-grid">
 						{credentials.map((credential) => (
-							<article className="credential-card" key={credential.provider_id}>
+							<article className="credential-card" key={credential.id}>
 								<div className="credential-icon"><Icon name="key" /></div>
 								<div className="credential-main">
 									<div>
-										<h3>{credential.provider_name}</h3>
+										<h3>{credential.label}</h3>
 										<code>{credential.provider_id}</code>
+									</div>
+									<div className="badge-row">
+										<Badge tone={credential.active ? "positive" : "neutral"}>
+											{credential.active ? "Inference account" : credential.account_label}
+										</Badge>
+										<code>{credential.account_id}</code>
 									</div>
 									<Badge tone={credential.type === "oauth" ? "info" : "neutral"}>
 										{credential.type === "oauth" ? "OAuth credential" : "API key credential"}
@@ -115,7 +121,7 @@ export function AuthFilesPage({
 									</p>
 								</div>
 								<Button
-									aria-label={`Log out ${credential.provider_name}`}
+									aria-label={`Log out ${credential.label}`}
 									onClick={() => setSelected(credential)}
 									variant="danger"
 								>
@@ -130,11 +136,11 @@ export function AuthFilesPage({
 				busy={removing}
 				confirmLabel="Remove authentication"
 				danger
-				description={`Remove the stored ${selected?.type === "oauth" ? "OAuth" : "API key"} credential for ${selected?.provider_name ?? "this provider"}? This does not affect any other provider.`}
+				description={`Remove the stored ${selected?.type === "oauth" ? "OAuth" : "API key"} credential ${selected?.label ?? ""} from account ${selected?.account_label ?? ""}? Other accounts and providers are unchanged.`}
 				onCancel={() => setSelected(null)}
 				onConfirm={() => void remove()}
 				open={selected !== null}
-				title="Log out this provider?"
+				title="Remove this account credential?"
 			/>
 		</>
 	);

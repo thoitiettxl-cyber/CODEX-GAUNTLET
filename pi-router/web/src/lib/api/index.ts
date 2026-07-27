@@ -10,13 +10,35 @@ export interface ProviderInfo {
 	credential_type: AuthType | null;
 	model_count: number;
 	available_model_count: number;
+	credential_count: number;
+	configuration_required: string | null;
 	state: ProviderState;
 }
 
 export interface CredentialInfo {
+	id: string;
+	account_id: string;
+	account_label: string;
 	provider_id: string;
 	provider_name: string;
 	type: AuthType;
+	label: string;
+	active: boolean;
+	created_at: string | null;
+	updated_at: string | null;
+}
+
+export interface ProxyKeyInfo {
+	id: string;
+	label: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ProxyKeyMutation extends ProxyKeyInfo {
+	object: "pi_router.proxy_api_key";
+	status: "created" | "updated" | "replaced";
+	value?: string;
 }
 
 export interface AuthPrompt {
@@ -44,6 +66,10 @@ export interface AuthSession {
 	id: string;
 	provider_id: string;
 	provider_name: string;
+	account_id: string;
+	account_label: string;
+	credential_id: string | null;
+	credential_label: string | null;
 	auth_type: AuthType;
 	state: "running" | "waiting_for_input" | "completed" | "failed" | "cancelled" | "expired";
 	created_at: string;
@@ -64,10 +90,16 @@ export interface QuotaWindow {
 }
 
 export interface QuotaResult {
+	credential_id: string;
+	credential_label: string;
+	account_id: string;
+	account_label: string;
+	active: boolean;
 	provider_id: string;
 	provider_name: string;
+	credential_type: AuthType;
 	status: "available" | "unsupported" | "error";
-	capability: "provider_adapter" | "none";
+	capability: "credential_adapter" | "none";
 	windows: QuotaWindow[];
 	checked_at?: string;
 	error_code?: string;
@@ -138,6 +170,14 @@ export interface UpdateStatus {
 
 export interface ManagementStatus {
 	object: "pi_router.management_status";
+	connection: {
+		status: "connected";
+		management_authenticated: boolean;
+	};
+	authentication: {
+		management_key_configured: boolean;
+		proxy_api_keys: number;
+	};
 	service: {
 		name: string;
 		version: string;
@@ -166,6 +206,8 @@ export interface ManagementStatus {
 	quota: {
 		supported_providers: number;
 		total_providers: number;
+		supported_credentials: number;
+		total_credentials: number;
 	};
 	config: {
 		supported: boolean;
@@ -281,16 +323,59 @@ export class ManagementClient {
 		);
 	}
 
-	removeCredential(providerId: string): Promise<unknown> {
-		return this.request(`/management/api/credentials/${encodeURIComponent(providerId)}`, {
+	async proxyKeys(): Promise<ProxyKeyInfo[]> {
+		return expectList<ProxyKeyInfo>(
+			await this.request<unknown>("/management/api/proxy-keys"),
+			"Proxy API keys",
+		);
+	}
+
+	createProxyKey(label: string): Promise<ProxyKeyMutation> {
+		return this.request("/management/api/proxy-keys", {
+			method: "POST",
+			body: JSON.stringify({ label }),
+		});
+	}
+
+	updateProxyKey(id: string, label: string): Promise<ProxyKeyMutation> {
+		return this.request(`/management/api/proxy-keys/${encodeURIComponent(id)}`, {
+			method: "PATCH",
+			body: JSON.stringify({ label }),
+		});
+	}
+
+	replaceProxyKey(id: string): Promise<ProxyKeyMutation> {
+		return this.request(
+			`/management/api/proxy-keys/${encodeURIComponent(id)}/replace`,
+			{ method: "POST", body: JSON.stringify({}) },
+		);
+	}
+
+	removeProxyKey(id: string): Promise<unknown> {
+		return this.request(`/management/api/proxy-keys/${encodeURIComponent(id)}`, {
 			method: "DELETE",
 		});
 	}
 
-	createAuthSession(providerId: string, type: AuthType): Promise<AuthSession> {
+	removeCredential(credentialId: string): Promise<unknown> {
+		return this.request(`/management/api/credentials/${encodeURIComponent(credentialId)}`, {
+			method: "DELETE",
+		});
+	}
+
+	createAuthSession(
+		providerId: string,
+		type: AuthType,
+		options: { accountId?: string; label?: string } = {},
+	): Promise<AuthSession> {
 		return this.request("/management/api/auth/sessions", {
 			method: "POST",
-			body: JSON.stringify({ provider_id: providerId, type }),
+			body: JSON.stringify({
+				provider_id: providerId,
+				type,
+				...(options.accountId ? { account_id: options.accountId } : {}),
+				...(options.label ? { label: options.label } : {}),
+			}),
 		});
 	}
 

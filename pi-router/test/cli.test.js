@@ -31,7 +31,7 @@ test("CLI parses serve and login options", () => {
 	assert.throws(() => parseArgs(["update", "install"]), /requires a version/);
 });
 
-test("serve refuses to initialize the runtime without a local API key", async () => {
+test("serve refuses to initialize the runtime without a management key", async () => {
 	let created = false;
 	await assert.rejects(
 		runCli(["serve"], {
@@ -41,7 +41,7 @@ test("serve refuses to initialize the runtime without a local API key", async ()
 			},
 			output: { write() {} },
 		}),
-		/PI_ROUTER_API_KEY/,
+		/PI_ROUTER_MANAGEMENT_KEY/,
 	);
 	assert.equal(created, false);
 });
@@ -117,7 +117,7 @@ test("login and logout delegate without exposing returned credentials", async (t
 	assert.doesNotMatch(output, /must-not-be-printed/);
 });
 
-test("serve wires the selected address and local key into the HTTP server", async (t) => {
+test("serve wires separate management and proxy keys into the HTTP server", async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "pi-router-serve-cli-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const runtime = {};
@@ -135,7 +135,10 @@ test("serve wires the selected address and local key into the HTTP server", asyn
 		"--port",
 		"9000",
 	], {
-		env: { PI_ROUTER_API_KEY: "local-only-key" },
+		env: {
+			PI_ROUTER_MANAGEMENT_KEY: "management-only-key",
+			PI_ROUTER_API_KEY: "proxy-only-key",
+		},
 		output: { write(chunk) { output += chunk; } },
 		createRuntime: async () => runtime,
 		createUpdater: () => updater,
@@ -149,17 +152,18 @@ test("serve wires the selected address and local key into the HTTP server", asyn
 			return { address: "::1", family: "IPv6", port: 9000 };
 		},
 	});
-	assert.deepEqual(serverOptions, {
-		runtime,
-		apiKey: "local-only-key",
-		account: "default",
-		updater,
-		modelsPath: join(root, "models.json"),
-	});
+	assert.equal(serverOptions.runtime.activeRuntime, runtime);
+	assert.equal(serverOptions.managementKey, "management-only-key");
+	assert.equal(serverOptions.proxyKeyStore.authorize("proxy-only-key"), true);
+	assert.equal(serverOptions.proxyKeyStore.authorize("management-only-key"), false);
+	assert.equal(serverOptions.account, "default");
+	assert.equal(serverOptions.updater, updater);
+	assert.equal(serverOptions.modelsPath, join(root, "models.json"));
+	assert.equal(serverOptions.providerPolicyPath, join(root, "provider-policy.json"));
 	assert.deepEqual(listenOptions, { host: "::1", port: 9000 });
 	assert.match(output, /http:\/\/\[::1\]:9000/);
 	assert.match(output, /http:\/\/\[::1\]:9000\/management\.html/);
-	assert.doesNotMatch(output, /local-only-key/);
+	assert.doesNotMatch(output, /management-only-key|proxy-only-key/);
 	assert.equal(result.server, server);
 });
 
@@ -200,8 +204,8 @@ test("update and version commands do not initialize provider state", async () =>
 		["rollback"],
 	]);
 	assert.match(output, /"latest_version": "0.3.0"/);
-	assert.match(output, /pi-router 0\.3\.0/);
-	assert.deepEqual(version, { command: "version", version: "0.3.0" });
+	assert.match(output, /pi-router 0\.4\.0/);
+	assert.deepEqual(version, { command: "version", version: "0.4.0" });
 });
 
 test("help does not initialize state or runtime", async () => {

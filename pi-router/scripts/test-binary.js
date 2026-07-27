@@ -52,7 +52,8 @@ try {
 
 	child = spawn(binaryPath, ["serve", "--host", "127.0.0.1", "--port", "0", "--state-dir", root], {
 		env: binaryEnvironment({
-			PI_ROUTER_API_KEY: "binary-smoke-key",
+			PI_ROUTER_API_KEY: "binary-smoke-proxy-key",
+			PI_ROUTER_MANAGEMENT_KEY: "binary-smoke-management-key",
 		}),
 		stdio: ["ignore", "pipe", "pipe"],
 	});
@@ -92,16 +93,22 @@ try {
 		throw new Error("Binary Management Center smoke failed.");
 	}
 	const management = await fetch(`${baseUrl}/management/api/status`, {
-		headers: { authorization: "Bearer binary-smoke-key" },
+		headers: { authorization: "Bearer binary-smoke-management-key" },
 	});
 	if (!management.ok || (await management.json()).runtime?.mode !== "termux-binary") {
 		throw new Error("Binary Management API smoke failed.");
 	}
 	const providers = await fetch(`${baseUrl}/management/api/providers`, {
-		headers: { authorization: "Bearer binary-smoke-key" },
+		headers: { authorization: "Bearer binary-smoke-management-key" },
 	});
 	if (!providers.ok || !Array.isArray((await providers.json()).data)) {
 		throw new Error("Binary provider inventory smoke failed.");
+	}
+	const models = await fetch(`${baseUrl}/v1/models`, {
+		headers: { authorization: "Bearer binary-smoke-proxy-key" },
+	});
+	if (!models.ok || !Array.isArray((await models.json()).data)) {
+		throw new Error("Binary proxy-key model inventory smoke failed.");
 	}
 	process.stdout.write("PASS: native Pi Router Android AArch64 binary smoke.\n");
 } finally {

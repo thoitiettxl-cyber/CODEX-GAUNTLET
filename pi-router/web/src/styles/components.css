@@ -363,6 +363,7 @@
 .search-field input,
 .field input,
 .field select,
+.field textarea,
 .compact-select select,
 .config-editor textarea {
 	width: 100%;
@@ -392,9 +393,16 @@
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
 	padding: 0 12px;
 	font-weight: 450;
+}
+
+.field textarea {
+	min-height: 96px;
+	padding-block: 10px;
+	resize: vertical;
 }
 
 .secret-input {

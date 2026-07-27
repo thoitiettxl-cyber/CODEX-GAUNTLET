@@ -65,6 +65,8 @@ export function fakeRuntime({
 	credentials = [],
 	login = async () => ({ type: "api_key" }),
 	logout = async () => {},
+	resolveAuth = async () => ({ auth: { apiKey: "test-provider-token" } }),
+	quotaContexts,
 	refreshConfiguration = async () => {},
 } = {}) {
 	return {
@@ -86,6 +88,42 @@ export function fakeRuntime({
 		stream,
 		login,
 		logout,
+		resolveAuth,
+		async quotaCredentialContexts() {
+			if (quotaContexts) {
+				return quotaContexts;
+			}
+			return credentials.map((credential) => ({
+				id: credential.id ?? credential.provider_id,
+				account_id: credential.account_id ?? "default",
+				account_label: credential.account_label ?? "default",
+				label: credential.label ?? credential.provider_name ?? credential.provider_id,
+				active: credential.active ?? true,
+				...credential,
+				resolveAuth,
+			}));
+		},
 		refreshConfiguration,
+	};
+}
+
+export function fakeProxyKeyStore(value = "local-test-key") {
+	const createdAt = "2026-07-27T00:00:00.000Z";
+	const entry = {
+		id: "key_00000000-0000-4000-8000-000000000001",
+		label: "Test proxy key",
+		created_at: createdAt,
+		updated_at: createdAt,
+	};
+	return {
+		authorize(candidate) {
+			return candidate === value;
+		},
+		count() {
+			return 1;
+		},
+		list() {
+			return { object: "list", data: [{ ...entry }] };
+		},
 	};
 }

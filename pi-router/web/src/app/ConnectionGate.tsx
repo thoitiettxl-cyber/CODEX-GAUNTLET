@@ -28,12 +28,13 @@ export function ConnectionGate({
 				<p className="page-eyebrow">Loopback authentication</p>
 				<h1 id="connect-title">Connect to Pi Router</h1>
 				<p className="gate-intro">
-					Enter the bearer configured in <code>PI_ROUTER_API_KEY</code>. It stays only in
-					memory for this page and is cleared when you reload or disconnect.
+					Enter the management bearer configured in{" "}
+					<code>PI_ROUTER_MANAGEMENT_KEY</code>. It stays only in memory for this page
+					and is cleared when you reload or disconnect.
 				</p>
 				<form onSubmit={submit}>
 					<label className="field">
-						<span>Local bearer token</span>
+						<span>Management bearer</span>
 						<div className="secret-input">
 							<Icon name="key" />
 							<input
@@ -41,7 +42,7 @@ export function ConnectionGate({
 								autoFocus
 								name="router-bearer"
 								onChange={(event) => onChange(event.target.value)}
-								placeholder="Enter the local API bearer"
+								placeholder="Enter the management bearer"
 								spellCheck={false}
 								type={visible ? "text" : "password"}
 								value={value}
@@ -69,7 +70,8 @@ export function ConnectionGate({
 				) : (
 					<InlineNotice>
 						The static page loads without touching provider state. Authentication begins
-						only when you submit this form.
+						only when you submit this form. Inference clients use separately managed
+						proxy API keys.
 					</InlineNotice>
 				)}
 			</section>

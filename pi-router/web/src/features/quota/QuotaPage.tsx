@@ -49,15 +49,15 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 						onClick={() => void load()}
 						variant="primary"
 					>
-						{phase === "loading" ? "Reading provider quota…" : "Refresh provider quota"}
+						{phase === "loading" ? "Reading account quota…" : "Refresh account quota"}
 					</Button>
 				}
-				description="Real provider-backed limits only. Token usage is never repurposed into a fabricated generic quota."
+				description="Real provider-backed limits are read separately for every OAuth credential and provider."
 				eyebrow="Observe"
 				title="Quota Management"
 			/>
 			<InlineNotice>
-				Quota reads are explicit and adapter-specific. Providers without a reviewed adapter
+				Quota reads are explicit, credential-scoped, and adapter-specific. Credentials without a reviewed adapter
 				return <strong>Unsupported</strong> without an exploratory network request.
 			</InlineNotice>
 
@@ -65,7 +65,7 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 				<Card>
 					<EmptyState
 						action={<Button icon="quota" onClick={() => void load()} variant="primary">Read quota now</Button>}
-						description="No provider quota request runs when this page opens. Start a bounded read when you need current capacity."
+						description="No credential quota request runs when this page opens. Start a bounded read when you need current capacity."
 						icon="quota"
 						title="Quota has not been requested"
 					/>
@@ -80,7 +80,7 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 			{phase === "ready" ? (
 				<>
 					<div className="summary-strip">
-						<div><span>Providers</span><strong>{formatNumber(results.length)}</strong></div>
+						<div><span>Credentials</span><strong>{formatNumber(results.length)}</strong></div>
 						<div><span>Quota available</span><strong>{formatNumber(supported)}</strong></div>
 						<div><span>Unsupported</span><strong>{formatNumber(unsupported)}</strong></div>
 						<div>
@@ -90,25 +90,25 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 					</div>
 					<Card>
 						<SectionHeader
-							description="Each provider reports an independent typed capability and one or more real windows."
-							title="Provider capacity"
+							description="Each isolated account reports an independent typed capability and provider-specific windows."
+							title="Credential capacity"
 						/>
 						{results.length === 0 ? (
 							<EmptyState
-								description="The runtime did not return any registered providers."
+								description="No stored credential metadata is available."
 								icon="providers"
 								title="No providers to inspect"
 							/>
 						) : (
 							<div className="quota-grid">
 								{results.map((result) => (
-									<article className={`quota-card quota-${result.status}`} key={result.provider_id}>
+									<article className={`quota-card quota-${result.status}`} key={result.credential_id}>
 										<header>
 											<div className="provider-cell">
 												<span className="provider-avatar">{result.provider_name.slice(0, 2).toUpperCase()}</span>
 												<div>
-													<strong>{result.provider_name}</strong>
-													<code>{result.provider_id}</code>
+													<strong>{result.credential_label}</strong>
+													<code>{result.provider_name} · {result.account_label}</code>
 												</div>
 											</div>
 											<Badge
@@ -120,6 +120,7 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 											>
 												{result.status}
 											</Badge>
+											{result.active ? <Badge tone="positive">Inference account</Badge> : null}
 										</header>
 										{result.status === "available" ? (
 											<>
@@ -166,7 +167,7 @@ export function QuotaPage({ client }: { client: ManagementClient }) {
 													</strong>
 													<p>
 														{result.status === "unsupported"
-															? "Pi Router made no quota request for this provider."
+															? "Pi Router made no quota request for this credential."
 															: "The bounded provider quota read failed without returning a raw response."}
 													</p>
 												</div>

@@ -1,6 +1,6 @@
 {
   "name": "pi-router",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Loopback OpenAI Responses gateway backed by Pi providers",
   "type": "module",
@@ -29,7 +29,8 @@
     "typecheck:web": "node node_modules/typescript/bin/tsc -p web/tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.82.1"
+    "@earendil-works/pi-coding-agent": "0.82.1",
+    "undici": "8.5.0"
   },
   "devDependencies": {
     "@types/react": "19.2.17",

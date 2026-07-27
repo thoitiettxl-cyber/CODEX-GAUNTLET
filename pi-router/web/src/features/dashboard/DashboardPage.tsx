@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import {
 	Badge,
@@ -15,6 +15,7 @@ import {
 	errorMessage,
 	type ManagementClient,
 	type ManagementStatus,
+	type ProxyKeyInfo,
 	type UpdateCandidate,
 } from "../../lib/api";
 import {
@@ -25,6 +26,7 @@ import {
 } from "../../lib/format";
 
 type PendingAction = "install" | "rollback" | null;
+type PendingKeyAction = { action: "replace" | "remove"; key: ProxyKeyInfo } | null;
 
 export function DashboardPage({
 	client,
@@ -41,6 +43,14 @@ export function DashboardPage({
 	const [updatePhase, setUpdatePhase] = useState<"idle" | "checking" | "mutating">("idle");
 	const [updateError, setUpdateError] = useState("");
 	const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+	const [proxyKeys, setProxyKeys] = useState<ProxyKeyInfo[]>([]);
+	const [proxyKeyPhase, setProxyKeyPhase] = useState<"loading" | "ready" | "error">("loading");
+	const [proxyKeyError, setProxyKeyError] = useState("");
+	const [newKeyLabel, setNewKeyLabel] = useState("");
+	const [keyLabels, setKeyLabels] = useState<Record<string, string>>({});
+	const [revealedKey, setRevealedKey] = useState("");
+	const [pendingKeyAction, setPendingKeyAction] = useState<PendingKeyAction>(null);
+	const [keyBusy, setKeyBusy] = useState(false);
 	const activitySuccess = status.activity.requests === 0
 		? null
 		: Math.max(
@@ -51,6 +61,95 @@ export function DashboardPage({
 			),
 		);
 	const activityStep = Math.round((activitySuccess ?? 100) / 10);
+
+	const loadProxyKeys = async () => {
+		setProxyKeyPhase("loading");
+		try {
+			const keys = await client.proxyKeys();
+			setProxyKeys(keys);
+			setKeyLabels(Object.fromEntries(keys.map((key) => [key.id, key.label])));
+			setProxyKeyError("");
+			setProxyKeyPhase("ready");
+		} catch (error) {
+			setProxyKeyError(errorMessage(error));
+			setProxyKeyPhase("error");
+		}
+	};
+
+	useEffect(() => {
+		void loadProxyKeys();
+	}, [client]);
+
+	const createProxyKey = async (event: FormEvent) => {
+		event.preventDefault();
+		if (!newKeyLabel.trim()) {
+			return;
+		}
+		setKeyBusy(true);
+		setProxyKeyError("");
+		try {
+			const created = await client.createProxyKey(newKeyLabel);
+			setRevealedKey(created.value ?? "");
+			setNewKeyLabel("");
+			await Promise.all([loadProxyKeys(), onRefreshStatus()]);
+			notify("Proxy API key created. Copy its value now; it will not be shown again.");
+		} catch (error) {
+			setProxyKeyError(errorMessage(error));
+		} finally {
+			setKeyBusy(false);
+		}
+	};
+
+	const saveKeyLabel = async (key: ProxyKeyInfo) => {
+		const next = keyLabels[key.id]?.trim();
+		if (!next || next === key.label) {
+			return;
+		}
+		setKeyBusy(true);
+		try {
+			await client.updateProxyKey(key.id, next);
+			await loadProxyKeys();
+			notify("Proxy API-key label updated.");
+		} catch (error) {
+			setProxyKeyError(errorMessage(error));
+		} finally {
+			setKeyBusy(false);
+		}
+	};
+
+	const mutateProxyKey = async () => {
+		if (!pendingKeyAction) {
+			return;
+		}
+		setKeyBusy(true);
+		setProxyKeyError("");
+		try {
+			if (pendingKeyAction.action === "replace") {
+				const replaced = await client.replaceProxyKey(pendingKeyAction.key.id);
+				setRevealedKey(replaced.value ?? "");
+				notify("Proxy API key replaced. Existing clients must use the new value.");
+			} else {
+				await client.removeProxyKey(pendingKeyAction.key.id);
+				notify("Proxy API key removed.");
+			}
+			setPendingKeyAction(null);
+			await Promise.all([loadProxyKeys(), onRefreshStatus()]);
+		} catch (error) {
+			setProxyKeyError(errorMessage(error));
+			setPendingKeyAction(null);
+		} finally {
+			setKeyBusy(false);
+		}
+	};
+
+	const copyRevealedKey = async () => {
+		try {
+			await navigator.clipboard.writeText(revealedKey);
+			notify("Proxy API key copied.");
+		} catch {
+			notify("Could not copy the proxy API key.", "negative");
+		}
+	};
 
 	const checkUpdate = async () => {
 		setUpdatePhase("checking");
@@ -103,8 +202,20 @@ export function DashboardPage({
 					pending activation; this console cannot restart the process.
 				</InlineNotice>
 			) : null}
+			<InlineNotice tone="positive">
+				<strong>{status.connection.status === "connected" ? "Connected" : "Unavailable"}.</strong>{" "}
+				Management authentication is separate from the {status.authentication.proxy_api_keys} proxy
+				API key{status.authentication.proxy_api_keys === 1 ? "" : "s"} accepted by inference clients.
+			</InlineNotice>
 
 			<div className="stat-grid">
+				<StatCard
+					detail={`Server v${status.service.version} · ${formatUptime(status.service.uptime_seconds)} uptime`}
+					icon="server"
+					label="Connection"
+					tone="positive"
+					value={status.connection.status}
+				/>
 				<StatCard
 					detail={`${status.account.configured_providers} configured of ${status.account.providers}`}
 					icon="providers"
@@ -117,6 +228,12 @@ export function DashboardPage({
 					label="Available models"
 					tone="positive"
 					value={formatNumber(status.account.available_models)}
+				/>
+				<StatCard
+					detail="Managed independently from the management key"
+					icon="key"
+					label="Proxy API keys"
+					value={formatNumber(status.authentication.proxy_api_keys)}
 				/>
 				<StatCard
 					detail={`${status.activity.errors} errors in the in-memory buffer`}
@@ -218,6 +335,113 @@ export function DashboardPage({
 
 			<Card>
 				<SectionHeader
+					description="These keys authenticate /v1 clients only. Values are generated server-side and disclosed once on create or replace."
+					title="Proxy API keys"
+				/>
+				{proxyKeyError ? <InlineNotice tone="negative">{proxyKeyError}</InlineNotice> : null}
+				{revealedKey ? (
+					<InlineNotice tone="warning">
+						<strong>Copy this key now.</strong> It will disappear when you dismiss it or
+						reload the page.
+						<div className="secret-input one-time-key">
+							<Icon name="key" />
+							<input
+								aria-label="New proxy API key"
+								readOnly
+								spellCheck={false}
+								type="text"
+								value={revealedKey}
+							/>
+							<button onClick={() => void copyRevealedKey()} type="button">Copy</button>
+							<button onClick={() => setRevealedKey("")} type="button">Dismiss</button>
+						</div>
+					</InlineNotice>
+				) : null}
+				<form className="key-create-row" onSubmit={(event) => void createProxyKey(event)}>
+					<label className="field">
+						<span>New key label</span>
+						<input
+							autoComplete="off"
+							maxLength={80}
+							name="proxy_key_label"
+							onChange={(event) => setNewKeyLabel(event.target.value)}
+							placeholder="Codex on this device"
+							value={newKeyLabel}
+						/>
+					</label>
+					<Button disabled={keyBusy || !newKeyLabel.trim()} type="submit" variant="primary">
+						Generate proxy key
+					</Button>
+				</form>
+				{proxyKeyPhase === "loading" ? <p className="muted">Loading proxy API-key metadata…</p> : null}
+				{proxyKeyPhase === "ready" ? (
+					<div className="table-wrap">
+						<table>
+							<caption className="visually-hidden">Proxy API-key metadata</caption>
+							<thead>
+								<tr>
+									<th scope="col">Label</th>
+									<th scope="col">Created</th>
+									<th scope="col">Last changed</th>
+									<th scope="col"><span className="visually-hidden">Actions</span></th>
+								</tr>
+							</thead>
+							<tbody>
+								{proxyKeys.map((key) => (
+									<tr key={key.id}>
+										<td data-label="Label">
+											<label className="visually-hidden" htmlFor={`proxy-label-${key.id}`}>
+												Label for {key.label}
+											</label>
+											<input
+												id={`proxy-label-${key.id}`}
+												maxLength={80}
+												onChange={(event) => setKeyLabels((current) => ({
+													...current,
+													[key.id]: event.target.value,
+												}))}
+												value={keyLabels[key.id] ?? key.label}
+											/>
+											<code>{key.id.slice(0, 16)}…</code>
+										</td>
+										<td data-label="Created">{formatDate(key.created_at)}</td>
+										<td data-label="Last changed">{formatDate(key.updated_at)}</td>
+										<td className="table-action">
+											<div className="button-row">
+												<Button
+													disabled={keyBusy || (keyLabels[key.id] ?? key.label) === key.label}
+													onClick={() => void saveKeyLabel(key)}
+													size="compact"
+												>
+													Save label
+												</Button>
+												<Button
+													disabled={keyBusy}
+													onClick={() => setPendingKeyAction({ action: "replace", key })}
+													size="compact"
+												>
+													Replace
+												</Button>
+												<Button
+													disabled={keyBusy || proxyKeys.length <= 1}
+													onClick={() => setPendingKeyAction({ action: "remove", key })}
+													size="compact"
+													variant="danger"
+												>
+													Remove
+												</Button>
+											</div>
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				) : null}
+			</Card>
+
+			<Card>
+				<SectionHeader
 					actions={
 						<div className="button-row">
 							<Button
@@ -308,6 +532,20 @@ export function DashboardPage({
 				onConfirm={() => void confirmMutation()}
 				open={pendingAction !== null}
 				title={pendingAction === "install" ? "Install stable update?" : "Roll back Pi Router?"}
+			/>
+			<ConfirmDialog
+				busy={keyBusy}
+				confirmLabel={pendingKeyAction?.action === "replace" ? "Replace key" : "Remove key"}
+				danger
+				description={
+					pendingKeyAction?.action === "replace"
+						? `Replace ${pendingKeyAction.key.label}? Its current value stops working immediately and the new value is shown once.`
+						: `Remove ${pendingKeyAction?.key.label ?? "this key"}? Clients using it will lose inference access.`
+				}
+				onCancel={() => setPendingKeyAction(null)}
+				onConfirm={() => void mutateProxyKey()}
+				open={pendingKeyAction !== null}
+				title={pendingKeyAction?.action === "replace" ? "Replace proxy API key?" : "Remove proxy API key?"}
 			/>
 		</>
 	);

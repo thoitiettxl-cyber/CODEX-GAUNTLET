@@ -10,6 +10,7 @@ export function createStatusService({
 	updater,
 	startedAt,
 	now,
+	proxyKeys,
 } = {}) {
 	return {
 		async get() {
@@ -38,6 +39,14 @@ export function createStatusService({
 					version: VERSION,
 					status: "ok",
 					uptime_seconds: Math.max(0, Math.floor((now() - startedAt) / 1000)),
+				},
+				connection: {
+					status: "connected",
+					management_authenticated: true,
+				},
+				authentication: {
+					management_key_configured: true,
+					proxy_api_keys: proxyKeys?.count() ?? 0,
 				},
 				runtime: {
 					mode: BINARY_BUILD ? "termux-binary" : "source",

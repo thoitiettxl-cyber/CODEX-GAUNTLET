@@ -42,25 +42,43 @@ function availableModes(provider: ProviderInfo | undefined) {
 }
 
 export function OAuthPage({
+	activeAccountId,
 	client,
 	onMutation,
 	notify,
 }: {
+	activeAccountId: string;
 	client: ManagementClient;
 	onMutation: () => Promise<void>;
 	notify: (message: string, tone?: "positive" | "negative") => void;
 }) {
 	const providersQuery = useQuery("auth-providers", () => client.providers());
+	const credentialsQuery = useQuery("auth-accounts", () => client.credentials());
 	const [providerId, setProviderId] = useState("");
 	const [authType, setAuthType] = useState<AuthType>("oauth");
+	const [accountId, setAccountId] = useState("");
+	const [accountLabel, setAccountLabel] = useState("");
 	const [session, setSession] = useState<AuthSession | null>(null);
 	const [promptValue, setPromptValue] = useState("");
 	const [showSecret, setShowSecret] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
 	const providers = providersQuery.data ?? [];
+	const refreshAccounts = credentialsQuery.refresh;
 	const provider = providers.find((entry) => entry.id === providerId);
 	const modes = useMemo(() => availableModes(provider), [provider]);
+	const accounts = useMemo(() => {
+		const values = new Map<string, { label: string; active: boolean }>([
+			[activeAccountId, { label: activeAccountId, active: true }],
+		]);
+		for (const credential of credentialsQuery.data ?? []) {
+			values.set(credential.account_id, {
+				label: credential.account_label,
+				active: credential.active || values.get(credential.account_id)?.active === true,
+			});
+		}
+		return [...values].map(([id, value]) => ({ id, ...value }));
+	}, [activeAccountId, credentialsQuery.data]);
 
 	useEffect(() => {
 		if (providerId || providers.length === 0) {
@@ -89,8 +107,8 @@ export function OAuthPage({
 				}
 				setSession(next);
 				if (next.state === "completed" && session.state !== "completed") {
-					notify(`${next.provider_name} authentication completed.`);
-					void onMutation();
+					notify(`${next.credential_label ?? next.provider_name} authentication completed.`);
+					void Promise.all([onMutation(), refreshAccounts()]);
 				}
 			}).catch((caught) => {
 				if (active) {
@@ -102,7 +120,7 @@ export function OAuthPage({
 			active = false;
 			window.clearTimeout(timer);
 		};
-	}, [client, notify, onMutation, session]);
+	}, [client, notify, onMutation, refreshAccounts, session]);
 
 	const chooseProvider = (nextId: string) => {
 		setProviderId(nextId);
@@ -122,11 +140,14 @@ export function OAuthPage({
 		setError("");
 		setPromptValue("");
 		try {
-			const created = await client.createAuthSession(providerId, authType);
+			const created = await client.createAuthSession(providerId, authType, {
+				accountId: accountId || undefined,
+				label: accountLabel.trim() || undefined,
+			});
 			setSession(created);
 			if (created.state === "completed") {
-				notify(`${created.provider_name} authentication completed.`);
-				await onMutation();
+				notify(`${created.credential_label ?? created.provider_name} authentication completed.`);
+				await Promise.all([onMutation(), refreshAccounts()]);
 			}
 		} catch (caught) {
 			setError(errorMessage(caught));
@@ -148,8 +169,8 @@ export function OAuthPage({
 			const next = await client.respondAuthSession(session.id, session.prompt.id, value);
 			setSession(next);
 			if (next.state === "completed") {
-				notify(`${next.provider_name} authentication completed.`);
-				await onMutation();
+				notify(`${next.credential_label ?? next.provider_name} authentication completed.`);
+				await Promise.all([onMutation(), refreshAccounts()]);
 			}
 		} catch (caught) {
 			setError(errorMessage(caught));
@@ -185,7 +206,7 @@ export function OAuthPage({
 	return (
 		<>
 			<PageHeader
-				description="Run a bounded API-key or OAuth interaction. Sessions expire after five minutes and serialize provider credential mutations."
+				description="Add a provider credential to a new isolated Pi account or explicitly update an existing one. Identity-derived labels keep same-provider accounts distinguishable."
 				eyebrow="Gateway"
 				title="OAuth Login"
 			/>
@@ -231,6 +252,43 @@ export function OAuthPage({
 										</option>
 									))}
 								</select>
+							</label>
+							<label className="field">
+								<span>Target account</span>
+								<select
+									disabled={Boolean(session && ACTIVE_STATES.has(session.state))}
+									name="account_id"
+									onChange={(event) => setAccountId(event.target.value)}
+									value={accountId}
+								>
+									<option value="">New isolated account</option>
+									{accounts.map((account) => (
+										<option key={account.id} value={account.id}>
+											{account.label} · {account.id}
+											{account.active ? " · inference account" : ""}
+										</option>
+									))}
+								</select>
+								<small>
+									Selecting an existing account replaces only that account/provider
+									credential; inference account selection does not change.
+								</small>
+							</label>
+							<label className="field">
+								<span>Account / credential label <small>(optional)</small></span>
+								<input
+									autoComplete="off"
+									disabled={Boolean(session && ACTIVE_STATES.has(session.state))}
+									maxLength={96}
+									name="account_label"
+									onChange={(event) => setAccountLabel(event.target.value)}
+									placeholder="Auto-detect email or account identity"
+									value={accountLabel}
+								/>
+								<small>
+									If omitted, Pi Router derives a label from provider identity and adds
+									a unique suffix when necessary.
+								</small>
 							</label>
 							<fieldset className="method-picker">
 								<legend>Authentication method</legend>
@@ -290,6 +348,11 @@ export function OAuthPage({
 									<span>Provider</span>
 									<strong>{session.provider_name}</strong>
 									<code>{session.provider_id}</code>
+								</div>
+								<div>
+									<span>Account</span>
+									<strong>{session.credential_label ?? session.account_label}</strong>
+									<code>{session.account_id}</code>
 								</div>
 								<div>
 									<span>Status</span>
@@ -428,7 +491,7 @@ export function OAuthPage({
 										</strong>
 										<p>
 											{session.state === "completed"
-												? "Provider inventory will refresh without exposing the credential."
+												? `Saved as ${session.credential_label ?? session.account_label}; provider inventory will refresh without exposing the credential.`
 												: `No credential value was returned. ${session.error_code ?? ""}`}
 										</p>
 									</div>

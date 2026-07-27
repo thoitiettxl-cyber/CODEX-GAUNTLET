@@ -31,10 +31,11 @@ plan.
 
 ## Active Plans
 
-No active plans.
+None.
 
 ## Recently Completed
 
+- `TERMUX-010` — [Port CLI Proxy management capabilities to Pi Router](completed/pi-router-cli-proxy-capability-port.md)
 - `TERMUX-009` — [Rebuild Pi Router Management Center as an operations console](completed/pi-router-operations-console.md)
 - `TERMUX-007` — [Build the Pi Router MVP](completed/pi-router-mvp.md)
 - `TERMUX-006` — [Add Pi session continuity parity](completed/pi-session-continuity.md)

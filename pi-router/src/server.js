@@ -80,11 +80,22 @@ function digest(value) {
 }
 
 export function bearerAuthorized(header, expectedKey) {
-	if (typeof header !== "string" || !header.startsWith("Bearer ")) {
+	if (
+		typeof expectedKey !== "string"
+		|| expectedKey.length === 0
+		|| typeof header !== "string"
+		|| !header.startsWith("Bearer ")
+	) {
 		return false;
 	}
 	const supplied = header.slice("Bearer ".length);
 	return timingSafeEqual(digest(supplied), digest(expectedKey));
+}
+
+function bearerValue(header) {
+	return typeof header === "string" && header.startsWith("Bearer ")
+		? header.slice("Bearer ".length)
+		: undefined;
 }
 
 export function validateListenHost(host) {
@@ -131,8 +142,15 @@ async function readJson(request, maxBodyBytes) {
 	}
 }
 
-function requireAuth(request, apiKey) {
-	if (!bearerAuthorized(request.headers.authorization, apiKey)) {
+function requireManagementAuth(request, managementKey) {
+	if (!bearerAuthorized(request.headers.authorization, managementKey)) {
+		throw unauthorized();
+	}
+}
+
+function requireProxyAuth(request, proxyKeyStore) {
+	const value = bearerValue(request.headers.authorization);
+	if (!value || !proxyKeyStore.authorize(value)) {
 		throw unauthorized();
 	}
 }
@@ -174,11 +192,10 @@ async function routeRequest(request, response, options) {
 		return;
 	}
 
-	if (
-		url.pathname.startsWith("/v1/")
-		|| url.pathname.startsWith("/management/api/")
-	) {
-		requireAuth(request, options.apiKey);
+	if (url.pathname.startsWith("/management/api/")) {
+		requireManagementAuth(request, options.managementKey);
+	} else if (url.pathname.startsWith("/v1/")) {
+		requireProxyAuth(request, options.proxyKeyStore);
 	}
 
 	if (url.pathname.startsWith("/management/api/") && await routeManagement({
@@ -252,11 +269,13 @@ async function routeRequest(request, response, options) {
 
 export function createPiRouterServer({
 	runtime,
-	apiKey,
+	managementKey,
+	proxyKeyStore,
 	account = "default",
 	updater = new GithubUpdateManager(),
 	management,
 	modelsPath,
+	providerPolicyPath,
 	quotaAdapters,
 	authSessionOptions,
 	maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
@@ -266,12 +285,34 @@ export function createPiRouterServer({
 	if (!runtime) {
 		throw new TypeError("runtime is required");
 	}
-	if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
-		throw new RouterError("PI_ROUTER_API_KEY is required.", {
+	if (typeof managementKey !== "string" || managementKey.trim().length === 0) {
+		throw new RouterError("PI_ROUTER_MANAGEMENT_KEY is required.", {
 			status: 500,
-			code: "missing_api_key",
+			code: "missing_management_key",
 			expose: true,
 		});
+	}
+	if (
+		!proxyKeyStore
+		|| typeof proxyKeyStore.authorize !== "function"
+		|| typeof proxyKeyStore.count !== "function"
+		|| proxyKeyStore.count() < 1
+	) {
+		throw new RouterError("At least one proxy API key is required.", {
+			status: 500,
+			code: "missing_proxy_api_key",
+			expose: true,
+		});
+	}
+	if (proxyKeyStore.authorize(managementKey)) {
+		throw new RouterError(
+			"PI_ROUTER_MANAGEMENT_KEY must differ from every proxy API key.",
+			{
+				status: 500,
+				code: "management_proxy_key_collision",
+				expose: true,
+			},
+		);
 	}
 
 	const managementService = management ?? createManagementService({
@@ -279,15 +320,18 @@ export function createPiRouterServer({
 		account,
 		updater,
 		modelsPath,
+		providerPolicyPath,
 		startedAt: now(),
 		now,
 		eventLog,
 		quotaAdapters,
 		authSessionOptions,
+		proxyKeyStore,
 	});
 	const options = {
 		runtime,
-		apiKey,
+		managementKey,
+		proxyKeyStore,
 		management: managementService,
 		maxBodyBytes,
 		now,

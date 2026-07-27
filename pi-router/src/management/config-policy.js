@@ -13,6 +13,9 @@ const PROVIDER_FIELDS = new Set([
 	"authHeader",
 	"models",
 	"modelOverrides",
+	"proxyUrl",
+	"modelAliases",
+	"excludedModels",
 ]);
 const MODEL_FIELDS = new Set([
 	"id",
@@ -84,13 +87,9 @@ const COMPAT_ENUM_FIELDS = new Map([
 	["deferredToolsMode", new Set(["kimi"])],
 	["sessionAffinityFormat", new Set(["openai", "openai-nosession", "openrouter"])],
 ]);
-const SAFE_HEADERS = new Set([
-	"accept",
-	"content-type",
-	"user-agent",
-	"x-client-name",
-	"x-client-version",
-]);
+const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,80}$/u;
+const SENSITIVE_HEADER_PATTERN =
+	/(?:^|[-_])(authorization|cookie|credential|key|secret|token)(?:$|[-_])/iu;
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const PROVIDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 
@@ -167,8 +166,10 @@ function headers(value, path, state) {
 		state.add(path, "May contain at most 16 headers.");
 	}
 	for (const [name, headerValue] of entries) {
-		if (!SAFE_HEADERS.has(name.toLowerCase())) {
-			state.add(`${path}.${name}`, "Header is not on the non-secret allowlist.");
+		if (!HEADER_NAME_PATTERN.test(name)) {
+			state.add(`${path}.${name}`, "Header name is invalid.");
+		} else if (SENSITIVE_HEADER_PATTERN.test(name)) {
+			state.add(`${path}.${name}`, "Credential-bearing headers are not editable.");
 		}
 		stringValue(headerValue, `${path}.${name}`, state, 256);
 	}
@@ -323,6 +324,9 @@ function provider(value, path, state) {
 	if ("baseUrl" in value) {
 		baseUrl(value.baseUrl, `${path}.baseUrl`, state);
 	}
+	if ("proxyUrl" in value) {
+		baseUrl(value.proxyUrl, `${path}.proxyUrl`, state);
+	}
 	if ("api" in value) {
 		stringValue(value.api, `${path}.api`, state, 80);
 	}
@@ -365,6 +369,78 @@ function provider(value, path, state) {
 			}
 		}
 	}
+	if ("modelAliases" in value) {
+		if (!isRecord(value.modelAliases) || Object.keys(value.modelAliases).length > 512) {
+			state.add(`${path}.modelAliases`, "Must be an object with at most 512 entries.");
+		} else {
+			const aliases = new Set();
+			for (const [modelId, alias] of Object.entries(value.modelAliases)) {
+				stringValue(modelId, `${path}.modelAliases`, state, 160);
+				stringValue(alias, `${path}.modelAliases.${modelId}`, state, 160);
+				if (typeof alias === "string") {
+					if (alias.includes("/")) {
+						state.add(
+							`${path}.modelAliases.${modelId}`,
+							"Alias must not contain a slash.",
+						);
+					}
+					if (aliases.has(alias)) {
+						state.add(
+							`${path}.modelAliases.${modelId}`,
+							"Aliases must be unique within a provider.",
+						);
+					}
+					aliases.add(alias);
+				}
+			}
+		}
+	}
+	if ("excludedModels" in value) {
+		if (
+			!Array.isArray(value.excludedModels)
+			|| value.excludedModels.length > 512
+		) {
+			state.add(`${path}.excludedModels`, "Must be an array of at most 512 entries.");
+		} else {
+			value.excludedModels.forEach((pattern, index) =>
+				stringValue(pattern, `${path}.excludedModels.${index}`, state, 160));
+		}
+	}
+}
+
+const ROUTER_PROVIDER_FIELDS = new Set(["proxyUrl", "modelAliases", "excludedModels"]);
+
+export function splitConfigDocument(document) {
+	const models = { providers: {} };
+	const policy = { version: 1, providers: {} };
+	for (const [providerId, definition] of Object.entries(document.providers)) {
+		const piDefinition = {};
+		const policyDefinition = {};
+		for (const [key, value] of Object.entries(definition)) {
+			if (ROUTER_PROVIDER_FIELDS.has(key)) {
+				policyDefinition[key] = structuredClone(value);
+			} else {
+				piDefinition[key] = structuredClone(value);
+			}
+		}
+		models.providers[providerId] = piDefinition;
+		if (Object.keys(policyDefinition).length > 0) {
+			policy.providers[providerId] = policyDefinition;
+		}
+	}
+	return { models, policy };
+}
+
+export function mergeConfigDocument(models, policy) {
+	const document = structuredClone(models);
+	document.providers ??= {};
+	for (const [providerId, definition] of Object.entries(policy?.providers ?? {})) {
+		document.providers[providerId] = {
+			...(document.providers[providerId] ?? {}),
+			...structuredClone(definition),
+		};
+	}
+	return document;
 }
 
 export function validateConfigDocument(document) {

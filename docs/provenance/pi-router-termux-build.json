@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "source": {
-    "router_version": "0.3.0",
-    "input_sha256": "346510133c8da0e2e7212bf936f70ee3f1631580f659492be9a38fcd41fc7932"
+    "router_version": "0.4.0",
+    "input_sha256": "53db49a26d29a84a324f47dd103781d31a17579490647ad2075914d4d3b6ebce"
   },
   "base": {
     "kind": "termux-package",
@@ -24,8 +24,8 @@
   },
   "artifact": {
     "path": "pi-router/bin/pi-router-android-aarch64",
-    "sha256": "ba753352b5c2b4d99f4d52690dccad6422c2d544a680f79a828a401e5729034f",
-    "size": 57710336,
+    "sha256": "04dfb50a80e88e7494b1ca6106506a42651575b48bd606567bf8597d44d00985",
+    "size": 58303152,
     "mode": "0755",
     "format": "ELF64",
     "machine": "AArch64",

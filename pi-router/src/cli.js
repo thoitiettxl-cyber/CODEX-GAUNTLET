@@ -4,10 +4,12 @@ import { once } from "node:events";
 import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline/promises";
 
+import { AccountRuntimePool } from "./accounts.js";
 import { RouterError } from "./errors.js";
 import { createManagementService } from "./management/index.js";
 import { PiRuntime } from "./pi-runtime.js";
 import { ensureStatePaths, statePaths } from "./paths.js";
+import { ProxyKeyStore } from "./proxy-keys.js";
 import { createPiRouterServer, listenPiRouter } from "./server.js";
 import { GithubUpdateManager } from "./update.js";
 import { BINARY_BUILD, VERSION } from "./version.js";
@@ -29,9 +31,13 @@ Usage:
   pi-router help
 
 Environment:
-  PI_ROUTER_API_KEY        Required by serve; clients send it as a Bearer token.
+  PI_ROUTER_MANAGEMENT_KEY Required by serve; protects only /management/api/*.
+  PI_ROUTER_API_KEY        Legacy one-time seed for the persisted proxy API-key store.
   PI_ROUTER_STATE_DIR      Overrides the default ~/.local/state/pi-router state directory.
   PI_ROUTER_MODEL_NETWORK  Set to 1 to allow Pi remote model-catalog refreshes.
+  PI_ROUTER_ANTIGRAVITY_CLIENT_ID
+  PI_ROUTER_ANTIGRAVITY_CLIENT_SECRET
+                           Optional Antigravity OAuth client configuration.
   PI_ROUTER_AUTO_UPDATE    Set to 1 for verified background install in the packaged binary.
 `;
 
@@ -237,7 +243,12 @@ function runtimeOptions(parsed, env) {
 		options: {
 			authPath: paths.authPath,
 			modelsPath: paths.modelsPath,
+			providerPolicyPath: paths.providerPolicyPath,
 			allowModelNetwork,
+			antigravityOAuth: {
+				clientId: env.PI_ROUTER_ANTIGRAVITY_CLIENT_ID,
+				clientSecret: env.PI_ROUTER_ANTIGRAVITY_CLIENT_SECRET,
+			},
 		},
 	};
 }
@@ -272,11 +283,14 @@ export async function runCli(
 	}
 	if (
 		parsed.command === "serve"
-		&& (typeof env.PI_ROUTER_API_KEY !== "string" || env.PI_ROUTER_API_KEY.trim().length === 0)
+		&& (
+			typeof env.PI_ROUTER_MANAGEMENT_KEY !== "string"
+			|| env.PI_ROUTER_MANAGEMENT_KEY.trim().length === 0
+		)
 	) {
-		throw new RouterError("PI_ROUTER_API_KEY is required by the serve command.", {
+		throw new RouterError("PI_ROUTER_MANAGEMENT_KEY is required by the serve command.", {
 			status: 400,
-			code: "missing_api_key",
+			code: "missing_management_key",
 			type: "authentication_error",
 		});
 	}
@@ -300,11 +314,27 @@ export async function runCli(
 
 	const { paths, options } = runtimeOptions(parsed, env);
 	await ensureStatePaths(paths);
-	const runtime = await createRuntime(options);
+	const proxyKeyStore = await ProxyKeyStore.open({
+		path: paths.proxyKeysPath,
+		seedKey: env.PI_ROUTER_API_KEY,
+		requireKey: parsed.command === "serve",
+	});
+	const activeRuntime = await createRuntime(options);
+	const runtime = await AccountRuntimePool.create({
+		paths,
+		activeRuntime,
+		createRuntime,
+		allowModelNetwork: options.allowModelNetwork,
+		additionalRuntimeOptions: {
+			antigravityOAuth: options.antigravityOAuth,
+		},
+	});
 
 	if (parsed.command === "login") {
 		const interaction = createAuthInteraction({ input, output });
-		await runtime.login(parsed.provider, parsed.authType, interaction);
+		await runtime.login(parsed.provider, parsed.authType, interaction, {
+			accountId: paths.account,
+		});
 		output.write(`Authentication saved for provider '${parsed.provider}' in account '${paths.account}'.\n`);
 		return { command: "login", account: paths.account };
 	}
@@ -326,19 +356,22 @@ export async function runCli(
 			account: paths.account,
 			updater,
 			modelsPath: paths.modelsPath,
+			providerPolicyPath: paths.providerPolicyPath,
+			proxyKeyStore,
 		});
 		const result = await management.status();
 		output.write(`${JSON.stringify(result, null, 2)}\n`);
 		return { command: "status", result };
 	}
 
-	const apiKey = env.PI_ROUTER_API_KEY;
 	const server = createServer({
 		runtime,
-		apiKey,
+		managementKey: env.PI_ROUTER_MANAGEMENT_KEY,
+		proxyKeyStore,
 		account: paths.account,
 		updater,
 		modelsPath: paths.modelsPath,
+		providerPolicyPath: paths.providerPolicyPath,
 	});
 	const address = await listen(server, { host: parsed.host, port: parsed.port });
 	const displayHost = typeof address === "object" && address?.family === "IPv6"

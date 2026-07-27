@@ -13,7 +13,9 @@ ownership is recorded in
 packaging/update ownership is recorded in
 [ADR 0006](../decisions/0006-package-pi-router-as-a-verified-termux-sea.md).
 The browser management boundary is recorded in
-[ADR 0007](../decisions/0007-bound-pi-router-operations-console.md).
+[ADR 0007](../decisions/0007-bound-pi-router-operations-console.md), and the
+split key, multi-account, quota, and provider-policy boundaries are recorded
+in [ADR 0008](../decisions/0008-separate-pi-router-keys-and-isolate-provider-accounts.md).
 
 ## Prerequisites
 
@@ -24,8 +26,9 @@ The browser management boundary is recorded in
   Termux shared-library dependencies:
   `libc++ openssl c-ares libicu libsqlite zlib libffi`.
 - A provider credential entered interactively with `pi-router login`.
-- A separate non-empty `PI_ROUTER_API_KEY` in the serving process and each
-  client process.
+- A non-empty `PI_ROUTER_MANAGEMENT_KEY` for the serving process.
+- At least one proxy API key persisted by Pi Router. On first startup only,
+  `PI_ROUTER_API_KEY` can seed that store.
 
 Do not copy a GNU/Linux `aarch64` Node artifact into Termux. Use the existing
 Android/Termux-compatible runtime.
@@ -46,16 +49,23 @@ The default state root is `~/.local/state/pi-router`:
 
 ```text
 accounts/<account>/auth.json
+account-catalog.json
 models.json
+provider-policy.json
+proxy-api-keys.json
 ```
 
 Use `--state-dir` or `PI_ROUTER_STATE_DIR` for a different root. Use
-`--account` to select an isolated credential store. One server process uses
-one account; Pi Router does not rotate accounts.
+`--account` to select the isolated credential store used for inference.
+Management login may create additional account stores for the same provider,
+but one server process continues to infer through only its selected account;
+Pi Router does not rotate accounts.
 
 Before backing up or moving state, stop the serving process. Treat
 `auth.json` as a secret: do not print it, commit it, or copy it into Pi's own
-state directory.
+state directory. `proxy-api-keys.json` contains digests rather than raw key
+values but is still private router state. Account and router-owned state files
+use mode `0600`; account directories use mode `0700`.
 
 ## Setup and login
 
@@ -85,6 +95,19 @@ node pi-router/src/cli.js models
 
 Follow the URL, device-code, or manual-code prompt emitted by the provider.
 Never pass an API key on the command line.
+
+The browser flow supports Pi-owned Codex, Claude, Kimi, and xAI/Grok login.
+Antigravity is registered only when both OAuth client settings are present:
+
+```bash
+export PI_ROUTER_ANTIGRAVITY_CLIENT_ID=...
+export PI_ROUTER_ANTIGRAVITY_CLIENT_SECRET=...
+```
+
+Keep those values outside the repository and browser configuration. A browser
+login creates a new isolated account by default, derives a bounded label from
+provider identity when available, and adds a suffix if the same provider
+would otherwise show duplicate labels.
 
 Pi Router keeps remote model-catalog refresh offline by default. For a
 provider whose models must be discovered remotely, opt in for that process:
@@ -124,12 +147,18 @@ subset and `PI_ROUTER_LIVE_TIMEOUT_MS` for a different positive timeout.
 ## Start and probe
 
 ```bash
-read -r -s -p "Local pi-router bearer token: " PI_ROUTER_API_KEY
+read -r -s -p "Management bearer: " PI_ROUTER_MANAGEMENT_KEY
+export PI_ROUTER_MANAGEMENT_KEY
+read -r -s -p "Initial proxy API key: " PI_ROUTER_API_KEY
 export PI_ROUTER_API_KEY
 node pi-router/src/cli.js serve --host 127.0.0.1 --port 8318
 ```
 
-From another shell with the same local client token:
+On an empty state root, `PI_ROUTER_API_KEY` is stored as a digest and becomes
+the first inference-client key. Once `proxy-api-keys.json` exists, changing
+that environment value does not add or replace a key; use Dashboard.
+
+From another shell with a configured proxy key:
 
 ```bash
 curl http://127.0.0.1:8318/health
@@ -148,18 +177,25 @@ Open the UI from the same loopback listener:
 http://127.0.0.1:8318/management.html
 ```
 
-Enter the serving process's `PI_ROUTER_API_KEY`. The grouped console exposes:
+Enter the serving process's `PI_ROUTER_MANAGEMENT_KEY`. The grouped console
+exposes:
 
-- **Dashboard** for bounded runtime, account, activity, config, quota
-  capability, update, and rollback posture;
-- **AI Providers** for provider/auth-mode/model inventory;
-- **Auth Files** for metadata-only stored credentials and confirmed logout;
-- **OAuth Login** for expiring, cancellable API-key or OAuth sessions;
-- **Quota Management** for explicit reviewed adapter reads and typed
-  unsupported states;
+- **Dashboard** for connection, server version, available models, separately
+  managed proxy API keys, account/activity/config/quota capability, update,
+  and rollback posture;
+- **AI Providers** for provider/auth-mode/model inventory and validated
+  arbitrary OpenAI-compatible provider creation;
+- **Auth Files** for metadata-only, account-labelled stored credentials and
+  exact confirmed logout;
+- **OAuth Login** for expiring, cancellable API-key or OAuth sessions in new
+  or explicitly selected isolated accounts;
+- **Quota Management** for separate Codex, Claude, Antigravity, Kimi, and
+  xAI/Grok OAuth-credential reads plus typed unsupported states;
 - **Logs Viewer** for at most 250 sanitized process-memory events;
-- **Config Panel** for the reviewed non-secret `models.json` schema with
-  validation, diff, stale-write protection, atomic apply, and restore.
+- **Config Panel** for the reviewed combined provider/model and router policy
+  schema with base URLs, safe headers, per-provider proxy, aliases,
+  exclusions, validation, diff, stale-write protection, atomic file
+  replacement, and restore.
 
 The bearer, login input, filters, drafts, and results stay only in current page
 memory; reload the page to clear them. Do not paste a provider credential into
@@ -169,7 +205,9 @@ and raw state paths are absent from management responses and logs. Bounded
 auth prompt instructions, provider-owned sign-in URLs, and device codes are
 visible only during the current login session.
 
-Every `/management/api/*` request uses the same bearer boundary as `/v1/*`.
+Every `/management/api/*` request requires the management key. Every `/v1/*`
+request requires one persisted proxy API key. Neither key class is accepted
+at the other boundary.
 Status does not contact GitHub or provider quota APIs. Update and quota checks
 are explicit actions. Update checks contact only the fixed public repository;
 the API never accepts a repository, asset name, download URL, or filesystem
@@ -253,12 +291,17 @@ and `.sha256` asset names. Building does not create a tag, push, or release.
   `models.json`, and run `pi-router models`. Re-run login if the provider is
   unavailable. If the provider has no static catalog, retry `models` with
   `PI_ROUTER_MODEL_NETWORK=1`.
-- `401` from `pi-router`: ensure the client and serving process use the same
-  `PI_ROUTER_API_KEY`. This token is unrelated to the upstream provider key.
+- `401` from `/v1/*`: use a current Dashboard-managed proxy API key. The
+  management key and upstream provider credential are intentionally rejected.
+- `401` from `/management/api/*`: use the serving process's exact
+  `PI_ROUTER_MANAGEMENT_KEY`; a proxy key is intentionally rejected.
+- No proxy keys at startup: set `PI_ROUTER_API_KEY` once only if the store is
+  absent, then start the server and manage its lifecycle in Dashboard.
 - Unknown model: use the exact `provider/model` returned by `/v1/models`.
-- Corrupt custom model config: if Config Panel reports a valid recovery input,
-  use its confirmed restore action. Otherwise stop the service, restore the
-  previous `models.json`, and start again. Credential state is independent.
+- Corrupt custom provider config: if Config Panel reports a valid recovery
+  input, use its confirmed restore action. Otherwise stop the service and
+  restore the matching `models.json` and `provider-policy.json` state before
+  starting again. Credential state is independent.
 - Revoke one credential:
   `node pi-router/src/cli.js logout PROVIDER --account ACCOUNT`.
 - Update validation failure: keep running the current process; no installed

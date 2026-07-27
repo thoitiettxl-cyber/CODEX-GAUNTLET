@@ -6,13 +6,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { ProxyKeyStore } from "../src/proxy-keys.js";
 import { createPiRouterServer, listenPiRouter, validateListenHost } from "../src/server.js";
-import { addressUrl, closeServer, fakeRuntime, textStream } from "./helpers.js";
+import {
+	addressUrl,
+	closeServer,
+	fakeProxyKeyStore,
+	fakeRuntime,
+	textStream,
+} from "./helpers.js";
 
 async function started(runtime = fakeRuntime(), options = {}) {
 	const server = createPiRouterServer({
 		runtime,
-		apiKey: "local-test-key",
+		managementKey: "management-test-key",
+		proxyKeyStore: fakeProxyKeyStore(),
 		now: () => 1000,
 		...options,
 	});
@@ -26,6 +34,14 @@ test("startup accepts only explicit loopback hosts", () => {
 	for (const host of ["0.0.0.0", "::", "localhost", "192.168.1.2"]) {
 		assert.throws(() => validateListenHost(host), /only/);
 	}
+	assert.throws(
+		() => createPiRouterServer({
+			runtime: fakeRuntime(),
+			managementKey: "local-test-key",
+			proxyKeyStore: fakeProxyKeyStore(),
+		}),
+		(error) => error.code === "management_proxy_key_collision",
+	);
 });
 
 test("health is bounded and v1 endpoints require bearer authentication", async (t) => {
@@ -33,7 +49,7 @@ test("health is bounded and v1 endpoints require bearer authentication", async (
 	t.after(() => closeServer(server));
 	const health = await fetch(`${baseUrl}/health`);
 	assert.equal(health.status, 200);
-	assert.deepEqual(await health.json(), { status: "ok", service: "pi-router", version: "0.3.0" });
+	assert.deepEqual(await health.json(), { status: "ok", service: "pi-router", version: "0.4.0" });
 	const unauthenticated = await fetch(`${baseUrl}/v1/models`);
 	assert.equal(unauthenticated.status, 401);
 	assert.equal((await unauthenticated.json()).error.code, "invalid_api_key");
@@ -47,6 +63,14 @@ test("health is bounded and v1 endpoints require bearer authentication", async (
 		created: 0,
 		owned_by: "fake",
 	});
+	const managementKeyOnInference = await fetch(`${baseUrl}/v1/models`, {
+		headers: { authorization: "Bearer management-test-key" },
+	});
+	assert.equal(managementKeyOnInference.status, 401);
+	const proxyKeyOnManagement = await fetch(`${baseUrl}/management/api/status`, {
+		headers: { authorization: "Bearer local-test-key" },
+	});
+	assert.equal(proxyKeyOnManagement.status, 401);
 });
 
 test("Management API is authenticated, bounded, and delegates exact update actions", async (t) => {
@@ -87,14 +111,14 @@ test("Management API is authenticated, bounded, and delegates exact update actio
 	assert.equal(unauthenticated.status, 401);
 	assert.equal(calls.length, 0);
 
-	const headers = { authorization: "Bearer local-test-key" };
+	const headers = { authorization: "Bearer management-test-key" };
 	const status = await fetch(`${baseUrl}/management/api/status`, { headers });
 	assert.equal(status.status, 200);
 	const statusBody = await status.json();
 	assert.equal(statusBody.object, "pi_router.management_status");
 	assert.deepEqual(statusBody.service, {
 		name: "pi-router",
-		version: "0.3.0",
+		version: "0.4.0",
 		status: "ok",
 		uptime_seconds: 0,
 	});
@@ -107,7 +131,20 @@ test("Management API is authenticated, bounded, and delegates exact update actio
 	});
 	assert.equal(statusBody.runtime.mode, "source");
 	assert.equal(statusBody.update.repository, "owner/repository");
-	assert.deepEqual(statusBody.quota, { supported_providers: 0, total_providers: 1 });
+	assert.deepEqual(statusBody.connection, {
+		status: "connected",
+		management_authenticated: true,
+	});
+	assert.deepEqual(statusBody.authentication, {
+		management_key_configured: true,
+		proxy_api_keys: 1,
+	});
+	assert.deepEqual(statusBody.quota, {
+		supported_providers: 0,
+		total_providers: 1,
+		supported_credentials: 0,
+		total_credentials: 0,
+	});
 	assert.equal(statusBody.config.supported, false);
 	assert.doesNotMatch(JSON.stringify(statusBody), /auth\.json|models\.json|local-test-key/);
 
@@ -142,6 +179,92 @@ test("Management API is authenticated, bounded, and delegates exact update actio
 		["install", "0.3.0"],
 		["rollback"],
 	]);
+});
+
+test("proxy API-key Management API discloses values once and changes only inference auth", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "pi-router-proxy-api-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const proxyKeyStore = await ProxyKeyStore.open({
+		path: join(root, "proxy-api-keys.json"),
+		seedKey: "seed-proxy-key",
+		requireKey: true,
+	});
+	const { server, baseUrl } = await started(fakeRuntime(), { proxyKeyStore });
+	t.after(() => closeServer(server));
+	const headers = {
+		authorization: "Bearer management-test-key",
+		"content-type": "application/json",
+	};
+
+	const initial = await fetch(`${baseUrl}/management/api/proxy-keys`, { headers })
+		.then((response) => response.json());
+	assert.equal(initial.data.length, 1);
+	assert.equal(Object.hasOwn(initial.data[0], "value"), false);
+	const created = await fetch(`${baseUrl}/management/api/proxy-keys`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({ label: "Second client" }),
+	}).then((response) => response.json());
+	assert.match(created.value, /^prk_/u);
+	assert.equal(
+		(await fetch(`${baseUrl}/v1/models`, {
+			headers: { authorization: `Bearer ${created.value}` },
+		})).status,
+		200,
+	);
+
+	const updated = await fetch(
+		`${baseUrl}/management/api/proxy-keys/${created.id}`,
+		{
+			method: "PATCH",
+			headers,
+			body: JSON.stringify({ label: "Renamed client" }),
+		},
+	).then((response) => response.json());
+	assert.equal(updated.label, "Renamed client");
+	assert.equal(Object.hasOwn(updated, "value"), false);
+
+	const replaced = await fetch(
+		`${baseUrl}/management/api/proxy-keys/${created.id}/replace`,
+		{
+			method: "POST",
+			headers,
+			body: JSON.stringify({}),
+		},
+	).then((response) => response.json());
+	assert.notEqual(replaced.value, created.value);
+	assert.equal(
+		(await fetch(`${baseUrl}/v1/models`, {
+			headers: { authorization: `Bearer ${created.value}` },
+		})).status,
+		401,
+	);
+	assert.equal(
+		(await fetch(`${baseUrl}/v1/models`, {
+			headers: { authorization: `Bearer ${replaced.value}` },
+		})).status,
+		200,
+	);
+
+	const removedSeed = await fetch(
+		`${baseUrl}/management/api/proxy-keys/${initial.data[0].id}`,
+		{ method: "DELETE", headers },
+	);
+	assert.equal(removedSeed.status, 200);
+	const lastRemoval = await fetch(
+		`${baseUrl}/management/api/proxy-keys/${created.id}`,
+		{ method: "DELETE", headers },
+	);
+	assert.equal(lastRemoval.status, 409);
+	assert.equal((await lastRemoval.json()).error.code, "last_proxy_key");
+
+	const events = await fetch(`${baseUrl}/management/api/events?limit=100`, { headers })
+		.then((response) => response.text());
+	assert.match(events, /management\.proxy_keys/u);
+	assert.doesNotMatch(
+		events,
+		new RegExp(`${created.value}|${replaced.value}|management-test-key`, "u"),
+	);
 });
 
 test("management UI is self-contained, unauthenticated, and browser-hardened", async (t) => {
@@ -189,12 +312,17 @@ test("management UI is self-contained, unauthenticated, and browser-hardened", a
 		assert.match(body, /aria-controls":"primary-navigation"/);
 		assert.match(body, /prefers-reduced-motion/);
 		assert.match(body, /max-width:680px/);
+		assert.match(body, /PI_ROUTER_MANAGEMENT_KEY/);
+		assert.match(body, /Proxy API keys/);
+		assert.match(body, /Custom OpenAI-compatible provider/);
+		assert.match(body, /Target account/);
+		assert.match(body, /credential-scoped/);
 		assert.doesNotMatch(body, /Responses workbench|Compose a probe/);
 		assert.doesNotMatch(body, /<script[^>]+src=/);
 		assert.doesNotMatch(body, /<link[^>]+href=/);
 		assert.doesNotMatch(body, /style="/);
 		assert.doesNotMatch(body, /localStorage|sessionStorage|indexedDB|document\.cookie/);
-		assert.doesNotMatch(body, /local-test-key/);
+		assert.doesNotMatch(body, /local-test-key|management-test-key/);
 		for (const tag of ["script", "style"]) {
 			const opening = `<${tag}>`;
 			const source = body.slice(
@@ -230,9 +358,14 @@ test("operations APIs cover provider, auth, quota, events, and atomic config wor
 	let promptResponse;
 	const runtime = fakeRuntime({
 		credentials: [{
+			id: "cred_fake",
+			account_id: "default",
+			account_label: "Default",
 			provider_id: "fake",
 			provider_name: "Fake Provider",
-			type: "api_key",
+			type: "oauth",
+			label: "Fake OAuth",
+			active: true,
 		}],
 		async login(_provider, _type, interaction) {
 			interaction.notify({
@@ -258,7 +391,7 @@ test("operations APIs cover provider, auth, quota, events, and atomic config wor
 	});
 	t.after(() => closeServer(server));
 	const headers = {
-		authorization: "Bearer local-test-key",
+		authorization: "Bearer management-test-key",
 		"content-type": "application/json",
 	};
 
@@ -343,7 +476,10 @@ test("operations APIs cover provider, auth, quota, events, and atomic config wor
 	const eventsText = await eventsResponse.text();
 	assert.match(eventsText, /management\.auth/);
 	assert.match(eventsText, /management\.config/);
-	assert.doesNotMatch(eventsText, /must-never-be-returned|Bearer local-test-key|models\\.json/);
+	assert.doesNotMatch(
+		eventsText,
+		/must-never-be-returned|Bearer (?:local|management)-test-key|models\\.json/,
+	);
 
 	const badLimit = await fetch(`${baseUrl}/management/api/events?limit=999`, { headers });
 	assert.equal(badLimit.status, 400);

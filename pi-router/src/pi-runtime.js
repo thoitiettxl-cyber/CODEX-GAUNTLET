@@ -1,22 +1,37 @@
 import { invalidRequest } from "./errors.js";
+import { ProviderPolicy } from "./provider-policy.js";
+import { withProviderProxy } from "./provider-proxy.js";
+import { createAntigravityProviderConfig } from "./providers/antigravity-oauth.js";
 
 export class PiRuntime {
-	constructor(runtime) {
+	constructor(runtime, { providerPolicy } = {}) {
 		this.runtime = runtime;
+		this.providerPolicy = providerPolicy ?? new ProviderPolicy();
 	}
 
-	static async create({ authPath, modelsPath, allowModelNetwork = false } = {}) {
+	static async create({
+		authPath,
+		modelsPath,
+		allowModelNetwork = false,
+		antigravityOAuth,
+		providerPolicyPath,
+	} = {}) {
 		const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
 		const runtime = await ModelRuntime.create({
 			authPath,
 			modelsPath,
 			allowModelNetwork,
 		});
-		return new PiRuntime(runtime);
+		const antigravity = createAntigravityProviderConfig(antigravityOAuth);
+		if (antigravity) {
+			runtime.registerProvider("antigravity", antigravity);
+		}
+		const providerPolicy = await ProviderPolicy.open({ path: providerPolicyPath });
+		return new PiRuntime(runtime, { providerPolicy });
 	}
 
 	async listModels() {
-		return [...(await this.runtime.getAvailable())];
+		return this.providerPolicy.apply([...(await this.runtime.getAvailable())]);
 	}
 
 	async listProviderMetadata() {
@@ -31,7 +46,7 @@ export class PiRuntime {
 			availabilityFailed = true;
 		}
 		const stored = new Map(credentials.map((entry) => [entry.providerId, entry.type]));
-		return providers.map((provider) => {
+		const metadata = providers.map((provider) => {
 			const configured = this.runtime.getProviderAuthStatus(provider.id);
 			const modelCount = allModels.filter((model) => model.provider === provider.id).length;
 			const availableModelCount = availableModels
@@ -70,6 +85,21 @@ export class PiRuntime {
 					),
 			};
 		});
+		if (!metadata.some((provider) => provider.id === "antigravity")) {
+			metadata.push({
+				id: "antigravity",
+				name: "Antigravity",
+				auth_modes: [{ type: "oauth", login_supported: false }],
+				configured: false,
+				configured_source: undefined,
+				credential_type: stored.get("antigravity"),
+				model_count: 0,
+				available_model_count: 0,
+				state: "unconfigured",
+				configuration_required: "PI_ROUTER_ANTIGRAVITY_CLIENT_ID",
+			});
+		}
+		return metadata;
 	}
 
 	async listCredentialMetadata() {
@@ -113,7 +143,22 @@ export class PiRuntime {
 	}
 
 	stream(model, context, options) {
-		return this.runtime.streamSimple(model, context, options);
+		const upstream = this.providerPolicy.unwrap(model);
+		const proxyUrl = this.providerPolicy.proxyUrl(upstream.provider);
+		const selectedOptions = proxyUrl
+			? {
+				...options,
+				env: {
+					...options?.env,
+					HTTP_PROXY: proxyUrl,
+					HTTPS_PROXY: proxyUrl,
+				},
+			}
+			: options;
+		return withProviderProxy(
+			proxyUrl,
+			() => this.runtime.streamSimple(upstream, context, selectedOptions),
+		);
 	}
 
 	async login(providerId, type, interaction) {
@@ -124,8 +169,13 @@ export class PiRuntime {
 		await this.runtime.logout(providerId);
 	}
 
+	async resolveAuth(providerId) {
+		return this.runtime.getAuth(providerId);
+	}
+
 	async refreshConfiguration() {
 		await this.runtime.refresh({ allowNetwork: false });
+		await this.providerPolicy.reload();
 	}
 }
 

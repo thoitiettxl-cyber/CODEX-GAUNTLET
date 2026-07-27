@@ -7,6 +7,7 @@ const REQUEST_CLASSES = new Set([
 	"responses",
 	"management.status",
 	"management.providers",
+	"management.proxy_keys",
 	"management.credentials",
 	"management.auth",
 	"management.quota",
@@ -34,6 +35,9 @@ function requestClass(method, pathname) {
 	}
 	if (pathname === "/management/api/providers") {
 		return "management.providers";
+	}
+	if (pathname.startsWith("/management/api/proxy-keys")) {
+		return "management.proxy_keys";
 	}
 	if (pathname.startsWith("/management/api/credentials")) {
 		return "management.credentials";

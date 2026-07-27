@@ -127,7 +127,13 @@ export function App() {
 		}
 		switch (route) {
 			case "providers":
-				return <ProvidersPage client={client} />;
+				return (
+					<ProvidersPage
+						client={client}
+						notify={notify}
+						onMutation={refreshStatus}
+					/>
+				);
 			case "auth-files":
 				return (
 					<AuthFilesPage
@@ -139,6 +145,7 @@ export function App() {
 			case "oauth":
 				return (
 					<OAuthPage
+						activeAccountId={status.account.id}
 						client={client}
 						notify={notify}
 						onMutation={refreshStatus}

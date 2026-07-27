@@ -4,9 +4,11 @@
 This lets current Codex clients use Pi-supported API-key and OAuth providers
 through `wire_api = "responses"` without running a Pi agent session.
 
-The MVP supports one credential per provider in each named account. Named
-accounts are isolated stores selected explicitly at startup; automatic
-multi-account rotation and failover are not implemented.
+Each named account keeps one credential per provider in an isolated Pi store.
+The Management Center can create and label multiple accounts for the same
+provider and query each OAuth credential's quota independently. Inference
+stays on the account selected explicitly at startup; automatic rotation and
+failover are not implemented.
 
 ## Install from source
 
@@ -16,7 +18,9 @@ Node.js `>=22.19.0` is required.
 npm ci --prefix pi-router --ignore-scripts
 ```
 
-The package pins `@earendil-works/pi-coding-agent` to `0.82.1`.
+The package pins `@earendil-works/pi-coding-agent` to `0.82.1` and promotes
+the same `undici@8.5.0` already used by that runtime for provider-scoped proxy
+dispatch.
 
 That release's published npm shrinkwrap currently contains
 `brace-expansion@5.0.7`, which npm flags under
@@ -81,13 +85,20 @@ remote catalog discovery.
 
 ## Serve
 
-Set a separate local bearer token, then start the service:
+Set separate management and inference credentials, then start the service:
 
 ```bash
-read -r -s -p "Local pi-router bearer token: " PI_ROUTER_API_KEY
+read -r -s -p "Management bearer: " PI_ROUTER_MANAGEMENT_KEY
+export PI_ROUTER_MANAGEMENT_KEY
+read -r -s -p "Initial proxy API key: " PI_ROUTER_API_KEY
 export PI_ROUTER_API_KEY
 node pi-router/src/cli.js serve
 ```
+
+`PI_ROUTER_API_KEY` is a one-time migration/initialization seed. Its digest is
+stored in `proxy-api-keys.json` when that store does not exist; after that,
+the environment value is not an implicit extra key. Create, label, replace,
+and remove proxy keys from Dashboard. The last proxy key cannot be removed.
 
 The default address is `http://127.0.0.1:8318`. Only `127.0.0.1` and `::1`
 are accepted.
@@ -98,19 +109,30 @@ Open the self-contained Management Center:
 http://127.0.0.1:8318/management.html
 ```
 
-Enter the same local `PI_ROUTER_API_KEY` used by API clients. The console has
-seven stable hash-routed pages: **Dashboard**, **AI Providers**, **Auth
-Files**, **OAuth Login**, **Quota Management**, **Logs Viewer**, and **Config
-Panel**. Dashboard also owns explicit stable-release check, verified install,
-and rollback actions without adding another top-level page.
+Enter `PI_ROUTER_MANAGEMENT_KEY`; proxy API keys are deliberately rejected by
+the Management API. The console has seven stable hash-routed pages:
+**Dashboard**, **AI Providers**, **Auth Files**, **OAuth Login**, **Quota
+Management**, **Logs Viewer**, and **Config Panel**. Dashboard reports
+connection state, server version, available-model count, and separately
+manages proxy API keys. It also owns explicit stable-release check, verified
+install, and rollback actions without adding another top-level page.
 
 Credential lists are metadata-only. API-key and OAuth login use bounded,
 expiring browser sessions; prompt responses are submitted once and never
-echoed. Quota is provider-adapter-specific and unsupported elsewhere. Logs are
-sanitized, capped at 250 process-memory records, and never contain prompts,
-bodies, headers, credentials, environment values, or paths. Config Panel edits
-only the reviewed non-secret `models.json` subset through validation, diff,
-revision compare-and-set, atomic replacement, and retained recovery.
+echoed. Codex, Claude, Kimi, and xAI/Grok use Pi-owned OAuth/device flows.
+Antigravity is available when `PI_ROUTER_ANTIGRAVITY_CLIENT_ID` and
+`PI_ROUTER_ANTIGRAVITY_CLIENT_SECRET` are supplied to the serving process.
+Identity-derived labels and isolated account stores keep same-provider
+credentials distinct.
+
+Quota reads use fixed, bounded adapters for Codex, Claude, Antigravity, Kimi,
+and xAI/Grok and return one result per OAuth credential. Logs are sanitized,
+capped at 250 process-memory records, and never contain prompts, bodies,
+headers, credentials, environment values, or paths. Config Panel combines the
+reviewed non-secret Pi provider model schema with router-owned proxy, alias,
+and exclusion policy. AI Providers can add arbitrary OpenAI Responses or Chat
+Completions compatible provider IDs with base URL, safe headers, proxy, model
+alias, and exclusion patterns; credentials are entered separately.
 
 The UI has no external browser assets and does not persist the bearer, login
 input, filters, config drafts, or API results. Reloading clears page memory.
@@ -123,9 +145,9 @@ Useful checks:
 curl http://127.0.0.1:8318/health
 curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
   http://127.0.0.1:8318/v1/models
-curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
+curl -H "Authorization: Bearer $PI_ROUTER_MANAGEMENT_KEY" \
   http://127.0.0.1:8318/management/api/status
-curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
+curl -H "Authorization: Bearer $PI_ROUTER_MANAGEMENT_KEY" \
   http://127.0.0.1:8318/management/api/providers
 ```
 
@@ -177,12 +199,14 @@ model_provider = "pi-router"
 [model_providers.pi-router]
 name = "Pi Router"
 base_url = "http://127.0.0.1:8318/v1"
-env_key = "PI_ROUTER_API_KEY"
+env_key = "PI_ROUTER_PROXY_KEY"
 wire_api = "responses"
 ```
 
-The local client token and the upstream provider credential are deliberately
-separate. Do not put either value in this repository.
+Set `PI_ROUTER_PROXY_KEY` in the Codex client process to one value generated
+or migration-seeded by Pi Router. The proxy key, management key, and upstream
+provider credential are three deliberately separate credential classes. Do
+not put any of them in this repository.
 
 ## Commands
 

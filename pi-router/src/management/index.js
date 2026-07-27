@@ -4,6 +4,7 @@ import { createCredentialService } from "./credentials.js";
 import { OperationalEventLog } from "./event-log.js";
 import { ProviderMutationCoordinator } from "./mutations.js";
 import { createProviderService } from "./providers.js";
+import { createProxyKeyService } from "./proxy-keys.js";
 import { createQuotaService } from "./quota.js";
 import { defaultQuotaAdapters } from "./quota-adapters/index.js";
 import { createStatusService } from "./status.js";
@@ -13,11 +14,13 @@ export function createManagementService({
 	account = "default",
 	updater,
 	modelsPath,
+	providerPolicyPath,
 	startedAt = Date.now(),
 	now = Date.now,
 	eventLog = new OperationalEventLog({ now }),
 	quotaAdapters = defaultQuotaAdapters,
 	authSessionOptions = {},
+	proxyKeyStore,
 } = {}) {
 	if (!runtime) {
 		throw new TypeError("runtime is required");
@@ -26,10 +29,19 @@ export function createManagementService({
 		throw new TypeError("updater is required");
 	}
 	const coordinator = new ProviderMutationCoordinator();
+	const proxyKeys = proxyKeyStore
+		? createProxyKeyService({ store: proxyKeyStore })
+		: undefined;
 	const providers = createProviderService({ runtime });
 	const credentials = createCredentialService({ runtime, coordinator });
-	const quota = createQuotaService({ providers, adapters: quotaAdapters, now });
-	const config = new ConfigService({ modelsPath, runtime });
+	const quota = createQuotaService({
+		providers,
+		credentials,
+		runtime,
+		adapters: quotaAdapters,
+		now,
+	});
+	const config = new ConfigService({ modelsPath, providerPolicyPath, runtime });
 	const authSessions = new AuthSessionService({
 		runtime,
 		providers,
@@ -47,9 +59,15 @@ export function createManagementService({
 		updater,
 		startedAt,
 		now,
+		proxyKeys,
 	});
 	return {
 		status: () => status.get(),
+		listProxyKeys: () => proxyKeys?.list(),
+		createProxyKey: (body) => proxyKeys?.create(body),
+		updateProxyKey: (id, body) => proxyKeys?.update(id, body),
+		replaceProxyKey: (id, body) => proxyKeys?.replace(id, body),
+		removeProxyKey: (id) => proxyKeys?.remove(id),
 		listProviders: () => providers.list(),
 		listCredentials: () => credentials.list(),
 		removeCredential: (providerId) => credentials.remove(providerId),

@@ -37,6 +37,10 @@ function normalizeProvider(provider) {
 		available_model_count: Number.isSafeInteger(provider.available_model_count)
 			? Math.max(0, provider.available_model_count)
 			: 0,
+		credential_count: Number.isSafeInteger(provider.credential_count)
+			? Math.max(0, provider.credential_count)
+			: (provider.credential_type ? 1 : 0),
+		configuration_required: safeText(provider.configuration_required, 96, "") || null,
 		state,
 	};
 }

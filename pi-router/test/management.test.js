@@ -120,21 +120,34 @@ test("provider and credential services normalize metadata and serialize logout",
 		},
 	});
 	const providers = createProviderService({ runtime });
-	assert.deepEqual((await providers.list()).data, [PROVIDER]);
+	assert.deepEqual((await providers.list()).data, [{
+		...PROVIDER,
+		credential_count: 1,
+		configuration_required: null,
+	}]);
 	const coordinator = new ProviderMutationCoordinator();
 	const credentials = createCredentialService({ runtime, coordinator });
 	assert.deepEqual((await credentials.list()).data, [{
+		id: "fake",
+		account_id: "default",
+		account_label: "default",
 		provider_id: "fake",
 		provider_name: "Fake Provider",
 		type: "api_key",
+		label: "Fake Provider · default",
+		active: true,
+		created_at: null,
+		updated_at: null,
 	}]);
 	assert.deepEqual(await credentials.remove("fake"), {
 		object: "pi_router.credential_mutation",
 		status: "removed",
+		credential_id: "fake",
+		account_id: "default",
 		provider_id: "fake",
 	});
 	assert.deepEqual(calls, ["fake"]);
-	const release = coordinator.acquire("fake");
+	const release = coordinator.acquire("default:fake");
 	await assert.rejects(credentials.remove("fake"), (error) =>
 		error.code === "provider_mutation_in_progress");
 	release();
@@ -251,6 +264,53 @@ test("auth sessions serialize a provider and support cancel and expiry", async (
 	assert.throws(() => sessions.get("not-a-session"), /Route not found/);
 });
 
+test("auth sessions target an exact account and return its persisted label metadata", async () => {
+	const calls = [];
+	const runtime = providerRuntime({
+		async prepareLogin(input) {
+			calls.push(["prepare", input]);
+			return {
+				account_id: input.accountId,
+				account_label: "Existing account",
+			};
+		},
+		async login(provider, type, _interaction, options) {
+			calls.push(["login", provider, type, options]);
+			return {
+				id: "cred_1234567890abcdef12345678",
+				label: options.label,
+				account_label: "Work identity",
+			};
+		},
+	});
+	const sessions = new AuthSessionService({
+		runtime,
+		providers: createProviderService({ runtime }),
+		coordinator: new ProviderMutationCoordinator(),
+	});
+	const created = await sessions.create({
+		provider_id: "fake",
+		type: "oauth",
+		account_id: "work-account",
+		label: "Work identity",
+	});
+	await immediate();
+	const completed = sessions.get(created.id);
+	assert.equal(completed.state, "completed");
+	assert.equal(completed.account_id, "work-account");
+	assert.equal(completed.account_label, "Work identity");
+	assert.equal(completed.credential_label, "Work identity");
+	assert.deepEqual(calls, [
+		["prepare", { providerId: "fake", accountId: "work-account" }],
+		[
+			"login",
+			"fake",
+			"oauth",
+			{ accountId: "work-account", label: "Work identity" },
+		],
+	]);
+});
+
 test("quota is adapter-driven and unsupported providers stay explicit", async () => {
 	const providers = {
 		async list() {
@@ -264,8 +324,54 @@ test("quota is adapter-driven and unsupported providers stay explicit", async ()
 			};
 		},
 	};
+	const credentialData = [
+		{
+			id: "cred_fake",
+			account_id: "account-a",
+			account_label: "Account A",
+			provider_id: "fake",
+			provider_name: "Fake Provider",
+			type: "oauth",
+			label: "Fake A",
+			active: true,
+		},
+		{
+			id: "cred_other",
+			account_id: "account-b",
+			account_label: "Account B",
+			provider_id: "other",
+			provider_name: "Other",
+			type: "oauth",
+			label: "Other B",
+			active: false,
+		},
+		{
+			id: "cred_broken",
+			account_id: "account-c",
+			account_label: "Account C",
+			provider_id: "broken",
+			provider_name: "Broken",
+			type: "oauth",
+			label: "Broken C",
+			active: false,
+		},
+	];
+	const credentials = {
+		async list() {
+			return { object: "list", data: credentialData };
+		},
+	};
 	const quota = createQuotaService({
 		providers,
+		credentials,
+		runtime: {
+			async quotaCredentialContexts() {
+				return credentialData.map((credential) => ({
+					...credential,
+					resolveAuth: async () => ({ auth: { apiKey: "test-token" } }),
+				}));
+			},
+		},
 		now: () => 1234,
 		adapters: new Map([
 			["fake", {
@@ -287,6 +393,8 @@ test("quota is adapter-driven and unsupported providers stay explicit", async ()
 	assert.deepEqual(await quota.summary(), {
 		supported_providers: 2,
 		total_providers: 3,
+		supported_credentials: 2,
+		total_credentials: 3,
 	});
 	const result = await quota.list();
 	assert.equal(result.data[0].status, "available");
@@ -486,6 +594,11 @@ test("composed management status aggregates bounded operational state", async ()
 	});
 	assert.equal(status.activity.requests, 1);
 	assert.equal(status.quota.supported_providers, 0);
+	assert.equal(status.quota.total_credentials, 1);
+	assert.deepEqual(status.authentication, {
+		management_key_configured: true,
+		proxy_api_keys: 0,
+	});
 	assert.equal(status.config.state, "unsupported");
 	assert.deepEqual(await management.checkUpdate(), { status: "current" });
 });

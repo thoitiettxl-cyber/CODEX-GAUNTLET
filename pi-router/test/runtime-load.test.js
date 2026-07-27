@@ -19,6 +19,19 @@ test("pinned Pi ModelRuntime loads without model-network access", { timeout: 10_
 	});
 	const models = await runtime.listModels();
 	assert.equal(Array.isArray(models), true);
+	const providers = await runtime.listProviderMetadata();
+	for (const providerId of ["openai-codex", "anthropic", "kimi-coding", "xai"]) {
+		const provider = providers.find((entry) => entry.id === providerId);
+		assert.ok(provider, `${providerId} is registered`);
+		assert.equal(
+			provider.auth_modes.some((mode) =>
+				mode.type === "oauth" && mode.login_supported),
+			true,
+		);
+	}
+	const antigravity = providers.find((entry) => entry.id === "antigravity");
+	assert.equal(antigravity.auth_modes[0].type, "oauth");
+	assert.equal(antigravity.configuration_required, "PI_ROUTER_ANTIGRAVITY_CLIENT_ID");
 });
 
 test("pinned Pi runtime stores a custom-provider API key and exposes its model", { timeout: 10_000 }, async (t) => {
@@ -35,18 +48,29 @@ test("pinned Pi runtime stores a custom-provider API key and exposes its model",
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const authPath = join(root, "auth.json");
 	const modelsPath = join(root, "models.json");
+	const providerPolicyPath = join(root, "provider-policy.json");
 	await writeFile(modelsPath, JSON.stringify({
 		providers: {
 			agentrouter: {
 				baseUrl: "https://agentrouter.org/v1",
 				api: "openai-completions",
-				models: [{ id: "gpt-5.5" }],
+				models: [{ id: "gpt-5.5" }, { id: "old-preview" }],
+			},
+		},
+	}));
+	await writeFile(providerPolicyPath, JSON.stringify({
+		version: 1,
+		providers: {
+			agentrouter: {
+				modelAliases: { "gpt-5.5": "friendly" },
+				excludedModels: ["*-preview"],
 			},
 		},
 	}));
 	const runtime = await PiRuntime.create({
 		authPath,
 		modelsPath,
+		providerPolicyPath,
 		allowModelNetwork: false,
 	});
 	let prompts = 0;
@@ -62,11 +86,10 @@ test("pinned Pi runtime stores a custom-provider API key and exposes its model",
 	const authMetadata = await stat(authPath);
 	assert.equal(authMetadata.isFile(), true);
 	assert.equal(authMetadata.mode & 0o777, 0o600);
-	assert.equal(
-		(await runtime.listModels()).some((model) =>
-			model.provider === "agentrouter" && model.id === "gpt-5.5"),
-		true,
-	);
+	const available = (await runtime.listModels())
+		.filter((model) => model.provider === "agentrouter");
+	assert.deepEqual(available.map((model) => model.id), ["friendly"]);
+	assert.equal((await runtime.resolveModel("agentrouter/friendly")).id, "friendly");
 });
 
 test("pinned Pi runtime composes the checked-in AgentRouter client profile", { timeout: 10_000 }, async (t) => {

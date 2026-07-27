@@ -27,46 +27,115 @@ function normalizeWindow(window, index) {
 	};
 }
 
-function normalizeAvailable(provider, result, now) {
+function identity(provider, credential) {
+	return {
+		credential_id: credential.id,
+		credential_label: credential.label,
+		account_id: credential.account_id,
+		account_label: credential.account_label,
+		active: credential.active === true,
+		provider_id: provider.id,
+		provider_name: provider.name,
+		credential_type: credential.type,
+	};
+}
+
+function normalizeAvailable(provider, credential, result, now) {
 	const windows = Array.isArray(result?.windows)
-		? result.windows.slice(0, 8).map(normalizeWindow).filter(Boolean)
+		? result.windows.slice(0, 16).map(normalizeWindow).filter(Boolean)
 		: [];
 	if (windows.length === 0) {
 		throw new Error("Quota adapter returned no valid windows");
 	}
 	return {
-		provider_id: provider.id,
-		provider_name: provider.name,
+		...identity(provider, credential),
 		status: "available",
-		capability: "provider_adapter",
+		capability: "credential_adapter",
 		windows,
 		checked_at: new Date(now()).toISOString(),
 	};
 }
 
-export function createQuotaService({ providers, adapters = new Map(), now = Date.now } = {}) {
+async function mapLimit(items, limit, operation) {
+	const results = new Array(items.length);
+	let next = 0;
+	const workers = Array.from(
+		{ length: Math.min(limit, items.length) },
+		async () => {
+			for (;;) {
+				const index = next;
+				next += 1;
+				if (index >= items.length) {
+					return;
+				}
+				results[index] = await operation(items[index], index);
+			}
+		},
+	);
+	await Promise.all(workers);
+	return results;
+}
+
+export function createQuotaService({
+	providers,
+	credentials,
+	runtime,
+	adapters = new Map(),
+	now = Date.now,
+} = {}) {
 	if (!providers || typeof providers.list !== "function") {
 		throw new TypeError("providers service is required");
 	}
+	if (!credentials || typeof credentials.list !== "function") {
+		throw new TypeError("credentials service is required");
+	}
 	const registry = adapters instanceof Map ? adapters : new Map(Object.entries(adapters));
+
+	async function contexts() {
+		if (typeof runtime?.quotaCredentialContexts === "function") {
+			return runtime.quotaCredentialContexts();
+		}
+		return (await credentials.list()).data;
+	}
+
 	return {
 		async summary() {
-			const providerList = await providers.list();
+			const [providerList, credentialList] = await Promise.all([
+				providers.list(),
+				credentials.list(),
+			]);
 			return {
 				supported_providers: providerList.data
 					.filter((provider) => registry.has(provider.id))
 					.length,
 				total_providers: providerList.data.length,
+				supported_credentials: credentialList.data
+					.filter((credential) =>
+						credential.type === "oauth" && registry.has(credential.provider_id))
+					.length,
+				total_credentials: credentialList.data.length,
 			};
 		},
 		async list() {
-			const providerList = await providers.list();
-			const data = await Promise.all(providerList.data.map(async (provider) => {
+			const [providerList, credentialList] = await Promise.all([
+				providers.list(),
+				contexts(),
+			]);
+			const byId = new Map(providerList.data.map((provider) => [provider.id, provider]));
+			const data = await mapLimit(credentialList.slice(0, 256), 4, async (credential) => {
+				const provider = byId.get(credential.provider_id) ?? {
+					id: credential.provider_id,
+					name: credential.provider_name ?? credential.provider_id,
+				};
 				const adapter = registry.get(provider.id);
-				if (!adapter || typeof adapter.fetch !== "function") {
+				if (
+					credential.type !== "oauth"
+					|| !adapter
+					|| typeof adapter.fetch !== "function"
+					|| typeof credential.resolveAuth !== "function"
+				) {
 					return {
-						provider_id: provider.id,
-						provider_name: provider.name,
+						...identity(provider, credential),
 						status: "unsupported",
 						capability: "none",
 						windows: [],
@@ -75,20 +144,20 @@ export function createQuotaService({ providers, adapters = new Map(), now = Date
 				try {
 					return normalizeAvailable(
 						provider,
-						await adapter.fetch({ provider_id: provider.id }),
+						credential,
+						await adapter.fetch({ credential }),
 						now,
 					);
 				} catch {
 					return {
-						provider_id: provider.id,
-						provider_name: provider.name,
+						...identity(provider, credential),
 						status: "error",
-						capability: "provider_adapter",
+						capability: "credential_adapter",
 						error_code: "quota_unavailable",
 						windows: [],
 					};
 				}
-			}));
+			});
 			return {
 				object: "list",
 				data,

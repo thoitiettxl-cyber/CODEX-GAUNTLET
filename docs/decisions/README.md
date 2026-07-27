@@ -18,3 +18,4 @@ documents here as real choices are accepted, then index them in this file.
 - [0005 — Use Pi provider runtime behind a local Responses gateway](0005-pi-router-local-provider-gateway.md)
 - [0006 — Package Pi Router as a verified Termux SEA](0006-package-pi-router-as-a-verified-termux-sea.md)
 - [0007 — Bound the Pi Router operations console](0007-bound-pi-router-operations-console.md)
+- [0008 — Separate Pi Router keys and isolate provider accounts](0008-separate-pi-router-keys-and-isolate-provider-accounts.md)

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { invalidRequest, notFound } from "../errors.js";
+import { validateAccountId } from "../paths.js";
 import {
 	boundedString,
 	conflict,
@@ -124,6 +125,10 @@ function publicSession(session) {
 		id: session.id,
 		provider_id: session.providerId,
 		provider_name: session.providerName,
+		account_id: session.accountId,
+		account_label: session.accountLabel,
+		credential_id: session.credentialId ?? null,
+		credential_label: session.credentialLabel ?? session.requestedLabel ?? null,
 		auth_type: session.authType,
 		state: session.state,
 		created_at: isoTime(session.createdAt),
@@ -271,12 +276,22 @@ export class AuthSessionService {
 
 	async #run(session, release) {
 		try {
-			await this.runtime.login(session.providerId, session.authType, {
+			const credential = await this.runtime.login(session.providerId, session.authType, {
 				signal: session.controller.signal,
 				prompt: (prompt) => this.#prompt(session, prompt),
 				notify: (event) => this.#appendEvent(session, event),
+			}, {
+				accountId: session.accountId,
+				label: session.requestedLabel,
 			});
 			if (!TERMINAL_STATES.has(session.state)) {
+				session.credentialId = safeText(credential?.id, 64, "") || undefined;
+				session.credentialLabel = safeText(credential?.label, 96, "") || undefined;
+				session.accountLabel = safeText(
+					credential?.account_label,
+					96,
+					session.accountLabel,
+				);
 				session.state = "completed";
 				session.prompt = null;
 				this.#touch(session);
@@ -303,7 +318,7 @@ export class AuthSessionService {
 
 	async create(input) {
 		const body = requireRecord(input);
-		exactKeys(body, new Set(["provider_id", "type"]));
+		exactKeys(body, new Set(["provider_id", "type", "account_id", "label"]));
 		const selectedProvider = providerId(body.provider_id);
 		if (!AUTH_TYPES.has(body.type)) {
 			throw invalidRequest("type must be api_key or oauth.", "invalid_auth_type");
@@ -320,13 +335,36 @@ export class AuthSessionService {
 				"auth_method_unsupported",
 			);
 		}
+		let requestedAccount;
+		if (body.account_id !== undefined) {
+			requestedAccount = validateAccountId(body.account_id);
+		}
+		const requestedLabel = body.label === undefined
+			? undefined
+			: boundedString(body.label, "label", { max: 96 });
+		const target = typeof this.runtime.prepareLogin === "function"
+			? await this.runtime.prepareLogin({
+				providerId: selectedProvider,
+				accountId: requestedAccount,
+			})
+			: {
+				account_id: requestedAccount ?? "default",
+				account_label: requestedAccount ?? "default",
+			};
 		this.#evictTerminal();
-		const release = this.coordinator.acquire(selectedProvider);
+		const release = this.coordinator.acquire(
+			`${target.account_id}:${selectedProvider}`,
+		);
 		const createdAt = this.now();
 		const session = {
 			id: randomUUID(),
 			providerId: selectedProvider,
 			providerName: selected.name,
+			accountId: target.account_id,
+			accountLabel: target.account_label,
+			requestedLabel,
+			credentialId: undefined,
+			credentialLabel: undefined,
 			authType: body.type,
 			state: "running",
 			createdAt,

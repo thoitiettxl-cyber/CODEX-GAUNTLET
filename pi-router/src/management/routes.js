@@ -32,6 +32,36 @@ export async function routeManagement({
 		json(response, 200, await management.listProviders());
 		return true;
 	}
+	if (method === "GET" && path === "/management/api/proxy-keys") {
+		json(response, 200, await management.listProxyKeys());
+		return true;
+	}
+	if (method === "POST" && path === "/management/api/proxy-keys") {
+		const body = await readJson(request, maxBodyBytes);
+		json(response, 201, await management.createProxyKey(body));
+		return true;
+	}
+	const proxyKeyMatch = path.match(
+		/^\/management\/api\/proxy-keys\/([^/]+)(?:\/(replace))?$/u,
+	);
+	if (proxyKeyMatch) {
+		const id = decoded(proxyKeyMatch[1]);
+		const action = proxyKeyMatch[2];
+		if (method === "PATCH" && !action) {
+			const body = await readJson(request, maxBodyBytes);
+			json(response, 200, await management.updateProxyKey(id, body));
+			return true;
+		}
+		if (method === "POST" && action === "replace") {
+			const body = await readJson(request, maxBodyBytes);
+			json(response, 200, await management.replaceProxyKey(id, body));
+			return true;
+		}
+		if (method === "DELETE" && !action) {
+			json(response, 200, await management.removeProxyKey(id));
+			return true;
+		}
+	}
 	if (method === "GET" && path === "/management/api/credentials") {
 		json(response, 200, await management.listCredentials());
 		return true;

@@ -160,9 +160,21 @@ async function main() {
 	}
 
 	const localKey = randomBytes(24).toString("base64url");
+	const managementKey = randomBytes(24).toString("base64url");
 	const server = createPiRouterServer({
 		runtime: new PiRuntime(upstream),
-		apiKey: localKey,
+		managementKey,
+		proxyKeyStore: {
+			authorize(value) {
+				return value === localKey;
+			},
+			count() {
+				return 1;
+			},
+			list() {
+				return { object: "list", data: [] };
+			},
+		},
 	});
 	const address = await listenPiRouter(server, { host: "127.0.0.1", port: 0 });
 	const baseUrl = `http://127.0.0.1:${address.port}`;
