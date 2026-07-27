@@ -35,6 +35,7 @@ No active plans.
 
 ## Recently Completed
 
+- `TERMUX-009` — [Rebuild Pi Router Management Center as an operations console](completed/pi-router-operations-console.md)
 - `TERMUX-007` — [Build the Pi Router MVP](completed/pi-router-mvp.md)
 - `TERMUX-006` — [Add Pi session continuity parity](completed/pi-session-continuity.md)
 - `TERMUX-005` — [Add a project-local Pi Gauntlet adapter](completed/pi-project-gauntlet.md)

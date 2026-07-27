@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline/promises";
 
 import { RouterError } from "./errors.js";
-import { createManagementService } from "./management.js";
+import { createManagementService } from "./management/index.js";
 import { PiRuntime } from "./pi-runtime.js";
 import { ensureStatePaths, statePaths } from "./paths.js";
 import { createPiRouterServer, listenPiRouter } from "./server.js";
@@ -14,7 +14,7 @@ import { BINARY_BUILD, VERSION } from "./version.js";
 
 const HELP = `pi-router - local OpenAI Responses gateway backed by Pi providers
 
-Pi Router Management Center: runtime status, provider probes, and verified releases.
+Pi Router Management Center: providers, auth, quota, logs, config, and verified releases.
 
 Usage:
   pi-router serve [--host 127.0.0.1] [--port 8318] [--account NAME] [--state-dir PATH]
@@ -325,6 +325,7 @@ export async function runCli(
 			runtime,
 			account: paths.account,
 			updater,
+			modelsPath: paths.modelsPath,
 		});
 		const result = await management.status();
 		output.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -337,6 +338,7 @@ export async function runCli(
 		apiKey,
 		account: paths.account,
 		updater,
+		modelsPath: paths.modelsPath,
 	});
 	const address = await listen(server, { host: parsed.host, port: parsed.port });
 	const displayHost = typeof address === "object" && address?.family === "IPv6"

@@ -5,12 +5,15 @@ import { createServer } from "node:http";
 import {
 	RouterError,
 	errorEnvelope,
-	invalidRequest,
 	notFound,
 	safeError,
 	unauthorized,
 } from "./errors.js";
-import { createManagementService } from "./management.js";
+import {
+	createManagementService,
+	OperationalEventLog,
+} from "./management/index.js";
+import { routeManagement } from "./management/routes.js";
 import { publicModel } from "./pi-runtime.js";
 import { collectResponse, requestToPi, sseFrame, translatePiStream } from "./responses.js";
 import { GithubUpdateManager } from "./update.js";
@@ -37,7 +40,9 @@ function inlineSourceHash(tag, html) {
 const MANAGEMENT_CSP = [
 	"default-src 'none'",
 	`script-src ${inlineSourceHash("script", MANAGEMENT_HTML)}`,
+	"script-src-attr 'none'",
 	`style-src ${inlineSourceHash("style", MANAGEMENT_HTML)}`,
+	"style-src-attr 'none'",
 	"connect-src 'self'",
 	"img-src data:",
 	"base-uri 'none'",
@@ -176,27 +181,15 @@ async function routeRequest(request, response, options) {
 		requireAuth(request, options.apiKey);
 	}
 
-	if (request.method === "GET" && url.pathname === "/management/api/status") {
-		json(response, 200, await options.management.status());
-		return;
-	}
-
-	if (request.method === "POST" && url.pathname === "/management/api/updates/check") {
-		json(response, 200, await options.management.checkUpdate());
-		return;
-	}
-
-	if (request.method === "POST" && url.pathname === "/management/api/updates/install") {
-		const body = await readJson(request, options.maxBodyBytes);
-		if (!body || typeof body !== "object" || Array.isArray(body)) {
-			throw invalidRequest("Request body must be a JSON object.");
-		}
-		json(response, 200, await options.management.installUpdate(body.version));
-		return;
-	}
-
-	if (request.method === "POST" && url.pathname === "/management/api/updates/rollback") {
-		json(response, 200, await options.management.rollbackUpdate());
+	if (url.pathname.startsWith("/management/api/") && await routeManagement({
+		request,
+		response,
+		url,
+		management: options.management,
+		readJson,
+		json,
+		maxBodyBytes: options.maxBodyBytes,
+	})) {
 		return;
 	}
 
@@ -212,6 +205,8 @@ async function routeRequest(request, response, options) {
 	if (request.method === "POST" && url.pathname === "/v1/responses") {
 		const body = await readJson(request, options.maxBodyBytes);
 		const model = await options.runtime.resolveModel(body.model);
+		request.piRouterEvent.model = `${model.provider}/${model.id}`;
+		request.piRouterEvent.provider = model.provider;
 		const converted = requestToPi(body, model, options.now());
 		const abortController = new AbortController();
 		request.once("aborted", () => abortController.abort());
@@ -261,8 +256,12 @@ export function createPiRouterServer({
 	account = "default",
 	updater = new GithubUpdateManager(),
 	management,
+	modelsPath,
+	quotaAdapters,
+	authSessionOptions,
 	maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
 	now = Date.now,
+	eventLog = new OperationalEventLog({ now }),
 } = {}) {
 	if (!runtime) {
 		throw new TypeError("runtime is required");
@@ -279,17 +278,52 @@ export function createPiRouterServer({
 		runtime,
 		account,
 		updater,
+		modelsPath,
 		startedAt: now(),
 		now,
+		eventLog,
+		quotaAdapters,
+		authSessionOptions,
 	});
-	const options = { runtime, apiKey, management: managementService, maxBodyBytes, now };
+	const options = {
+		runtime,
+		apiKey,
+		management: managementService,
+		maxBodyBytes,
+		now,
+	};
 	return createServer((request, response) => {
+		const startedAt = now();
+		let pathname = "/";
+		try {
+			pathname = new URL(request.url ?? "/", "http://pi-router.local").pathname;
+		} catch {
+			pathname = "/invalid";
+		}
+		request.piRouterEvent = {
+			requestClass: eventLog.classify(request.method ?? "", pathname),
+		};
+		let recorded = false;
+		const recordEvent = () => {
+			if (recorded) {
+				return;
+			}
+			recorded = true;
+			eventLog.record({
+				...request.piRouterEvent,
+				status: response.statusCode,
+				durationMs: now() - startedAt,
+			});
+		};
+		response.once("finish", recordEvent);
+		response.once("close", recordEvent);
 		void routeRequest(request, response, options).catch((error) => {
+			const safe = safeError(error);
+			request.piRouterEvent.errorCode = safe.code;
 			if (response.headersSent || response.destroyed) {
 				response.destroy();
 				return;
 			}
-			const safe = safeError(error);
 			json(response, safe.status, errorEnvelope(safe));
 		});
 	});

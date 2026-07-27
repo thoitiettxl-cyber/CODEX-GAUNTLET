@@ -1,4 +1,4 @@
-# Pi Router MVP contract
+# Pi Router contract
 
 ## Purpose
 
@@ -9,9 +9,9 @@ Responses HTTP contract required by current Codex clients.
 It is a separate optional service. It is not a Pi agent session, a Pi
 extension, a Harness component, or a verification authority.
 
-## Supported MVP surface
+## Supported surface
 
-The MVP provides:
+Pi Router provides:
 
 - a Node.js service backed by
   `@earendil-works/pi-coding-agent` `0.82.1`;
@@ -24,7 +24,7 @@ The MVP provides:
 - `GET /health`;
 - authenticated `GET /v1/models`;
 - authenticated `POST /v1/responses` in JSON and HTTP/SSE modes;
-- a self-contained operator and debugging Web UI at `/` and
+- a self-contained operations console at `/` and
   `/management.html`;
 - a bearer-authenticated Management API below `/management/api/`;
 - stable GitHub release checks, verified binary installation, and one-step
@@ -36,7 +36,7 @@ The MVP provides:
 
 Automatic multi-account routing or rotation, automatic failover, inbound
 Anthropic Messages or Chat Completions endpoints, WebSocket transport, hosted
-deployment, and prompt/body logging are outside the MVP.
+deployment, and prompt/body logging are outside the current product surface.
 
 ## Runtime and state
 
@@ -76,9 +76,10 @@ loopback listener; all model discovery and inference requests retain the
 
 Every `/management/api/*` route requires the same router-local bearer as
 `/v1/*`. Management responses may report bounded service, runtime, account,
-model-count, and release state, but never return credentials, authorization
-headers, prompts, Responses payloads, environment values, or raw state and
-executable paths.
+provider, credential-metadata, model-count, quota-capability, operational
+event, configuration, and release state. They never return stored credential
+values, authorization headers, inference prompts or bodies, environment
+values, raw upstream bodies, or raw state and executable paths.
 
 Request bodies and authorization headers are not logged. Error responses use
 an OpenAI-style bounded JSON error envelope and never include raw upstream
@@ -95,38 +96,81 @@ forwarded by Pi's request runtime. The AgentRouter example sets
 `User-Agent: pi-coding-agent`, which identifies the pinned Pi runtime without
 injecting the Pi agent system prompt or loading an agent session.
 
-## Operator Web UI
+## Operations console
 
 The Web UI source uses React and TypeScript and builds to one committed,
 self-contained HTML file. It has no CDN, remote font, telemetry, or other
 browser-side dependency. The server provides a restrictive content security
 policy with hashes for the inline script and style, disables framing, and
-prevents caching.
+prevents caching. The console uses stable hash routes and exactly this primary
+navigation:
 
-The UI supports:
+```text
+OPERATE
+  Dashboard
+GATEWAY
+  AI Providers
+  Auth Files
+  OAuth Login
+OBSERVE
+  Quota Management
+  Logs Viewer
+CONTROL
+  Config Panel
+```
 
-- health and authenticated model discovery against its serving origin;
-- structured text, reasoning, and strict function-tool request templates;
-- editable raw Responses JSON;
-- JSON and SSE requests with live output, ordered event inspection, function
-  call payloads, usage, HTTP status, and elapsed time;
-- browser cancellation, which exercises the server's provider abort path;
-- copying response data and a sanitized curl command that references
-  `$PI_ROUTER_API_KEY` without containing the entered bearer.
+Wide screens use a grouped sidebar. Narrow screens use a labelled,
+focus-managed drawer that closes on selection, Escape, or backdrop activation.
+Reload, browser back/forward, and copied loopback URLs restore the selected
+page. Unknown hashes resolve to Dashboard. The shell includes a skip link,
+visible keyboard focus, reduced-motion behavior, named form controls, status
+announcements, empty/loading/error states, and confirmation for credential,
+configuration-recovery, install, and rollback mutations.
 
-The bearer, prompts, request bodies, and responses stay in page memory and are
-not written to local storage, session storage, IndexedDB, cookies, or router
-logs. Reloading the page clears them. Provider login/logout, credential
-mutation, `models.json` editing, account switching, and request history remain
-CLI or out-of-scope operations.
+The Dashboard reports bounded operational state rather than a decorative
+network topology: service/version/uptime, selected account, configured
+provider and credential counts, available models, recent request/error
+activity, quota capability count, configuration activation state, and
+update/rollback posture. Verified update check, install, and rollback remain
+available from Dashboard without becoming a separate top-level page.
+
+The bearer and all login input stay only in current page memory. The page does
+not use local storage, session storage, IndexedDB, cookies, or persistent
+browser caches. Reloading clears the bearer, transient auth sessions, filters,
+configuration drafts, and API results. The console does not provide an
+inference prompt bench or retain request history; `/v1/responses` behavior
+remains available to authenticated API clients.
 
 ## Management API
 
 The Management API provides:
 
 - `GET /management/api/status`, which performs no release-network request and
-  returns bounded service, runtime, selected-account, model-count, and updater
-  capability data;
+  returns bounded service, runtime, selected-account, provider, credential,
+  model, activity, quota-capability, configuration, and updater posture;
+- `GET /management/api/providers`, which returns provider identity, supported
+  auth modes, whether each mode has an interactive login, configured source,
+  total/available model counts, and a bounded availability state;
+- `GET /management/api/credentials`, which returns only provider id, display
+  name, and credential type for stored credentials;
+- `DELETE /management/api/credentials/:provider`, which serializes with login
+  for that provider and removes only that exact stored credential;
+- `POST /management/api/auth/sessions`, which creates one bounded `api_key` or
+  `oauth` login session for an exact provider;
+- `GET /management/api/auth/sessions/:id`,
+  `POST /management/api/auth/sessions/:id/respond`, and
+  `POST /management/api/auth/sessions/:id/cancel`, which expose only safe
+  prompt metadata, auth URLs, device codes, progress, and terminal state;
+- `GET /management/api/quota`, which invokes only explicitly registered
+  provider quota adapters and returns a typed `unsupported` state for every
+  other provider;
+- `GET /management/api/events?limit=N`, which returns a newest-first view of
+  the bounded sanitized in-memory operational event buffer;
+- `GET /management/api/config`, `POST /management/api/config/preview`,
+  `POST /management/api/config/apply`, and
+  `POST /management/api/config/restore`, which expose the validated safe
+  `models.json` subset, produce a field diff, use a revision precondition, and
+  atomically replace or restore router-owned configuration;
 - `POST /management/api/updates/check`, which checks the latest stable GitHub
   release and returns a sanitized candidate summary;
 - `POST /management/api/updates/install` with the exact candidate `version`,
@@ -140,9 +184,46 @@ rollback as unsupported; it never treats the Node interpreter as a router
 binary. Successful installation or rollback takes effect only after the
 serving process restarts.
 
-The Management API does not expose provider login/logout, credential mutation,
-arbitrary command execution, arbitrary path selection, account switching,
-`models.json` editing, process restart, or request history.
+Auth sessions use unguessable ids, expire after five minutes, are single-use,
+and retain at most sixteen active/recent sessions. A provider has at most one
+credential mutation in flight. Cancelling or expiring a session aborts its
+runtime interaction and cannot delete a previously valid credential. Prompt
+responses are accepted once and are never echoed in a session response,
+event, log, or error.
+
+Quota is never inferred from request token usage. The default adapter registry
+performs no provider quota request. A provider-specific adapter may be added
+only after its endpoint, credential use, response bounds, normalization, and
+failure semantics are reviewed and tested. Reading quota is an explicit
+operator action.
+
+The event buffer retains at most 250 records for the current process and has
+no persistent backing. A record may contain only an opaque event id,
+timestamp, fixed request class, HTTP status, bounded duration, sanitized
+model/provider identity, and bounded error code. It never contains URL query
+strings, headers, credentials, prompts, request/response bodies, environment
+values, upstream bodies, or filesystem paths.
+
+The Config Panel is not a raw-file editor. Its initial schema accepts a
+router-owned `providers` object and the reviewed non-secret Pi model/provider
+fields. It rejects `apiKey`, sensitive header names, unknown top-level or
+provider/model fields, oversized documents, and unsupported value shapes.
+Only non-secret `User-Agent`, `Accept`, `Content-Type`, `X-Client-Name`, and
+`X-Client-Version` headers are editable through this API. Endpoint URLs cannot
+embed URL credentials, query parameters, or fragments. Complex routing and
+chat-template compatibility objects remain CLI-only until their exact shapes
+receive a separate review. Preview returns a bounded field diff and current
+revision. A draft with more than 200 field changes is rejected so a bounded
+preview never hides changes that Apply would write. Apply must present that
+revision, revalidates under a single mutation lock, retains the last validated
+document, writes with mode `0600` through same-directory atomic renames, and
+reports whether the runtime reloaded or restart is required. Restore uses the
+same revision and validation rules. Neither operation returns a state path.
+
+The Management API does not expose raw credential import/export, arbitrary
+command execution, arbitrary path selection, account switching, environment
+editing, executable targets, raw credential files, process restart, provider
+request bodies, or inference request history.
 
 ## GitHub update contract
 
@@ -248,6 +329,16 @@ Executable proof must cover:
 - the self-contained operator page, browser security headers, and the
   unauthenticated page load not touching the authenticated model runtime;
 - management authentication and bounded status without release networking;
+- provider inventory and metadata-only credential enumeration;
+- expiring, cancellable, single-use auth sessions and serialized provider
+  mutations without credential echo;
+- explicit quota capability adapters and deterministic unsupported states;
+- bounded sanitized in-memory events without prompt, body, header, path, or
+  credential leakage;
+- configuration schema rejection, preview/revision conflict, atomic apply,
+  retained restore, and activation reporting;
+- all seven stable hash routes, accessible desktop/drawer navigation,
+  destructive confirmations, and narrow-screen states;
 - deterministic GitHub release selection, version matching, checksums,
   download bounds, Android ELF validation, atomic install, rollback, source
   mode refusal, and concurrent-mutation rejection;

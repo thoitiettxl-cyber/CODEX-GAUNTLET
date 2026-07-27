@@ -46,10 +46,36 @@ export function addressUrl(address) {
 	return `http://${host}:${address.port}`;
 }
 
-export function fakeRuntime({ stream = () => textStream() } = {}) {
+export function fakeRuntime({
+	stream = () => textStream(),
+	providers = [{
+		id: "fake",
+		name: "Fake Provider",
+		auth_modes: [
+			{ type: "api_key", login_supported: true },
+			{ type: "oauth", login_supported: true },
+		],
+		configured: true,
+		configured_source: "stored",
+		credential_type: "api_key",
+		model_count: 1,
+		available_model_count: 1,
+		state: "available",
+	}],
+	credentials = [],
+	login = async () => ({ type: "api_key" }),
+	logout = async () => {},
+	refreshConfiguration = async () => {},
+} = {}) {
 	return {
 		async listModels() {
 			return [MODEL];
+		},
+		async listProviderMetadata() {
+			return providers;
+		},
+		async listCredentialMetadata() {
+			return credentials;
 		},
 		async resolveModel(name) {
 			if (name !== "fake/model" && name !== "model") {
@@ -58,5 +84,8 @@ export function fakeRuntime({ stream = () => textStream() } = {}) {
 			return MODEL;
 		},
 		stream,
+		login,
+		logout,
+		refreshConfiguration,
 	};
 }

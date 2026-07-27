@@ -10,6 +10,29 @@ function wrapped(models = [MODEL]) {
 		async getAvailable() {
 			return models;
 		},
+		getProviders() {
+			return [{
+				id: "fake",
+				name: "Fake Provider",
+				auth: {
+					apiKey: { login() {} },
+					oauth: { login() {} },
+				},
+			}];
+		},
+		getModels() {
+			return models;
+		},
+		async listCredentials() {
+			return [{ providerId: "fake", type: "api_key" }];
+		},
+		getProviderAuthStatus() {
+			return {
+				configured: true,
+				source: "stored",
+				label: "/must-not-expose/auth.json",
+			};
+		},
 		streamSimple(...args) {
 			calls.push(["stream", ...args]);
 			return "stream";
@@ -20,6 +43,9 @@ function wrapped(models = [MODEL]) {
 		},
 		async logout(...args) {
 			calls.push(["logout", ...args]);
+		},
+		async refresh(...args) {
+			calls.push(["refresh", ...args]);
 		},
 	});
 	return { runtime, calls };
@@ -48,11 +74,37 @@ test("PiRuntime delegates streaming and credential operations", async () => {
 	assert.equal(runtime.stream(MODEL, context, { reasoning: "low" }), "stream");
 	await runtime.login("fake", "api_key", interaction);
 	await runtime.logout("fake");
-	assert.deepEqual(calls.map((call) => call[0]), ["stream", "login", "logout"]);
+	await runtime.refreshConfiguration();
+	assert.deepEqual(calls.map((call) => call[0]), ["stream", "login", "logout", "refresh"]);
 	assert.deepEqual(publicModel(MODEL), {
 		id: "fake/model",
 		object: "model",
 		created: 0,
 		owned_by: "fake",
 	});
+});
+
+test("PiRuntime exposes only provider and credential metadata to management", async () => {
+	const { runtime } = wrapped();
+	const providers = await runtime.listProviderMetadata();
+	assert.deepEqual(providers, [{
+		id: "fake",
+		name: "Fake Provider",
+		auth_modes: [
+			{ type: "api_key", login_supported: true },
+			{ type: "oauth", login_supported: true },
+		],
+		configured: true,
+		configured_source: "stored",
+		credential_type: "api_key",
+		model_count: 1,
+		available_model_count: 1,
+		state: "available",
+	}]);
+	assert.doesNotMatch(JSON.stringify(providers), /must-not-expose|auth\\.json/);
+	assert.deepEqual(await runtime.listCredentialMetadata(), [{
+		provider_id: "fake",
+		provider_name: "Fake Provider",
+		type: "api_key",
+	}]);
 });

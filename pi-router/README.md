@@ -98,20 +98,24 @@ Open the self-contained Management Center:
 http://127.0.0.1:8318/management.html
 ```
 
-Enter the same local `PI_ROUTER_API_KEY` used by API clients. **Overview**
-shows bounded service, account, model, runtime, and release posture.
-**Probe** retains the full Responses request bench: it can load models,
-compose or edit raw requests, inspect JSON or ordered SSE events, render
-function calls and usage, cancel an active provider request, and copy a curl
-command with a key placeholder. **Updates** checks stable GitHub releases and,
-when running the packaged binary, installs an exact verified candidate or
-restores the retained previous binary. It cannot log in providers, expose
-credentials, edit router state, or restart the process.
+Enter the same local `PI_ROUTER_API_KEY` used by API clients. The console has
+seven stable hash-routed pages: **Dashboard**, **AI Providers**, **Auth
+Files**, **OAuth Login**, **Quota Management**, **Logs Viewer**, and **Config
+Panel**. Dashboard also owns explicit stable-release check, verified install,
+and rollback actions without adding another top-level page.
 
-The UI has no external browser assets and does not persist the bearer,
-prompts, requests, or responses. Reloading clears the page memory. The HTML
-itself is unauthenticated, while every `/v1/*` and `/management/api/*` request
-it makes retains the normal bearer requirement.
+Credential lists are metadata-only. API-key and OAuth login use bounded,
+expiring browser sessions; prompt responses are submitted once and never
+echoed. Quota is provider-adapter-specific and unsupported elsewhere. Logs are
+sanitized, capped at 250 process-memory records, and never contain prompts,
+bodies, headers, credentials, environment values, or paths. Config Panel edits
+only the reviewed non-secret `models.json` subset through validation, diff,
+revision compare-and-set, atomic replacement, and retained recovery.
+
+The UI has no external browser assets and does not persist the bearer, login
+input, filters, config drafts, or API results. Reloading clears page memory.
+The HTML itself is unauthenticated, while every `/v1/*` and
+`/management/api/*` request retains the normal bearer requirement.
 
 Useful checks:
 
@@ -121,6 +125,8 @@ curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
   http://127.0.0.1:8318/v1/models
 curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
   http://127.0.0.1:8318/management/api/status
+curl -H "Authorization: Bearer $PI_ROUTER_API_KEY" \
+  http://127.0.0.1:8318/management/api/providers
 ```
 
 Source mode may check releases but refuses install and rollback so it can
@@ -128,7 +134,7 @@ never replace the Node interpreter. The packaged binary supports:
 
 ```bash
 pi-router update check
-pi-router update install 0.2.1
+pi-router update install VERSION
 pi-router update rollback
 ```
 

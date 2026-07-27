@@ -19,6 +19,70 @@ export class PiRuntime {
 		return [...(await this.runtime.getAvailable())];
 	}
 
+	async listProviderMetadata() {
+		const providers = [...this.runtime.getProviders()];
+		const allModels = [...this.runtime.getModels()];
+		const credentials = [...await this.runtime.listCredentials()];
+		let availableModels = [];
+		let availabilityFailed = false;
+		try {
+			availableModels = await this.listModels();
+		} catch {
+			availabilityFailed = true;
+		}
+		const stored = new Map(credentials.map((entry) => [entry.providerId, entry.type]));
+		return providers.map((provider) => {
+			const configured = this.runtime.getProviderAuthStatus(provider.id);
+			const modelCount = allModels.filter((model) => model.provider === provider.id).length;
+			const availableModelCount = availableModels
+				.filter((model) => model.provider === provider.id)
+				.length;
+			return {
+				id: provider.id,
+				name: provider.name,
+				auth_modes: [
+					provider.auth?.apiKey
+						? {
+							type: "api_key",
+							login_supported: typeof provider.auth.apiKey.login === "function",
+						}
+						: undefined,
+					provider.auth?.oauth
+						? {
+							type: "oauth",
+							login_supported: typeof provider.auth.oauth.login === "function",
+						}
+						: undefined,
+				].filter(Boolean),
+				configured: configured?.configured === true,
+				configured_source: typeof configured?.source === "string"
+					? configured.source
+					: undefined,
+				credential_type: stored.get(provider.id),
+				model_count: modelCount,
+				available_model_count: availableModelCount,
+				state: availabilityFailed
+					? "error"
+					: (
+						configured?.configured === true
+							? (availableModelCount > 0 ? "available" : "configured")
+							: "unconfigured"
+					),
+			};
+		});
+	}
+
+	async listCredentialMetadata() {
+		const providers = new Map(
+			this.runtime.getProviders().map((provider) => [provider.id, provider.name]),
+		);
+		return [...await this.runtime.listCredentials()].map((credential) => ({
+			provider_id: credential.providerId,
+			provider_name: providers.get(credential.providerId) ?? credential.providerId,
+			type: credential.type,
+		}));
+	}
+
 	async resolveModel(requested) {
 		if (typeof requested !== "string" || !requested.trim()) {
 			throw invalidRequest("The model field is required.", "model_required");
@@ -58,6 +122,10 @@ export class PiRuntime {
 
 	async logout(providerId) {
 		await this.runtime.logout(providerId);
+	}
+
+	async refreshConfiguration() {
+		await this.runtime.refresh({ allowNetwork: false });
 	}
 }
 

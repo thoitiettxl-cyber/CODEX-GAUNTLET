@@ -7,11 +7,13 @@ The service is a loopback OpenAI Responses gateway backed by Pi
 `ModelRuntime`; it is not a Gauntlet verification authority or a Pi agent
 session.
 
-The product contract is [Pi Router MVP](../product/pi-router.md). Runtime
+The product contract is [Pi Router](../product/pi-router.md). Runtime
 ownership is recorded in
 [ADR 0005](../decisions/0005-pi-router-local-provider-gateway.md), and native
 packaging/update ownership is recorded in
 [ADR 0006](../decisions/0006-package-pi-router-as-a-verified-termux-sea.md).
+The browser management boundary is recorded in
+[ADR 0007](../decisions/0007-bound-pi-router-operations-console.md).
 
 ## Prerequisites
 
@@ -49,7 +51,7 @@ models.json
 
 Use `--state-dir` or `PI_ROUTER_STATE_DIR` for a different root. Use
 `--account` to select an isolated credential store. One server process uses
-one account; the MVP does not rotate accounts.
+one account; Pi Router does not rotate accounts.
 
 Before backing up or moving state, stop the serving process. Treat
 `auth.json` as a secret: do not print it, commit it, or copy it into Pi's own
@@ -146,25 +148,33 @@ Open the UI from the same loopback listener:
 http://127.0.0.1:8318/management.html
 ```
 
-Enter the serving process's `PI_ROUTER_API_KEY`. **Overview** reports bounded
-runtime, selected-account, model, and update posture. **Probe** selects one of
-the discovered models and sends a template or raw JSON request. Streaming mode
-shows the ordered Responses SSE lifecycle; Escape or **Cancel** disconnects
-the browser request and aborts the provider signal. **Copy curl** always emits
-`$PI_ROUTER_API_KEY` instead of the bearer entered in the page. **Updates**
-checks stable releases and, only in the packaged binary, installs the exact
-candidate displayed by the page or restores the retained previous binary.
+Enter the serving process's `PI_ROUTER_API_KEY`. The grouped console exposes:
 
-The page does not perform provider login, logout, account changes, or
-`models.json` edits. Use the CLI for those operations. It also keeps the
-bearer, prompts, request bodies, and responses only in current page memory;
-reload the page to clear them. Do not paste a provider credential into the
-local bearer field.
+- **Dashboard** for bounded runtime, account, activity, config, quota
+  capability, update, and rollback posture;
+- **AI Providers** for provider/auth-mode/model inventory;
+- **Auth Files** for metadata-only stored credentials and confirmed logout;
+- **OAuth Login** for expiring, cancellable API-key or OAuth sessions;
+- **Quota Management** for explicit reviewed adapter reads and typed
+  unsupported states;
+- **Logs Viewer** for at most 250 sanitized process-memory events;
+- **Config Panel** for the reviewed non-secret `models.json` schema with
+  validation, diff, stale-write protection, atomic apply, and restore.
+
+The bearer, login input, filters, drafts, and results stay only in current page
+memory; reload the page to clear them. Do not paste a provider credential into
+the local bearer field. Stored credential values, inference prompts, submitted
+auth responses, request/response bodies, environment values, upstream bodies,
+and raw state paths are absent from management responses and logs. Bounded
+auth prompt instructions, provider-owned sign-in URLs, and device codes are
+visible only during the current login session.
 
 Every `/management/api/*` request uses the same bearer boundary as `/v1/*`.
-Status does not contact GitHub. Update checks contact only the fixed public
-repository; the API never accepts a repository, asset name, download URL, or
-filesystem target from browser input.
+Status does not contact GitHub or provider quota APIs. Update and quota checks
+are explicit actions. Update checks contact only the fixed public repository;
+the API never accepts a repository, asset name, download URL, or filesystem
+target from browser input. Quota requests run only through reviewed
+provider-specific adapters.
 
 For UI source changes, rebuild the committed single HTML artifact and verify
 that it is current:
@@ -246,8 +256,9 @@ and `.sha256` asset names. Building does not create a tag, push, or release.
 - `401` from `pi-router`: ensure the client and serving process use the same
   `PI_ROUTER_API_KEY`. This token is unrelated to the upstream provider key.
 - Unknown model: use the exact `provider/model` returned by `/v1/models`.
-- Corrupt custom model config: stop the service, restore the previous
-  `models.json`, and start again. Credential state is independent.
+- Corrupt custom model config: if Config Panel reports a valid recovery input,
+  use its confirmed restore action. Otherwise stop the service, restore the
+  previous `models.json`, and start again. Credential state is independent.
 - Revoke one credential:
   `node pi-router/src/cli.js logout PROVIDER --account ACCOUNT`.
 - Update validation failure: keep running the current process; no installed
@@ -259,8 +270,8 @@ and `.sha256` asset names. Building does not create a tag, push, or release.
   absolute path before these manual renames and keep both `.previous` and
   `.failed` until recovery is confirmed.
 
-Removing an account directory destroys its stored credentials and is not an
-MVP command. Prefer provider logout; make a protected backup before any manual
+Removing an account directory destroys its stored credentials and is not a
+Pi Router command. Prefer provider logout; make a protected backup before any manual
 filesystem recovery.
 
 ## Verification

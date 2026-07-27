@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { createPiRouterServer, listenPiRouter, validateListenHost } from "../src/server.js";
@@ -30,7 +33,7 @@ test("health is bounded and v1 endpoints require bearer authentication", async (
 	t.after(() => closeServer(server));
 	const health = await fetch(`${baseUrl}/health`);
 	assert.equal(health.status, 200);
-	assert.deepEqual(await health.json(), { status: "ok", service: "pi-router", version: "0.2.0" });
+	assert.deepEqual(await health.json(), { status: "ok", service: "pi-router", version: "0.3.0" });
 	const unauthenticated = await fetch(`${baseUrl}/v1/models`);
 	assert.equal(unauthenticated.status, 401);
 	assert.equal((await unauthenticated.json()).error.code, "invalid_api_key");
@@ -91,13 +94,21 @@ test("Management API is authenticated, bounded, and delegates exact update actio
 	assert.equal(statusBody.object, "pi_router.management_status");
 	assert.deepEqual(statusBody.service, {
 		name: "pi-router",
-		version: "0.2.0",
+		version: "0.3.0",
 		status: "ok",
 		uptime_seconds: 0,
 	});
-	assert.deepEqual(statusBody.account, { id: "work", available_models: 1 });
+	assert.deepEqual(statusBody.account, {
+		id: "work",
+		providers: 1,
+		configured_providers: 1,
+		stored_credentials: 0,
+		available_models: 1,
+	});
 	assert.equal(statusBody.runtime.mode, "source");
 	assert.equal(statusBody.update.repository, "owner/repository");
+	assert.deepEqual(statusBody.quota, { supported_providers: 0, total_providers: 1 });
+	assert.equal(statusBody.config.supported, false);
 	assert.doesNotMatch(JSON.stringify(statusBody), /auth\.json|models\.json|local-test-key/);
 
 	const checked = await fetch(`${baseUrl}/management/api/updates/check`, {
@@ -154,15 +165,34 @@ test("management UI is self-contained, unauthenticated, and browser-hardened", a
 		const csp = response.headers.get("content-security-policy");
 		assert.match(csp, /default-src 'none'/);
 		assert.match(csp, /script-src 'sha256-/);
+		assert.match(csp, /script-src-attr 'none'/);
 		assert.match(csp, /style-src 'sha256-/);
+		assert.match(csp, /style-src-attr 'none'/);
 		assert.doesNotMatch(csp, /unsafe-inline/);
 		const body = await response.text();
 		assert.match(body, /<title>Pi Router · Management Center<\/title>/);
 		assert.match(body, /data-pi-router-ui/);
 		assert.match(body, /management-center/);
 		assert.match(body, /\/management\/api\/status/);
+		for (const label of [
+			"Dashboard",
+			"AI Providers",
+			"Auth Files",
+			"OAuth Login",
+			"Quota Management",
+			"Logs Viewer",
+			"Config Panel",
+		]) {
+			assert.match(body, new RegExp(label));
+		}
+		assert.match(body, /href="#main-content">Skip to main content/);
+		assert.match(body, /aria-controls":"primary-navigation"/);
+		assert.match(body, /prefers-reduced-motion/);
+		assert.match(body, /max-width:680px/);
+		assert.doesNotMatch(body, /Responses workbench|Compose a probe/);
 		assert.doesNotMatch(body, /<script[^>]+src=/);
 		assert.doesNotMatch(body, /<link[^>]+href=/);
+		assert.doesNotMatch(body, /style="/);
 		assert.doesNotMatch(body, /localStorage|sessionStorage|indexedDB|document\.cookie/);
 		assert.doesNotMatch(body, /local-test-key/);
 		for (const tag of ["script", "style"]) {
@@ -179,6 +209,149 @@ test("management UI is self-contained, unauthenticated, and browser-hardened", a
 	assert.equal(head.status, 200);
 	assert.equal(await head.text(), "");
 	assert.equal(modelReads, 0);
+});
+
+test("operations APIs cover provider, auth, quota, events, and atomic config workflows", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "pi-router-operations-api-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const modelsPath = join(root, "models.json");
+	const initial = {
+		providers: {
+			fake: {
+				name: "Fake Provider",
+				baseUrl: "https://api.example.test/v1",
+				api: "openai-responses",
+				headers: { "User-Agent": "pi-router" },
+				models: [{ id: "model", name: "Fake Model" }],
+			},
+		},
+	};
+	await writeFile(modelsPath, `${JSON.stringify(initial, null, 2)}\n`);
+	let promptResponse;
+	const runtime = fakeRuntime({
+		credentials: [{
+			provider_id: "fake",
+			provider_name: "Fake Provider",
+			type: "api_key",
+		}],
+		async login(_provider, _type, interaction) {
+			interaction.notify({
+				type: "auth_url",
+				url: "https://example.test/login?state=transient",
+				instructions: "Sign in",
+			});
+			promptResponse = await interaction.prompt({
+				type: "secret",
+				message: "API key",
+			});
+		},
+	});
+	const { server, baseUrl } = await started(runtime, {
+		modelsPath,
+		quotaAdapters: new Map([["fake", {
+			async fetch() {
+				return {
+					windows: [{ label: "Monthly", unit: "requests", used: 2, limit: 10 }],
+				};
+			},
+		}]]),
+	});
+	t.after(() => closeServer(server));
+	const headers = {
+		authorization: "Bearer local-test-key",
+		"content-type": "application/json",
+	};
+
+	const providers = await fetch(`${baseUrl}/management/api/providers`, { headers });
+	assert.equal(providers.status, 200);
+	assert.equal((await providers.json()).data[0].name, "Fake Provider");
+	const credentials = await fetch(`${baseUrl}/management/api/credentials`, { headers });
+	const credentialText = await credentials.text();
+	assert.match(credentialText, /"provider_id":"fake"/);
+	assert.doesNotMatch(credentialText, /auth\\.json|api[_-]?key.*value/i);
+
+	const createdResponse = await fetch(`${baseUrl}/management/api/auth/sessions`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({ provider_id: "fake", type: "api_key" }),
+	});
+	assert.equal(createdResponse.status, 201);
+	const created = await createdResponse.json();
+	assert.equal(created.state, "waiting_for_input");
+	assert.equal(created.prompt.type, "secret");
+	assert.equal(created.events[0].type, "auth_url");
+	const submittedResponse = await fetch(
+		`${baseUrl}/management/api/auth/sessions/${created.id}/respond`,
+		{
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				prompt_id: created.prompt.id,
+				value: "must-never-be-returned",
+			}),
+		},
+	);
+	const submittedText = await submittedResponse.text();
+	assert.doesNotMatch(submittedText, /must-never-be-returned/);
+	await new Promise((resolve) => setImmediate(resolve));
+	const completed = await fetch(
+		`${baseUrl}/management/api/auth/sessions/${created.id}`,
+		{ headers },
+	).then((response) => response.json());
+	assert.equal(completed.state, "completed");
+	assert.equal(promptResponse, "must-never-be-returned");
+
+	const quota = await fetch(`${baseUrl}/management/api/quota`, { headers })
+		.then((response) => response.json());
+	assert.equal(quota.data[0].status, "available");
+	assert.equal(quota.data[0].windows[0].remaining, 8);
+
+	const config = await fetch(`${baseUrl}/management/api/config`, { headers })
+		.then((response) => response.json());
+	assert.equal(config.editable, true);
+	const candidate = structuredClone(initial);
+	candidate.providers.fake.models.push({ id: "second", name: "Second" });
+	const preview = await fetch(`${baseUrl}/management/api/config/preview`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({ document: candidate }),
+	}).then((response) => response.json());
+	assert.equal(preview.valid, true);
+	assert.equal(preview.changed, true);
+	const applied = await fetch(`${baseUrl}/management/api/config/apply`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({
+			document: candidate,
+			expected_revision: preview.revision,
+		}),
+	}).then((response) => response.json());
+	assert.equal(applied.status, "applied");
+	const restored = await fetch(`${baseUrl}/management/api/config/restore`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({ expected_revision: applied.revision }),
+	}).then((response) => response.json());
+	assert.equal(restored.status, "restored");
+
+	const removed = await fetch(`${baseUrl}/management/api/credentials/fake`, {
+		method: "DELETE",
+		headers,
+	}).then((response) => response.json());
+	assert.equal(removed.status, "removed");
+	const eventsResponse = await fetch(`${baseUrl}/management/api/events?limit=100`, { headers });
+	const eventsText = await eventsResponse.text();
+	assert.match(eventsText, /management\.auth/);
+	assert.match(eventsText, /management\.config/);
+	assert.doesNotMatch(eventsText, /must-never-be-returned|Bearer local-test-key|models\\.json/);
+
+	const badLimit = await fetch(`${baseUrl}/management/api/events?limit=999`, { headers });
+	assert.equal(badLimit.status, 400);
+	const missingSession = await fetch(
+		`${baseUrl}/management/api/auth/sessions/00000000-0000-0000-0000-000000000000`,
+		{ headers },
+	);
+	assert.equal(missingSession.status, 404);
 });
 
 test("non-streaming responses return a Responses JSON object", async (t) => {

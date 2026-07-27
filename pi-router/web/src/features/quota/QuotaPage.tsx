@@ -1,0 +1,184 @@
+import { useState } from "react";
+
+import {
+	Badge,
+	Button,
+	Card,
+	EmptyState,
+	ErrorState,
+	InlineNotice,
+	LoadingState,
+	PageHeader,
+	SectionHeader,
+} from "../../components/ui";
+import { Icon } from "../../components/ui/Icon";
+import {
+	errorMessage,
+	type ManagementClient,
+	type QuotaResult,
+} from "../../lib/api";
+import { formatDate, formatNumber } from "../../lib/format";
+
+export function QuotaPage({ client }: { client: ManagementClient }) {
+	const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "error">("idle");
+	const [results, setResults] = useState<QuotaResult[]>([]);
+	const [error, setError] = useState("");
+
+	const load = async () => {
+		setPhase("loading");
+		setError("");
+		try {
+			setResults(await client.quota());
+			setPhase("ready");
+		} catch (caught) {
+			setError(errorMessage(caught));
+			setPhase("error");
+		}
+	};
+
+	const supported = results.filter((result) => result.status === "available").length;
+	const unsupported = results.filter((result) => result.status === "unsupported").length;
+
+	return (
+		<>
+			<PageHeader
+				actions={
+					<Button
+						disabled={phase === "loading"}
+						icon="refresh"
+						onClick={() => void load()}
+						variant="primary"
+					>
+						{phase === "loading" ? "Reading provider quota…" : "Refresh provider quota"}
+					</Button>
+				}
+				description="Real provider-backed limits only. Token usage is never repurposed into a fabricated generic quota."
+				eyebrow="Observe"
+				title="Quota Management"
+			/>
+			<InlineNotice>
+				Quota reads are explicit and adapter-specific. Providers without a reviewed adapter
+				return <strong>Unsupported</strong> without an exploratory network request.
+			</InlineNotice>
+
+			{phase === "idle" ? (
+				<Card>
+					<EmptyState
+						action={<Button icon="quota" onClick={() => void load()} variant="primary">Read quota now</Button>}
+						description="No provider quota request runs when this page opens. Start a bounded read when you need current capacity."
+						icon="quota"
+						title="Quota has not been requested"
+					/>
+				</Card>
+			) : null}
+			{phase === "loading" ? (
+				<Card><LoadingState label="Reading reviewed quota adapters…" /></Card>
+			) : null}
+			{phase === "error" ? (
+				<Card><ErrorState message={error} onRetry={() => void load()} /></Card>
+			) : null}
+			{phase === "ready" ? (
+				<>
+					<div className="summary-strip">
+						<div><span>Providers</span><strong>{formatNumber(results.length)}</strong></div>
+						<div><span>Quota available</span><strong>{formatNumber(supported)}</strong></div>
+						<div><span>Unsupported</span><strong>{formatNumber(unsupported)}</strong></div>
+						<div>
+							<span>Source</span>
+							<Badge tone="info">Provider adapters</Badge>
+						</div>
+					</div>
+					<Card>
+						<SectionHeader
+							description="Each provider reports an independent typed capability and one or more real windows."
+							title="Provider capacity"
+						/>
+						{results.length === 0 ? (
+							<EmptyState
+								description="The runtime did not return any registered providers."
+								icon="providers"
+								title="No providers to inspect"
+							/>
+						) : (
+							<div className="quota-grid">
+								{results.map((result) => (
+									<article className={`quota-card quota-${result.status}`} key={result.provider_id}>
+										<header>
+											<div className="provider-cell">
+												<span className="provider-avatar">{result.provider_name.slice(0, 2).toUpperCase()}</span>
+												<div>
+													<strong>{result.provider_name}</strong>
+													<code>{result.provider_id}</code>
+												</div>
+											</div>
+											<Badge
+												tone={
+													result.status === "available"
+														? "positive"
+														: result.status === "error" ? "negative" : "neutral"
+												}
+											>
+												{result.status}
+											</Badge>
+										</header>
+										{result.status === "available" ? (
+											<>
+												<div className="quota-windows">
+													{result.windows.map((window) => {
+														const percentage = window.limit === 0
+															? 0
+															: Math.min(100, (window.used / window.limit) * 100);
+														return (
+															<div className="quota-window" key={`${window.label}-${window.unit}`}>
+																<div>
+																	<span>{window.label}</span>
+																	<strong>
+																		{formatNumber(window.remaining)} <small>{window.unit} remaining</small>
+																	</strong>
+																</div>
+																<progress
+																	aria-label={`${Math.round(percentage)} percent used`}
+																	className="progress-track"
+																	max={100}
+																	value={percentage}
+																/>
+																<p>
+																	{formatNumber(window.used)} of {formatNumber(window.limit)} used
+																	{window.resets_at ? ` · resets ${formatDate(window.resets_at)}` : ""}
+																</p>
+															</div>
+														);
+													})}
+												</div>
+												<footer>
+													<Icon name="clock" />
+													Checked {formatDate(result.checked_at)}
+												</footer>
+											</>
+										) : (
+											<div className="quota-empty">
+												<Icon name={result.status === "error" ? "warning" : "shield"} />
+												<div>
+													<strong>
+														{result.status === "unsupported"
+															? "No reviewed adapter"
+															: "Adapter unavailable"}
+													</strong>
+													<p>
+														{result.status === "unsupported"
+															? "Pi Router made no quota request for this provider."
+															: "The bounded provider quota read failed without returning a raw response."}
+													</p>
+												</div>
+											</div>
+										)}
+									</article>
+								))}
+							</div>
+						)}
+					</Card>
+				</>
+			) : null}
+		</>
+	);
+}

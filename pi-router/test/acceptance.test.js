@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createPiRouterServer, listenPiRouter } from "../src/server.js";
-import { MODEL, addressUrl, closeServer, message, textStream } from "./helpers.js";
+import { MODEL, addressUrl, closeServer, fakeRuntime, message, textStream } from "./helpers.js";
 
 test("function call and function output complete a two-request Responses round trip", async (t) => {
 	const contexts = [];
 	const runtime = {
+		...fakeRuntime(),
 		async listModels() {
 			return [MODEL];
 		},

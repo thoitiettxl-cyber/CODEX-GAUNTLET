@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { VERSION } from "../src/version.js";
 import { binaryPath } from "./binary-common.js";
 
 function binaryEnvironment(extra = {}) {
@@ -41,7 +42,7 @@ if (uname.stdout.trim() !== "Android" || machine.stdout.trim() !== "aarch64") {
 const root = await mkdtemp(join(tmpdir(), "pi-router-binary-smoke-"));
 let child;
 try {
-	if (command(["--version"]).trim() !== "pi-router 0.2.0") {
+	if (command(["--version"]).trim() !== `pi-router ${VERSION}`) {
 		throw new Error("Binary version output is unexpected.");
 	}
 	if (!command(["help"]).includes("Pi Router Management Center")) {
@@ -78,11 +79,16 @@ try {
 		throw new Error(`Binary server did not start.\n${output}`);
 	}
 	const health = await fetch(`${baseUrl}/health`);
-	if (!health.ok || (await health.json()).version !== "0.2.0") {
+	if (!health.ok || (await health.json()).version !== VERSION) {
 		throw new Error("Binary health smoke failed.");
 	}
 	const html = await (await fetch(`${baseUrl}/management.html`)).text();
-	if (!html.includes("<title>Pi Router · Management Center</title>")) {
+	if (
+		!html.includes("<title>Pi Router · Management Center</title>")
+		|| !html.includes("data-pi-router-ui")
+		|| !html.includes("Quota Management")
+		|| !html.includes("Config Panel")
+	) {
 		throw new Error("Binary Management Center smoke failed.");
 	}
 	const management = await fetch(`${baseUrl}/management/api/status`, {
@@ -90,6 +96,12 @@ try {
 	});
 	if (!management.ok || (await management.json()).runtime?.mode !== "termux-binary") {
 		throw new Error("Binary Management API smoke failed.");
+	}
+	const providers = await fetch(`${baseUrl}/management/api/providers`, {
+		headers: { authorization: "Bearer binary-smoke-key" },
+	});
+	if (!providers.ok || !Array.isArray((await providers.json()).data)) {
+		throw new Error("Binary provider inventory smoke failed.");
 	}
 	process.stdout.write("PASS: native Pi Router Android AArch64 binary smoke.\n");
 } finally {

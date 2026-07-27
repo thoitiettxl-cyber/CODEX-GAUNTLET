@@ -1,0 +1,450 @@
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+
+import {
+	Badge,
+	Button,
+	Card,
+	EmptyState,
+	ErrorState,
+	InlineNotice,
+	LoadingState,
+	PageHeader,
+	SectionHeader,
+} from "../../components/ui";
+import { Icon } from "../../components/ui/Icon";
+import {
+	errorMessage,
+	type AuthSession,
+	type AuthType,
+	type ManagementClient,
+	type ProviderInfo,
+} from "../../lib/api";
+import { useQuery } from "../../lib/api/use-query";
+import { formatDate } from "../../lib/format";
+
+const ACTIVE_STATES = new Set(["running", "waiting_for_input"]);
+
+function sessionTone(state: AuthSession["state"]) {
+	if (state === "completed") {
+		return "positive" as const;
+	}
+	if (["failed", "expired"].includes(state)) {
+		return "negative" as const;
+	}
+	if (state === "cancelled") {
+		return "neutral" as const;
+	}
+	return "info" as const;
+}
+
+function availableModes(provider: ProviderInfo | undefined) {
+	return provider?.auth_modes.filter((mode) => mode.login_supported) ?? [];
+}
+
+export function OAuthPage({
+	client,
+	onMutation,
+	notify,
+}: {
+	client: ManagementClient;
+	onMutation: () => Promise<void>;
+	notify: (message: string, tone?: "positive" | "negative") => void;
+}) {
+	const providersQuery = useQuery("auth-providers", () => client.providers());
+	const [providerId, setProviderId] = useState("");
+	const [authType, setAuthType] = useState<AuthType>("oauth");
+	const [session, setSession] = useState<AuthSession | null>(null);
+	const [promptValue, setPromptValue] = useState("");
+	const [showSecret, setShowSecret] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState("");
+	const providers = providersQuery.data ?? [];
+	const provider = providers.find((entry) => entry.id === providerId);
+	const modes = useMemo(() => availableModes(provider), [provider]);
+
+	useEffect(() => {
+		if (providerId || providers.length === 0) {
+			return;
+		}
+		const first = providers.find((entry) => availableModes(entry).length > 0);
+		if (first) {
+			setProviderId(first.id);
+			setAuthType(
+				availableModes(first).some((mode) => mode.type === "oauth")
+					? "oauth"
+					: "api_key",
+			);
+		}
+	}, [providerId, providers]);
+
+	useEffect(() => {
+		if (!session || !ACTIVE_STATES.has(session.state)) {
+			return;
+		}
+		let active = true;
+		const timer = window.setTimeout(() => {
+			void client.getAuthSession(session.id).then((next) => {
+				if (!active) {
+					return;
+				}
+				setSession(next);
+				if (next.state === "completed" && session.state !== "completed") {
+					notify(`${next.provider_name} authentication completed.`);
+					void onMutation();
+				}
+			}).catch((caught) => {
+				if (active) {
+					setError(errorMessage(caught));
+				}
+			});
+		}, 900);
+		return () => {
+			active = false;
+			window.clearTimeout(timer);
+		};
+	}, [client, notify, onMutation, session]);
+
+	const chooseProvider = (nextId: string) => {
+		setProviderId(nextId);
+		const next = providers.find((entry) => entry.id === nextId);
+		const nextModes = availableModes(next);
+		if (!nextModes.some((mode) => mode.type === authType)) {
+			setAuthType(nextModes[0]?.type ?? "oauth");
+		}
+	};
+
+	const start = async (event: FormEvent) => {
+		event.preventDefault();
+		if (!providerId) {
+			return;
+		}
+		setBusy(true);
+		setError("");
+		setPromptValue("");
+		try {
+			const created = await client.createAuthSession(providerId, authType);
+			setSession(created);
+			if (created.state === "completed") {
+				notify(`${created.provider_name} authentication completed.`);
+				await onMutation();
+			}
+		} catch (caught) {
+			setError(errorMessage(caught));
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const respond = async (event: FormEvent) => {
+		event.preventDefault();
+		if (!session?.prompt) {
+			return;
+		}
+		const value = promptValue;
+		setPromptValue("");
+		setBusy(true);
+		setError("");
+		try {
+			const next = await client.respondAuthSession(session.id, session.prompt.id, value);
+			setSession(next);
+			if (next.state === "completed") {
+				notify(`${next.provider_name} authentication completed.`);
+				await onMutation();
+			}
+		} catch (caught) {
+			setError(errorMessage(caught));
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const cancel = async () => {
+		if (!session) {
+			return;
+		}
+		setBusy(true);
+		try {
+			setSession(await client.cancelAuthSession(session.id));
+			setPromptValue("");
+		} catch (caught) {
+			setError(errorMessage(caught));
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const copy = async (value: string, label: string) => {
+		try {
+			await navigator.clipboard.writeText(value);
+			notify(`${label} copied.`);
+		} catch {
+			notify(`Could not copy ${label.toLowerCase()}.`, "negative");
+		}
+	};
+
+	return (
+		<>
+			<PageHeader
+				description="Run a bounded API-key or OAuth interaction. Sessions expire after five minutes and serialize provider credential mutations."
+				eyebrow="Gateway"
+				title="OAuth Login"
+			/>
+			<InlineNotice>
+				<strong>Single-use session.</strong> Prompt values stay in current page memory, are
+				submitted once, and are never echoed by the Management API or event log.
+			</InlineNotice>
+
+			<div className="auth-layout">
+				<Card>
+					<SectionHeader
+						description="Choose one provider and one runtime-supported authentication method."
+						title="Start authentication"
+					/>
+					{providersQuery.phase === "loading" ? <LoadingState label="Loading auth methods…" /> : null}
+					{providersQuery.phase === "error" ? (
+						<ErrorState message={providersQuery.error} onRetry={providersQuery.refresh} />
+					) : null}
+					{providersQuery.phase === "ready" && providers.length === 0 ? (
+						<EmptyState
+							description="Add a custom provider configuration or inspect runtime startup."
+							icon="providers"
+							title="No providers registered"
+						/>
+					) : null}
+					{providersQuery.phase === "ready" && providers.length > 0 ? (
+						<form className="auth-form" onSubmit={(event) => void start(event)}>
+							<label className="field">
+								<span>Provider</span>
+								<select
+									disabled={Boolean(session && ACTIVE_STATES.has(session.state))}
+									name="provider_id"
+									onChange={(event) => chooseProvider(event.target.value)}
+									value={providerId}
+								>
+									{providers.map((entry) => (
+										<option
+											disabled={availableModes(entry).length === 0}
+											key={entry.id}
+											value={entry.id}
+										>
+											{entry.name}{availableModes(entry).length === 0 ? " — no interactive login" : ""}
+										</option>
+									))}
+								</select>
+							</label>
+							<fieldset className="method-picker">
+								<legend>Authentication method</legend>
+								{modes.map((mode) => (
+									<label key={mode.type} className={authType === mode.type ? "selected" : ""}>
+										<input
+											checked={authType === mode.type}
+											disabled={Boolean(session && ACTIVE_STATES.has(session.state))}
+											name="auth_type"
+											onChange={() => setAuthType(mode.type)}
+											type="radio"
+											value={mode.type}
+										/>
+										<span className="method-icon"><Icon name={mode.type === "oauth" ? "login" : "key"} /></span>
+										<span>
+											<strong>{mode.type === "oauth" ? "OAuth / device login" : "API key"}</strong>
+											<small>
+												{mode.type === "oauth"
+													? "Follow the provider-owned browser or device flow."
+													: "Submit the provider key through one secret prompt."}
+											</small>
+										</span>
+									</label>
+								))}
+							</fieldset>
+							<Button
+								className="auth-start"
+								disabled={busy || modes.length === 0 || Boolean(session && ACTIVE_STATES.has(session.state))}
+								type="submit"
+								variant="primary"
+							>
+								{busy ? "Starting…" : `Start ${authType === "oauth" ? "OAuth" : "API key"} session`}
+							</Button>
+						</form>
+					) : null}
+				</Card>
+
+				<Card className="session-card">
+					<SectionHeader
+						actions={session && ACTIVE_STATES.has(session.state) ? (
+							<Button disabled={busy} onClick={() => void cancel()} variant="danger">Cancel session</Button>
+						) : null}
+						description="Safe progress and prompt metadata from the current in-memory session."
+						title="Session activity"
+					/>
+					{error ? <InlineNotice tone="negative">{error}</InlineNotice> : null}
+					{!session ? (
+						<EmptyState
+							description="Select a provider and start a session. No background login begins on page load."
+							icon="login"
+							title="No active session"
+						/>
+					) : (
+						<div className="session-view">
+							<div className="session-summary">
+								<div>
+									<span>Provider</span>
+									<strong>{session.provider_name}</strong>
+									<code>{session.provider_id}</code>
+								</div>
+								<div>
+									<span>Status</span>
+									<Badge tone={sessionTone(session.state)}>{session.state.replaceAll("_", " ")}</Badge>
+								</div>
+								<div>
+									<span>Expires</span>
+									<strong>{formatDate(session.expires_at)}</strong>
+								</div>
+							</div>
+
+							{session.prompt ? (
+								<form className="prompt-panel" onSubmit={(event) => void respond(event)}>
+									<div className="prompt-heading">
+										<div className="prompt-icon"><Icon name={session.prompt.type === "secret" ? "key" : "login"} /></div>
+										<div>
+											<span>Provider prompt</span>
+											<h3>{session.prompt.message}</h3>
+										</div>
+									</div>
+									{session.prompt.type === "select" ? (
+										<label className="field">
+											<span>Choose an option</span>
+											<select
+												autoFocus
+												name="prompt_response"
+												onChange={(event) => setPromptValue(event.target.value)}
+												value={promptValue}
+											>
+												<option value="">Select one</option>
+												{session.prompt.options?.map((option) => (
+													<option key={option.id} value={option.id}>{option.label}</option>
+												))}
+											</select>
+										</label>
+									) : (
+										<label className="field">
+											<span>{session.prompt.type === "secret" ? "Secret response" : "Response"}</span>
+											<div className={session.prompt.type === "secret" ? "secret-input" : ""}>
+												{session.prompt.type === "secret" ? <Icon name="key" /> : null}
+												<input
+													autoComplete="off"
+													autoFocus
+													name="prompt_response"
+													onChange={(event) => setPromptValue(event.target.value)}
+													placeholder={session.prompt.placeholder ?? "Enter the requested value"}
+													spellCheck={false}
+													type={session.prompt.type === "secret" && !showSecret ? "password" : "text"}
+													value={promptValue}
+												/>
+												{session.prompt.type === "secret" ? (
+													<button onClick={() => setShowSecret((value) => !value)} type="button">
+														{showSecret ? "Hide" : "Show"}
+													</button>
+												) : null}
+											</div>
+										</label>
+									)}
+									<Button
+										disabled={
+											busy
+												|| (
+													session.prompt.type === "select"
+													&& promptValue.length === 0
+												)
+										}
+										type="submit"
+										variant="primary"
+									>
+										{busy ? "Submitting…" : "Submit once"}
+									</Button>
+								</form>
+							) : null}
+
+							{session.events.length > 0 ? (
+								<ol className="auth-timeline">
+									{session.events.map((event) => (
+										<li key={event.id}>
+											<span className="timeline-dot" />
+											<div>
+												<div className="timeline-meta">
+													<Badge tone="neutral">{event.type.replaceAll("_", " ")}</Badge>
+													<time>{formatDate(event.created_at)}</time>
+												</div>
+												{event.message ? <p>{event.message}</p> : null}
+												{event.instructions ? <p>{event.instructions}</p> : null}
+												{event.url ? (
+													<a href={event.url} rel="noreferrer" target="_blank">
+														Open provider sign-in <Icon name="external" />
+													</a>
+												) : null}
+												{event.user_code && event.verification_uri ? (
+													<div className="device-code">
+														<div>
+															<span>Device code</span>
+															<code>{event.user_code}</code>
+														</div>
+														<Button
+															icon="copy"
+															onClick={() => void copy(event.user_code!, "Device code")}
+															size="compact"
+														>
+															Copy
+														</Button>
+														<a href={event.verification_uri} rel="noreferrer" target="_blank">
+															Open verification page <Icon name="external" />
+														</a>
+													</div>
+												) : null}
+												{event.links?.map((link) => (
+													<a href={link.url} key={link.url} rel="noreferrer" target="_blank">
+														{link.label ?? "Provider information"} <Icon name="external" />
+													</a>
+												))}
+											</div>
+										</li>
+									))}
+								</ol>
+							) : (
+								<p className="waiting-copy">
+									<span className={ACTIVE_STATES.has(session.state) ? "spinner" : ""} />
+									{ACTIVE_STATES.has(session.state)
+										? "Waiting for the provider interaction…"
+										: "The session emitted no public progress events."}
+								</p>
+							)}
+
+							{!ACTIVE_STATES.has(session.state) ? (
+								<div className={`session-terminal terminal-${session.state}`}>
+									<Icon name={session.state === "completed" ? "check" : "warning"} />
+									<div>
+										<strong>
+											{session.state === "completed"
+												? "Authentication saved"
+												: `Session ${session.state}`}
+										</strong>
+										<p>
+											{session.state === "completed"
+												? "Provider inventory will refresh without exposing the credential."
+												: `No credential value was returned. ${session.error_code ?? ""}`}
+										</p>
+									</div>
+									<Button onClick={() => {
+										setSession(null);
+										setError("");
+										setPromptValue("");
+									}}>
+										Start another
+									</Button>
+								</div>
+							) : null}
+						</div>
+					)}
+				</Card>
+			</div>
+		</>
+	);
+}

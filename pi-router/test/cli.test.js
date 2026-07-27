@@ -154,6 +154,7 @@ test("serve wires the selected address and local key into the HTTP server", asyn
 		apiKey: "local-only-key",
 		account: "default",
 		updater,
+		modelsPath: join(root, "models.json"),
 	});
 	assert.deepEqual(listenOptions, { host: "::1", port: 9000 });
 	assert.match(output, /http:\/\/\[::1\]:9000/);
@@ -169,7 +170,7 @@ test("update and version commands do not initialize provider state", async () =>
 	const updater = {
 		async check() {
 			calls.push(["check"]);
-			return { status: "current", latest_version: "0.2.0" };
+			return { status: "current", latest_version: "0.3.0" };
 		},
 		async install(version) {
 			calls.push(["install", version]);
@@ -198,9 +199,9 @@ test("update and version commands do not initialize provider state", async () =>
 		["install", "0.3.0"],
 		["rollback"],
 	]);
-	assert.match(output, /"latest_version": "0.2.0"/);
-	assert.match(output, /pi-router 0\.2\.0/);
-	assert.deepEqual(version, { command: "version", version: "0.2.0" });
+	assert.match(output, /"latest_version": "0.3.0"/);
+	assert.match(output, /pi-router 0\.3\.0/);
+	assert.deepEqual(version, { command: "version", version: "0.3.0" });
 });
 
 test("help does not initialize state or runtime", async () => {
