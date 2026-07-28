@@ -1,0 +1,674 @@
+#!/system/bin/sh
+
+set -u
+
+MODULE_DIR=${CPA_MODULE_DIR:-/data/adb/modules/cli_proxy_api}
+DATA_DIR=${CPA_DATA_DIR:-/data/local/cli-proxy-api}
+CURRENT=$DATA_DIR/current
+CONFIG=$DATA_DIR/config/config.yaml
+AUTH_DIR=$DATA_DIR/auth
+PLUGIN_DATA_DIR=$DATA_DIR/data/codex-token-usage
+PLUGIN_ROOT=$DATA_DIR/plugins
+PLUGIN_DIR=$PLUGIN_ROOT/linux/arm64
+RUN_DIR=$DATA_DIR/run
+LOG_DIR=$DATA_DIR/logs
+BACKUP_DIR=$DATA_DIR/backups
+PID_FILE=$RUN_DIR/cpa.pid
+LOCK_FILE=$RUN_DIR/cpa.lock
+ENABLED_FILE=$RUN_DIR/enabled
+CORE_LOG=$LOG_DIR/cli-proxy-api.log
+CTL_LOG=$LOG_DIR/controller.log
+PORT=${CPA_PORT:-8317}
+CORE_UID=${CPA_CORE_UID:-9999}
+CORE_GID=${CPA_CORE_GID:-3003}
+
+find_busybox() {
+  for candidate in "${CPA_BUSYBOX:-}" /data/adb/magisk/busybox \
+    /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox; do
+    [ -n "$candidate" ] && [ -x "$candidate" ] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  command -v busybox 2>/dev/null || return 1
+}
+
+BUSYBOX=$(find_busybox) || { echo "cpactl: busybox not found" >&2; exit 1; }
+CURL=${CPA_CURL:-/system/bin/curl}
+
+bb() { "$BUSYBOX" "$@"; }
+now() { date '+%Y-%m-%dT%H:%M:%S%z'; }
+
+log() {
+  level=$1
+  shift
+  message="$(now) [$level] $*"
+  printf '%s\n' "$message"
+  [ -d "$LOG_DIR" ] && printf '%s\n' "$message" >>"$CTL_LOG" 2>/dev/null || true
+}
+
+die() { log ERROR "$*" >&2; exit 1; }
+
+require_root() {
+  [ "${CPA_TEST_MODE:-0}" = 1 ] && return 0
+  [ "$(id -u)" = 0 ] || die "root is required"
+}
+
+runtime_paths() {
+  LOADER=$CURRENT/lib/ld-linux-aarch64.so.1
+  LIB_DIR=$CURRENT/lib
+  BINARY=$CURRENT/bin/cli-proxy-api
+  CA_FILE=$CURRENT/ca/cert.pem
+  RUNTIME_VERSION=$CURRENT/runtime.version
+  export LOADER LIB_DIR BINARY CA_FILE PLUGIN_DIR RUNTIME_VERSION
+}
+
+prepare_mutable_dirs() {
+  mkdir -p "$DATA_DIR" "$DATA_DIR/config" "$AUTH_DIR" "$PLUGIN_DATA_DIR" \
+    "$PLUGIN_DIR" "$RUN_DIR" "$LOG_DIR" "$BACKUP_DIR" \
+    "$DATA_DIR/releases" "$RUN_DIR/tmp"
+  chmod 0711 "$DATA_DIR"
+  chmod 0700 "$DATA_DIR/config" "$AUTH_DIR" "$DATA_DIR/data" \
+    "$PLUGIN_ROOT" "$PLUGIN_DIR" "$PLUGIN_DATA_DIR" "$RUN_DIR" \
+    "$RUN_DIR/tmp" "$LOG_DIR" "$BACKUP_DIR"
+  if [ "$(id -u)" = 0 ]; then
+    chown -R "$CORE_UID:$CORE_GID" "$DATA_DIR/config" "$AUTH_DIR" \
+      "$DATA_DIR/data" "$PLUGIN_ROOT" "$RUN_DIR" "$LOG_DIR" 2>/dev/null || true
+    bb find "$DATA_DIR/config" "$AUTH_DIR" "$DATA_DIR/data" "$RUN_DIR" "$LOG_DIR" \
+      -type d -exec chmod 0700 {} \; 2>/dev/null || true
+    bb find "$DATA_DIR/config" "$AUTH_DIR" "$DATA_DIR/data" "$RUN_DIR" "$LOG_DIR" \
+      -type f -exec chmod 0600 {} \; 2>/dev/null || true
+  fi
+}
+
+set_description() {
+  [ -f "$MODULE_DIR/module.prop" ] || return 0
+  safe=$(printf '%s' "$*" | tr '\n|' '  ')
+  bb sed -i "s|^description=.*|description=$safe|" "$MODULE_DIR/module.prop" 2>/dev/null || true
+}
+
+read_pid() {
+  [ -f "$PID_FILE" ] || return 1
+  value=$(cat "$PID_FILE" 2>/dev/null || true)
+  case "$value" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$value"
+}
+
+pid_alive() { kill -0 "$1" 2>/dev/null; }
+
+pid_matches() {
+  pid=$1
+  runtime_paths
+  [ -r "/proc/$pid/cmdline" ] || return 1
+  command_line=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)
+  case "$command_line" in *"$BINARY"*) return 0 ;; *) return 1 ;; esac
+}
+
+is_running() {
+  pid=$(read_pid 2>/dev/null) || return 1
+  pid_alive "$pid" && pid_matches "$pid"
+}
+
+port_hex() { printf '%04X' "$PORT"; }
+
+listener_state() {
+  hex=$(port_hex)
+  found=none
+  for table in /proc/net/tcp /proc/net/tcp6; do
+    [ -r "$table" ] || continue
+    state=$(bb awk -v port="$hex" '
+      NR > 1 && toupper($4) == "0A" && toupper($2) ~ (":" port "$") {
+        split(toupper($2), parts, ":")
+        if (parts[1] == "0100007F") print "loopback"
+        else print "nonloopback"
+      }
+    ' "$table" 2>/dev/null | head -1)
+    [ -z "$state" ] || { found=$state; break; }
+  done
+  printf '%s\n' "$found"
+}
+
+listener_inodes() {
+  hex=$(port_hex)
+  for table in /proc/net/tcp /proc/net/tcp6; do
+    [ -r "$table" ] || continue
+    bb awk -v port="$hex" '
+      NR > 1 && toupper($4) == "0A" && toupper($2) ~ (":" port "$") { print $12 }
+    ' "$table" 2>/dev/null
+  done | bb sort -u
+}
+
+module_listener_pids() {
+  inodes=$(listener_inodes)
+  [ -n "$inodes" ] || return 0
+  for proc_dir in /proc/[0-9]*; do
+    [ -d "$proc_dir" ] || continue
+    pid=${proc_dir#/proc/}
+    pid_matches "$pid" || continue
+    for fd in "$proc_dir"/fd/*; do
+      [ -e "$fd" ] || continue
+      link=$(bb readlink "$fd" 2>/dev/null || true)
+      case "$link" in
+        socket:\[*\])
+          inode=${link#socket:[}
+          inode=${inode%]}
+          if printf '%s\n' "$inodes" | bb grep -F -x -q "$inode"; then
+            printf '%s\n' "$pid"
+            break
+          fi
+          ;;
+      esac
+    done
+  done
+}
+
+signal_module_listeners() {
+  signal=$1
+  for listener_pid in $(module_listener_pids); do
+    pid_matches "$listener_pid" || continue
+    log INFO "stopping module listener process (PID $listener_pid, signal $signal)"
+    kill "$signal" "$listener_pid" 2>/dev/null || true
+  done
+}
+
+wait_for_port_release() {
+  i=0
+  while [ "$i" -lt 5 ]; do
+    [ "$(listener_state)" = none ] && return 0
+    listeners=$(module_listener_pids)
+    if [ -z "$listeners" ]; then
+      log ERROR "port $PORT remains occupied by a non-module listener"
+      return 1
+    fi
+    signal_module_listeners -9
+    sleep 1
+    i=$((i + 1))
+  done
+  log ERROR "module listener still holds port $PORT after forced stop"
+  return 1
+}
+
+http_status() {
+  path=$1
+  request="GET $path HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+  line=$(printf '%b' "$request" | bb nc -w 3 127.0.0.1 "$PORT" 2>/dev/null | head -1 || true)
+  printf '%s\n' "$line" | bb awk '{print $2}'
+}
+
+wait_http_status() {
+  path=$1
+  expected=$2
+  attempts=${3:-5}
+  i=0
+  status=unknown
+  while [ "$i" -lt "$attempts" ]; do
+    status=$(http_status "$path")
+    [ "$status" = "$expected" ] && { printf '%s\n' "$status"; return 0; }
+    sleep 1
+    i=$((i + 1))
+  done
+  printf '%s\n' "${status:-unknown}"
+  return 1
+}
+
+config_scalar() {
+  key=$1
+  bb awk -v key="$key" '
+    $0 ~ "^[[:space:]]*" key ":[[:space:]]*" {
+      sub("^[[:space:]]*" key ":[[:space:]]*", "")
+      gsub(/^["'\'' ]+|["'\'' ]+$/, "")
+      print
+      exit
+    }
+  ' "$CONFIG"
+}
+
+config_plugin_dir() {
+  bb awk '
+    /^[[:space:]]*plugins:[[:space:]]*$/ { inside=1; next }
+    inside && /^[^[:space:]]/ { inside=0 }
+    inside && /^[[:space:]]+dir:[[:space:]]*/ {
+      sub("^[[:space:]]+dir:[[:space:]]*", "")
+      gsub(/^["'\'' ]+|["'\'' ]+$/, "")
+      print
+      exit
+    }
+  ' "$CONFIG"
+}
+
+config_is_safe() {
+  [ -f "$CONFIG" ] || { log ERROR "config missing: $CONFIG"; return 1; }
+  configured_plugins_dir=$(config_plugin_dir)
+  if bb grep -q '/data/data/com.termux' "$CONFIG" 2>/dev/null; then
+    auth_dir=$(config_scalar auth-dir)
+    if [ "${CPA_TEST_MODE:-0}" != 1 ] ||
+      case "$auth_dir" in /data/data/com.termux*) true ;; *) false ;; esac ||
+      [ "$configured_plugins_dir" != "$PLUGIN_ROOT" ]; then
+      log ERROR "config still contains a Termux path"
+      return 1
+    fi
+  fi
+  host=$(config_scalar host)
+  [ "$host" = 127.0.0.1 ] || { log ERROR "host must be 127.0.0.1, found: ${host:-missing}"; return 1; }
+  configured_port=$(config_scalar port)
+  [ "$configured_port" = "$PORT" ] || { log ERROR "port must be $PORT, found: ${configured_port:-missing}"; return 1; }
+  allow_remote=$(config_scalar allow-remote | tr '[:upper:]' '[:lower:]')
+  case "$allow_remote" in true|yes|1|on) log ERROR "remote management must remain disabled"; return 1 ;; esac
+  [ "$configured_plugins_dir" = "$PLUGIN_ROOT" ] || {
+    log ERROR "plugins.dir must be $PLUGIN_ROOT, found: ${configured_plugins_dir:-missing}"
+    return 1
+  }
+  return 0
+}
+
+plugin_count() {
+  [ -d "$PLUGIN_DIR" ] || { printf '0\n'; return; }
+  bb find "$PLUGIN_DIR" -maxdepth 1 -type f -name '*.so' | bb wc -l | tr -d ' '
+}
+
+runtime_check() {
+  runtime_paths
+  [ -L "$CURRENT" ] || { log ERROR "current runtime symlink missing"; return 1; }
+  for required in "$LOADER" "$BINARY" "$CA_FILE" "$RUNTIME_VERSION" \
+    "$LIB_DIR/libc.so.6" "$LIB_DIR/libdl.so.2" "$LIB_DIR/libresolv.so.2" \
+    "$LIB_DIR/libpthread.so.0"; do
+    [ -f "$required" ] || { log ERROR "runtime file missing: $required"; return 1; }
+  done
+  [ -f "$CURRENT/checksums.sha256" ] || { log ERROR "runtime checksum manifest missing"; return 1; }
+  manifest_for_check=$RUN_DIR/checksums.$$
+  bb awk '$2 !~ /^plugins\/.+\.so$/ && $2 !~ /^\.\/plugins\/.+\.so$/' \
+    "$CURRENT/checksums.sha256" >"$manifest_for_check"
+  if command -v sha256sum >/dev/null 2>&1; then
+    if ! (cd "$CURRENT" && sha256sum -c "$manifest_for_check" >/dev/null); then
+      rm -f "$manifest_for_check"
+      log ERROR "runtime checksum mismatch"
+      return 1
+    fi
+  else
+    if ! (cd "$CURRENT" && bb sha256sum -c "$manifest_for_check" >/dev/null); then
+      rm -f "$manifest_for_check"
+      log ERROR "runtime checksum mismatch"
+      return 1
+    fi
+  fi
+  rm -f "$manifest_for_check"
+  version=$(bb timeout 10 "$LOADER" --library-path "$LIB_DIR" "$BINARY" --version 2>&1 | head -1 || true)
+  case "$version" in CLIProxyAPI\ Version:*) ;; *) log ERROR "core version preflight failed"; return 1 ;; esac
+  return 0
+}
+
+process_identity() {
+  pid=$1
+  [ -r "/proc/$pid/status" ] || { printf 'unknown:unknown\n'; return; }
+  uid=$(bb awk '/^Uid:/{print $2; exit}' "/proc/$pid/status")
+  gid=$(bb awk '/^Gid:/{print $2; exit}' "/proc/$pid/status")
+  printf '%s:%s\n' "${uid:-unknown}" "${gid:-unknown}"
+}
+
+stop_process() {
+  remove_intent=${1:-1}
+  [ "$remove_intent" = 0 ] || rm -f "$ENABLED_FILE"
+  pid=$(read_pid 2>/dev/null || true)
+  rm -f "$PID_FILE"
+  if [ -n "$pid" ] && ! pid_matches "$pid"; then
+    log WARNING "stale or foreign PID file ignored: $pid"
+    pid=
+  fi
+  if [ -n "$pid" ]; then
+    log INFO "stopping CLIProxyAPI (PID $pid)"
+    kill -15 "$pid" 2>/dev/null || true
+  fi
+  signal_module_listeners -15
+  i=0
+  while [ "$i" -lt 3 ]; do
+    listeners=$(module_listener_pids)
+    if [ -z "$listeners" ] && [ "$(listener_state)" = none ]; then
+      break
+    fi
+    remaining=0
+    if [ -n "$pid" ] && pid_alive "$pid"; then
+      remaining=1
+    fi
+    if [ -n "$listeners" ]; then
+      remaining=1
+    fi
+    [ "$remaining" = 0 ] && break
+    signal_module_listeners -15
+    sleep 1
+    i=$((i + 1))
+  done
+  if [ -n "$pid" ] && pid_alive "$pid" && pid_matches "$pid"; then
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  signal_module_listeners -9
+  wait_for_port_release || return 1
+  set_description "🔴 Stopped | CLIProxyAPI"
+  return 0
+}
+
+wait_ready() {
+  pid=$1
+  i=0
+  while [ "$i" -lt 25 ]; do
+    pid_alive "$pid" || return 1
+    state=$(listener_state)
+    [ "$state" = nonloopback ] && return 2
+    [ "$state" = loopback ] && return 0
+    sleep 1
+    i=$((i + 1))
+  done
+  return 3
+}
+
+start_locked() {
+  mode=${1:-manual}
+  prepare_mutable_dirs
+  runtime_check || return 1
+  config_is_safe || return 1
+
+  if is_running; then
+    state=$(listener_state)
+    if [ "$state" = loopback ]; then
+      [ "$mode" = watchdog ] || log INFO "CLIProxyAPI already running (PID $(read_pid))"
+      : >"$ENABLED_FILE"
+      return 0
+    fi
+    log WARNING "existing module process is not locally ready; restarting"
+    stop_process 0 || return 1
+  elif [ "$(listener_state)" != none ]; then
+    log ERROR "port $PORT is occupied by a non-module listener"
+    return 1
+  fi
+
+  runtime_paths
+  export HOME="$DATA_DIR"
+  export TMPDIR="$RUN_DIR/tmp"
+  export SSL_CERT_FILE="$CA_FILE"
+  export SSL_CERT_DIR="$CURRENT/ca"
+  export CPA_CONFIG_PATH="$CONFIG"
+  export CPA_AUTH_DIR="$AUTH_DIR"
+  export CPA_TOKEN_USAGE_DIR="$PLUGIN_DATA_DIR"
+  export CPA_MODEL_PRICE_FILE="$PLUGIN_DATA_DIR/model_prices.json"
+
+  root_core=0
+  [ -f "$DATA_DIR/config/allow-root-core" ] && root_core=1
+  log INFO "starting CLIProxyAPI from $(readlink "$CURRENT" 2>/dev/null || printf '%s' "$CURRENT")"
+  cd "$LOG_DIR" || return 1
+  if [ "$root_core" = 1 ]; then
+    "$BUSYBOX" nohup "$LOADER" --library-path "$LIB_DIR" "$BINARY" -config "$CONFIG" \
+      >>"$CORE_LOG" 2>&1 </dev/null &
+  else
+    "$BUSYBOX" nohup "$BUSYBOX" setuidgid "$CORE_UID:$CORE_GID" "$LOADER" --library-path "$LIB_DIR" \
+      "$BINARY" -config "$CONFIG" >>"$CORE_LOG" 2>&1 </dev/null &
+  fi
+  pid=$!
+  cd / || true
+
+  wait_ready "$pid"
+  ready=$?
+  if [ "$ready" -ne 0 ]; then
+    kill -15 "$pid" 2>/dev/null || true
+    rm -f "$PID_FILE" "$ENABLED_FILE"
+    [ "$ready" -eq 2 ] && log ERROR "core opened a non-loopback listener" || log ERROR "core failed readiness; see $CORE_LOG"
+    set_description "🔴 Error | CLIProxyAPI readiness failed"
+    return 1
+  fi
+
+  identity=$(process_identity "$pid")
+  if [ "$root_core" = 0 ] && [ "$identity" != "$CORE_UID:$CORE_GID" ]; then
+    kill -15 "$pid" 2>/dev/null || true
+    rm -f "$PID_FILE" "$ENABLED_FILE"
+    log ERROR "privilege drop failed; expected $CORE_UID:$CORE_GID, found $identity"
+    return 1
+  fi
+
+  printf '%s' "$pid" >"$PID_FILE"
+  : >"$ENABLED_FILE"
+  chmod 0600 "$PID_FILE" "$ENABLED_FILE"
+
+  log INFO "CLIProxyAPI started (PID $pid, UID:GID $identity, localhost:$PORT, plugins=$(plugin_count))"
+  set_description "🟢 Running | CLIProxyAPI | localhost:$PORT | Action to stop"
+  return 0
+}
+
+start_service() {
+  require_root
+  prepare_mutable_dirs
+  mode=${1:-manual}
+  (
+    if ! bb flock -n 9; then
+      log INFO "another lifecycle operation is in progress"
+      exit 0
+    fi
+    start_locked "$mode"
+  ) 9>"$LOCK_FILE"
+}
+
+status_service() {
+  runtime_paths
+  echo "CLIProxyAPI module status"
+  echo "  data: $DATA_DIR"
+  echo "  release: $(readlink "$CURRENT" 2>/dev/null || echo missing)"
+  if version=$(bb timeout 10 "$LOADER" --library-path "$LIB_DIR" "$BINARY" --version 2>/dev/null | head -1); then
+    echo "  version: $version"
+  else
+    echo "  version: unavailable"
+  fi
+  if is_running; then
+    pid=$(read_pid)
+    echo "  process: running (pid $pid, uid:gid $(process_identity "$pid"))"
+  else
+    echo "  process: stopped"
+  fi
+  echo "  listener: $(listener_state) 127.0.0.1:$PORT"
+  echo "  plugins: $(plugin_count) .so under $PLUGIN_ROOT"
+  models=$(http_status /v1/models)
+  dashboard=$(http_status /v0/resource/plugins/codex-token-usage/dashboard)
+  echo "  health: /v1/models -> ${models:-unavailable}"
+  echo "  plugin: dashboard -> ${dashboard:-unavailable}"
+  is_running && [ "$(listener_state)" = loopback ]
+}
+
+doctor() {
+  require_root
+  prepare_mutable_dirs
+  failed=0
+  runtime_check || failed=1
+  config_is_safe || failed=1
+  if is_running; then
+    pid=$(read_pid)
+    identity=$(process_identity "$pid")
+    [ -f "$DATA_DIR/config/allow-root-core" ] || [ "$identity" = "$CORE_UID:$CORE_GID" ] || { log ERROR "running identity is $identity"; failed=1; }
+    [ "$(listener_state)" = loopback ] || { log ERROR "listener is not loopback-only"; failed=1; }
+  elif [ "$(listener_state)" != none ]; then
+    log ERROR "port $PORT is occupied by another process"
+    failed=1
+  fi
+  [ "$failed" = 0 ] || return 1
+  log INFO "doctor passed"
+}
+
+backup_state() {
+  require_root
+  prepare_mutable_dirs
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  archive=$BACKUP_DIR/cli-proxy-api-state.$stamp.tar.gz
+  (cd "$DATA_DIR" && bb tar -czf "$archive" config auth data plugins) || die "backup failed"
+  chmod 0600 "$archive"
+  log INFO "backup created: $archive"
+}
+
+json_asset_url() {
+  metadata=$1
+  exact_name=$2
+  bb tr -d '[:space:]' <"$metadata" | bb sed 's/},{/}\
+{/g' | bb awk -v exact_name="$exact_name" '
+    index($0, "\"name\":\"" exact_name "\"") {
+      marker="\"browser_download_url\":\""
+      offset=index($0, marker)
+      if (!offset) next
+      value=substr($0, offset + length(marker))
+      sub(/".*$/, "", value)
+      print value
+      exit
+    }
+  '
+}
+
+curl_fetch() {
+  output=$1
+  url=$2
+  timeout_seconds=$3
+  [ -x "$CURL" ] || { log ERROR "HTTPS downloader missing: $CURL"; return 1; }
+  "$CURL" -fsSL --proto '=https' --tlsv1.2 --connect-timeout 15 \
+    --max-time "$timeout_seconds" --cacert "$CA_FILE" \
+    -H 'Accept: application/vnd.github+json' \
+    -H 'User-Agent: cli-proxy-api-magisk-module' \
+    -o "$output" "$url"
+}
+
+select_release() {
+  target=$1
+  rm -f "$DATA_DIR/current.new.$$"
+  ln -s "$target" "$DATA_DIR/current.new.$$" || return 1
+  bb mv -fT "$DATA_DIR/current.new.$$" "$CURRENT" || return 1
+  [ "$(readlink "$CURRENT" 2>/dev/null)" = "$target" ]
+}
+
+update_core() {
+  require_root
+  prepare_mutable_dirs
+  runtime_check || return 1
+  api=${CPA_RELEASE_API_URL:-https://api.github.com/repos/router-for-me/CLIProxyAPI/releases/latest}
+  work=$RUN_DIR/update.$$
+  rm -rf "$work"
+  mkdir -p "$work"
+  trap 'rm -rf "$work"' EXIT HUP INT TERM
+  export SSL_CERT_FILE="$CA_FILE"
+  export SSL_CERT_DIR="$CURRENT/ca"
+
+  metadata=$work/release.json
+  curl_fetch "$metadata" "$api" 30 || die "unable to query latest release"
+  tag=$(bb sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$metadata" | head -1)
+  version=${tag#v}
+  case "$version" in ''|*[!A-Za-z0-9._-]*) die "unsafe release version" ;; esac
+  asset_name="CLIProxyAPI_${version}_linux_aarch64.tar.gz"
+  archive_url=$(json_asset_url "$metadata" "$asset_name")
+  checksums_url=$(json_asset_url "$metadata" checksums.txt)
+  log INFO "resolved release $tag (archive=${archive_url:-missing}, checksums=${checksums_url:-missing})"
+  [ -n "$archive_url" ] && [ -n "$checksums_url" ] || die "release assets are incomplete"
+
+  archive=$work/$asset_name
+  checksums=$work/checksums.txt
+  curl_fetch "$archive" "$archive_url" 120 || die "core download failed"
+  curl_fetch "$checksums" "$checksums_url" 30 || die "checksum download failed"
+  expected=$(bb awk -v file="$asset_name" '$2 == file {print $1; exit}' "$checksums")
+  actual=$(bb sha256sum "$archive" | bb awk '{print $1}')
+  [ -n "$expected" ] && [ "$actual" = "$expected" ] || die "core checksum mismatch"
+
+  extract=$work/extract
+  mkdir -p "$extract"
+  bb tar -xzf "$archive" -C "$extract" || die "core archive extraction failed"
+  candidate=$(bb find "$extract" -type f -name cli-proxy-api | head -1)
+  [ -f "$candidate" ] || die "core binary missing from release"
+  chmod 0755 "$candidate"
+  candidate_version=$(bb timeout 10 "$LOADER" --library-path "$LIB_DIR" "$candidate" --version 2>/dev/null | head -1 || true)
+  case "$candidate_version" in CLIProxyAPI\ Version:*) ;; *) die "candidate version preflight failed" ;; esac
+  reported_version=$(printf '%s\n' "$candidate_version" | bb sed -n 's/^CLIProxyAPI Version: \([^,]*\).*/\1/p')
+  [ "$reported_version" = "$version" ] || die "candidate version $reported_version does not match release $version"
+
+  new_release=$DATA_DIR/releases/core-$version
+  rm -rf "$new_release"
+  mkdir -p "$new_release"
+  bb cp -a "$CURRENT/." "$new_release/" || die "unable to stage candidate release"
+  bb cp -p "$candidate" "$new_release/bin/cli-proxy-api" || die "unable to install candidate core"
+  chmod 0755 "$new_release/bin/cli-proxy-api"
+  bb sed -i "s/^release_id=.*/release_id=core-$version/; s/^core_version=.*/core_version=$version/" "$new_release/runtime.version"
+  (
+    cd "$new_release"
+    bb find . -type f ! -name checksums.sha256 -print | LC_ALL=C sort | while read -r file; do
+      bb sha256sum "${file#./}"
+    done >checksums.sha256
+  )
+
+  old_target=$(readlink "$CURRENT")
+  was_running=0
+  is_running && was_running=1
+  if [ "$was_running" = 0 ] && [ -n "$(module_listener_pids)" ]; then
+    was_running=1
+  fi
+  if [ "$was_running" = 1 ]; then
+    stop_process 0 || die "unable to release port $PORT before core update"
+  else
+    rm -f "$PID_FILE"
+  fi
+  select_release "$new_release" || die "unable to select candidate release"
+  if [ "$was_running" = 1 ]; then
+    if ! start_service update; then
+      log ERROR "candidate failed; rolling back to $old_target"
+      stop_process 0
+      select_release "$old_target" || die "rollback symlink failed"
+      start_service rollback || die "rollback service failed"
+      rm -rf "$new_release"
+      return 1
+    fi
+  fi
+  log INFO "core updated to $version"
+  rm -rf "$work"
+  trap - EXIT HUP INT TERM
+}
+
+purge_data() {
+  require_root
+  [ "${1:-}" = --yes ] || die "purge-data requires --yes; uninstall preserves data"
+  stop_process 1 || die "unable to release port $PORT before purge"
+  purge_allowed=0
+  [ "$DATA_DIR" = /data/local/cli-proxy-api ] && purge_allowed=1
+  if [ "${CPA_TEST_MODE:-0}" = 1 ]; then
+    case "$DATA_DIR" in "${TMPDIR:-/nonexistent}"/cpa-test-*) purge_allowed=1 ;; esac
+  fi
+  [ "$purge_allowed" = 1 ] || die "refusing unsafe purge path: $DATA_DIR"
+  rm -rf "$DATA_DIR"
+  log INFO "persistent CLIProxyAPI data removed"
+}
+
+usage() {
+  cat <<'EOF'
+Usage: cpactl <command>
+
+Commands:
+  start [--boot|--watchdog]  Start the local service.
+  stop                       Stop for the current boot.
+  restart                    Restart the service.
+  status                     Show safe runtime status.
+  is-running                 Return success only for the module process.
+  doctor                     Validate runtime, policy, privilege, and plugin.
+  version                    Show bundled core version.
+  log [N]                    Tail the core log.
+  backup                     Archive config/auth/plugin state.
+  update-core                Checksum, stage, promote, or roll back core.
+  purge-data --yes           Destructively remove persistent state.
+EOF
+}
+
+command_name=${1:-}
+case "$command_name" in
+  start)
+    case "${2:-}" in --boot) mode=boot ;; --watchdog) mode=watchdog ;; '' ) mode=manual ;; *) die "invalid start option" ;; esac
+    start_service "$mode"
+    ;;
+  stop) require_root; prepare_mutable_dirs; stop_process 1 ;;
+  restart) require_root; prepare_mutable_dirs; stop_process 0 && start_service manual ;;
+  status) status_service ;;
+  is-running) is_running ;;
+  doctor) doctor ;;
+  version) runtime_paths; bb timeout 10 "$LOADER" --library-path "$LIB_DIR" "$BINARY" --version ;;
+  log)
+    lines=${2:-20}
+    case "$lines" in ''|*[!0-9]*) die "log line count must be numeric" ;; esac
+    [ -f "$CORE_LOG" ] || die "log not found: $CORE_LOG"
+    tail -n "$lines" "$CORE_LOG"
+    ;;
+  backup) backup_state ;;
+  update-core) update_core ;;
+  purge-data) purge_data "${2:-}" ;;
+  help|-h|--help|'') usage ;;
+  *) die "unknown command: $command_name" ;;
+esac

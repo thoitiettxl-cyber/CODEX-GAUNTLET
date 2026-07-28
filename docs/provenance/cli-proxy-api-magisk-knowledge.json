@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "artifact": "cli-proxy-api-magisk-project-memory",
+  "imported_at": "2026-07-28T09:31:00Z",
+  "source_repository": "https://github.com/thoitiettxl-cyber/repository-harness.git",
+  "source_branch": "main",
+  "source_commit": "323b43cdd5789e6a4f7ce63b0d05ade91ebe0989",
+  "source_commit_date": "2026-07-19T23:45:55+07:00",
+  "source_commit_subject": "chore(anchor): snapshot Termux operations state",
+  "sources": [
+    {
+      "path": "docs/product/cli-proxy-api-magisk-module.md",
+      "sha256": "3d9dd20325d78bafa630fe4e330749e52ebff0388205a83ad45308fb16ff1a1d"
+    },
+    {
+      "path": "docs/decisions/0013-cli-proxy-api-magisk-module.md",
+      "sha256": "66ffaa29fb7f33f1036a07ae2176af468a4bcc0f3eead2708e1435ea090d2d24"
+    },
+    {
+      "path": "docs/decisions/0014-cli-proxy-api-port-and-plugin-integrity-boundary.md",
+      "sha256": "be6320324991c73dc621e49637abe539becf81ac36b94bdf7baa80446fcff886"
+    },
+    {
+      "path": "docs/decisions/0015-cli-proxy-api-runtime-plugin-directory.md",
+      "sha256": "26297fb7f1a30cf682873a91bdd76987b7080eab6473ab97b8131f8ee4a4c131"
+    },
+    {
+      "path": "docs/decisions/0016-codex-cliproxyapi-default-auth-fallback.md",
+      "sha256": "8050a13d72103cb3c6801676d39c54d4db53b61234e0679f89bbf3fefd00c181"
+    },
+    {
+      "path": "docs/TERMUX_OPERATIONS.md",
+      "sha256": "a16bd2e267af31825dfd27aa215a13942a08c82ecdacb62b22a8a3ee940b362e"
+    },
+    {
+      "path": "modules/cli-proxy-api-magisk/README.md",
+      "sha256": "e5f9c568a6c35999d879cd4dbba6d1273f18612c363c060223ae254ef9077558"
+    },
+    {
+      "path": "modules/cli-proxy-api-magisk/scripts/cpactl",
+      "sha256": "d250bc6019dc988f9e19e8c3b25bf5df00e910dbd64b076cb27bd19f9e76fb17"
+    },
+    {
+      "path": "scripts/tests/test-cli-proxy-api-magisk-module.sh",
+      "sha256": "947c3458dfda478e8ea6ad3c92bce415e4bf87fd7af05a9b2c57219c31d5a47a"
+    }
+  ],
+  "import_scope": [
+    "product contract",
+    "runtime and filesystem boundaries",
+    "security and secret-handling invariants",
+    "control and diagnostic procedures",
+    "update and recovery invariants",
+    "provider routing boundary",
+    "historical validation context"
+  ],
+  "excluded_scope": [
+    "module source (tracked separately by cli-proxy-api-magisk-source.json) and generated ZIP",
+    "live configuration and credential data",
+    "claims about current device or upstream state"
+  ],
+  "verification_boundary": "Source hashes prove imported knowledge identity; live root-managed runtime health requires fresh device evidence."
+}

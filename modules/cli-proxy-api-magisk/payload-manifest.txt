@@ -1,0 +1,5 @@
+format=1
+payload_root=payload
+credentials_included=false
+runtime_layout=bin,lib,ca
+plugins=runtime-installed

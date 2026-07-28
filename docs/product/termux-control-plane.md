@@ -84,6 +84,13 @@ process, or a verification authority merely because it is registered. Agents
 load its inventory and runbook only when the request names the tool or its
 capability is relevant.
 
+CLIProxyAPI Magisk is represented as the optional
+`provider-gateway-runtime` capability. This repository owns its imported
+product memory plus the vendored maintenance source, tests, provenance, and
+operating runbook. Root-managed live state remains outside the repository. A
+TCP presence observation is never promoted to authenticated route, provider,
+plugin, or device-health proof.
+
 ## RTK capability boundary
 
 RTK is an optional, lossy command-output filter. The repository owns its

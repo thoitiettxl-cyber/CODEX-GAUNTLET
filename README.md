@@ -49,6 +49,20 @@ recorded in its [inventory](docs/inventory/rg.json) and
 [Termux runbook](docs/runbooks/rg-termux.md). Agent entry files keep only
 generic capability-routing instructions.
 
+CLIProxyAPI Magisk is recorded as a separate optional root-managed provider
+gateway. Its source-pinned [product contract](docs/product/cli-proxy-api-magisk.md),
+[inventory](docs/inventory/cli-proxy-api-magisk.json),
+[operations runbook](docs/runbooks/cli-proxy-api-magisk.md), and vendored
+[`modules/cli-proxy-api-magisk`](modules/cli-proxy-api-magisk/) implementation
+preserve the runtime, security, build, test, update, and recovery capability.
+Credentials and live root state remain outside this control plane.
+
+```bash
+scripts/termux-control cli-proxy-api-magisk status
+scripts/termux-control cli-proxy-api-magisk source-check
+scripts/termux-control cli-proxy-api-magisk syntax
+```
+
 `pi-router` is an optional loopback OpenAI Responses gateway built on Pi's
 provider runtime. It keeps router credentials separate from Pi CLI state and
 lets current Codex clients connect with `wire_api = "responses"`. Its

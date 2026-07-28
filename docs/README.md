@@ -23,6 +23,16 @@
   ripgrep binary when Codex prepends its incompatible GNU/Linux helper.
 - `inventory/rg.json`: durable ripgrep identity, resolution policy,
   materialized compatibility points, and runbook link.
+- `product/cli-proxy-api-magisk.md`: source-pinned contract for the optional
+  root-managed CLIProxyAPI provider gateway.
+- `runbooks/cli-proxy-api-magisk.md`: inspect, diagnose, update, recover, and
+  safely separate repository proof from root/device runtime proof.
+- `inventory/cli-proxy-api-magisk.json`: durable runtime identity, ownership,
+  materialized paths, and capability metadata.
+- `provenance/cli-proxy-api-magisk-knowledge.json`: pinned source commit and
+  file hashes for the imported knowledge.
+- `provenance/cli-proxy-api-magisk-source.json`: byte and executable-mode
+  manifest for the vendored module, tests, and status helper.
 - `FEATURE_INTAKE.md`, `TRACE_SPEC.md`, `TOOL_REGISTRY.md`, and related
   documents: checksum-locked upstream compatibility references for the pinned
   Core Plus CLI. Their historical default-workflow notes do not override

@@ -21,3 +21,5 @@ documents here as real choices are accepted, then index them in this file.
 - [0008 — Separate Pi Router keys and isolate provider accounts](0008-separate-pi-router-keys-and-isolate-provider-accounts.md)
 - [0009 — Use a modern single-file Pi Router console](0009-use-a-modern-single-file-pi-router-console.md)
 - [0010 — Enable Pi Router raw management and protocol adapters](0010-enable-pi-router-raw-management-and-protocol-adapters.md)
+- [0012 — Import CLIProxyAPI Magisk as auxiliary runtime knowledge](0012-import-cli-proxy-api-magisk-knowledge.md)
+- [0013 — Vendor CLIProxyAPI Magisk maintenance source](0013-vendor-cli-proxy-api-magisk-maintenance-source.md)
