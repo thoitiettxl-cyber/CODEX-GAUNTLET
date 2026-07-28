@@ -15,8 +15,8 @@
   "implemented_plugins": [
     {
       "id": "policy-scheduler",
-      "version": "0.3.0",
-      "live_version": "0.2.0",
+      "version": "0.3.1",
+      "live_version": "0.3.1",
       "capabilities": ["management_api", "scheduler"],
       "methods": ["management.register", "management.handle", "scheduler.pick"],
       "host_callbacks": ["host.auth.list", "host.auth.get_runtime"]

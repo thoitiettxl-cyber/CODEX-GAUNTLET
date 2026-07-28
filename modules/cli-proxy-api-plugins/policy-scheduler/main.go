@@ -66,7 +66,7 @@ import (
 
 const (
 	pluginID      = "policy-scheduler"
-	pluginVersion = "0.3.0"
+	pluginVersion = "0.3.1"
 )
 
 type envelope struct {
@@ -155,8 +155,13 @@ func cliproxyPluginShutdown() {
 
 func handleMethod(method string, request []byte) ([]byte, error) {
 	switch method {
-	case pluginabi.MethodPluginRegister, pluginabi.MethodPluginReconfigure:
-		if err := configure(request); err != nil {
+	case pluginabi.MethodPluginRegister:
+		if err := configure(request, false); err != nil {
+			return errorEnvelope(&envelopeError{Code: "invalid_config", Message: err.Error()}), nil
+		}
+		return okEnvelope(pluginRegistration())
+	case pluginabi.MethodPluginReconfigure:
+		if err := configure(request, true); err != nil {
 			return errorEnvelope(&envelopeError{Code: "invalid_config", Message: err.Error()}), nil
 		}
 		return okEnvelope(pluginRegistration())
@@ -164,18 +169,7 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 		cliproxyPluginShutdown()
 		return okEnvelope(map[string]any{})
 	case pluginabi.MethodSchedulerPick:
-		var req pluginapi.SchedulerPickRequest
-		if err := json.Unmarshal(request, &req); err != nil {
-			return errorEnvelope(&envelopeError{Code: "invalid_scheduler_request", Message: "scheduler request is invalid"}), nil
-		}
-		resp, err := globalEngine.pick(req)
-		if err != nil {
-			if policyErr, ok := err.(*policyError); ok {
-				return errorEnvelope(&envelopeError{Code: policyErr.Code, Message: policyErr.Message, Retryable: policyErr.Retryable, HTTPStatus: policyErr.HTTPStatus}), nil
-			}
-			return errorEnvelope(&envelopeError{Code: "scheduler_error", Message: "scheduler policy failed", Retryable: true, HTTPStatus: 503}), nil
-		}
-		return okEnvelope(resp)
+		return handleSchedulerPick(globalEngine, request)
 	case pluginabi.MethodManagementRegister:
 		return okEnvelope(registerManagement())
 	case pluginabi.MethodManagementHandle:
@@ -185,7 +179,7 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 	}
 }
 
-func configure(raw []byte) error {
+func configure(raw []byte, reconfigure bool) error {
 	var req lifecycleRequest
 	if len(raw) != 0 {
 		if err := json.Unmarshal(raw, &req); err != nil {
@@ -196,8 +190,35 @@ func configure(raw []byte) error {
 	if err != nil {
 		return err
 	}
-	globalEngine.reconfigure(cfg)
+	if reconfigure {
+		globalEngine.reconfigure(cfg)
+	} else {
+		globalEngine.register(cfg)
+	}
 	return nil
+}
+
+func decodeSchedulerRequest(raw []byte) (pluginapi.SchedulerPickRequest, error) {
+	var req pluginapi.SchedulerPickRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return pluginapi.SchedulerPickRequest{}, fmt.Errorf("decode scheduler request: %w", err)
+	}
+	return req, nil
+}
+
+func handleSchedulerPick(engine *policyEngine, request []byte) ([]byte, error) {
+	req, err := decodeSchedulerRequest(request)
+	if err != nil {
+		return errorEnvelope(&envelopeError{Code: "invalid_scheduler_request", Message: "scheduler request is invalid"}), nil
+	}
+	resp, err := engine.pick(req)
+	if err != nil {
+		if policyErr, ok := err.(*policyError); ok {
+			return errorEnvelope(&envelopeError{Code: policyErr.Code, Message: policyErr.Message, Retryable: policyErr.Retryable, HTTPStatus: policyErr.HTTPStatus}), nil
+		}
+		return errorEnvelope(&envelopeError{Code: "scheduler_error", Message: "scheduler policy failed", Retryable: true, HTTPStatus: 503}), nil
+	}
+	return okEnvelope(resp)
 }
 
 func pluginRegistration() registration {

@@ -17,7 +17,7 @@ CORE_SHA256=134097d189c11c882a77bd72eb82b7beecc19545397b622954b4ff79fa8c4b43
 CORE_URL="https://github.com/router-for-me/CLIProxyAPI/releases/download/v${CORE_VERSION}/${CORE_ARCHIVE}"
 PACMAN_CACHE="$CACHE/pacman"
 GCC_PACKAGE_VERSION=14.2.1-1
-PLUGIN="$DIST/policy-scheduler-v0.3.0.so"
+PLUGIN="$DIST/policy-scheduler-v0.3.1.so"
 
 usage() {
 	echo "Usage: scripts/termux-control cli-proxy-api-plugins {status|prepare|format|test|build|integration|all}"

@@ -7,8 +7,8 @@ CLIProxyAPI plugin suite under `modules/cli-proxy-api-plugins/`. Plugin binaries
 remain runtime-installed artifacts and are never bundled into the Magisk module
 ZIP.
 
-The current source and separately managed live phase is plugin #1,
-`policy-scheduler` version `0.3.0`:
+The current source and separately managed live phase are plugin #1,
+`policy-scheduler` version `0.3.1`:
 
 - official capability `management_api`, providing read-only observability;
 - official capability `scheduler`, implementing `scheduler.pick`;
@@ -35,8 +35,9 @@ Evidence collected on 2026-07-28 UTC:
 | Source version `0.2.0` affinity slice | Confirmed in isolated host | Go vet/unit tests cover HMAC signal isolation, sticky hits, TTL expiry, failover, reconfigure reset, input/cache bounds, and key failure. The deterministic Linux ARM64 artifact loaded in the official host, registered 19 config fields, hot-enabled affinity config, then disabled/re-enabled without an upstream request. |
 | `codex-token-usage` scheduler reference | Confirmed from official repository | `zhumengling/codex-token-usage` HEAD `a5221681fbcca071ac9f0dcb1ff37f8edcd97a6d` on 2026-07-28 keeps rotation state per provider/model and, when affinity or filtering requires an explicit `AuthID`, mirrors CPA `fill-first` or `round-robin`. Its token-window concurrency protection depends on the separate `usage` capability, SQLite history, auth identity reads, and request reservations, so that portion is not portable into this scheduler-only boundary. |
 | Source version `0.3.0` strategy hardening | Confirmed in isolated host | Affinity keys and balancing state are provider/model scoped. New and failover bindings use explicit weighted/LRU policy when configured; otherwise they mirror `delegate_builtin`. Balance-strategy reconfigure clears local selection state. Vet/unit, deterministic Linux ARM64 build, ABI/dependency checks, and official-host integration passed for artifact SHA-256 `786b6f35407706858700cfe6378bc0037e090e662bf0bd90d2678660a72f8759`. No `usage` capability, auth read, SQLite store, token logging, or probe request was added. |
-| Live module plugin is installed | Confirmed | The reviewed SHA-256-identical `policy-scheduler-v0.3.0.so` is the only discoverable plugin below the persistent plugin directory. An authenticated material config reload activated metadata/status version `0.3.0`; the live policy now uses `least-recently-used`, while PID `11065`, listener ownership, and `cpactl doctor` remain healthy without restart. Reviewed `v0.2.0` and `v0.1.0` artifacts remain recoverable as non-discoverable `.rollback` files. |
-| Live session-affinity baseline | Confirmed on `0.2.0` | Existing Codex traffic produced `session_affinity_new` followed by `session_affinity_hit` with the same opaque credential alias over three eligible candidates. Live evidence also showed that client `Authorization` is not present in scheduler options on this path; the operational signal is `Session_id`, while `api_key_id` metadata remains available for a compatible future host/provider seam. The `0.3.0` hot reload preserved this configuration, but a fresh post-promotion affinity hit has not yet been observed. |
+| Source version `0.3.1` operational projection | Confirmed in repository/unit/isolated-host proof; executable race proof pending | Read-only status now includes process generation/reconfigure counts, strategy counters, affinity lifecycle counters, observed cooldown exclusions, configured-but-ineffective policy fields, bounded provider/model state sizes, and an explicit external mapped-library check warning. It stores no raw signal or `AuthID` in these projections. All three coverage-guided fuzz targets passed with the Linux/glibc test binary; the race binary compiled, but Android's 39-bit VMA layout prevents ThreadSanitizer execution, so true Linux race CI remains required. |
+| Live module plugin is installed | Confirmed | The reviewed SHA-256-identical `policy-scheduler-v0.3.1.so` is the only discoverable plugin below the persistent plugin directory. Authenticated status reports version `0.3.1` with `least-recently-used`; PID `11065`, loopback listener, and `cpactl doctor` remained healthy through promotion and the `0.3.1 → 0.3.0 → 0.3.1` rollback rehearsal without restart. Reviewed `v0.3.0`, `v0.2.0`, and `v0.1.0` artifacts remain recoverable as non-discoverable `.rollback` files. |
+| Live session-affinity baseline | Confirmed on `0.2.0`; fresh `0.3.1` proof pending | Earlier Codex traffic produced `session_affinity_new` followed by `session_affinity_hit` with the same opaque credential alias over three eligible candidates. Live evidence also showed that client `Authorization` is not present in scheduler options on this path; the operational signal is `Session_id`, while `api_key_id` metadata remains available for a compatible future host/provider seam. The final `0.3.1` snapshot retained this configuration but reported zero bindings and `session_affinity` as configured but ineffective because no signal had been observed in current-generation traffic. |
 | Live cooldown/recovery baseline | Confirmed on `0.2.0`; LRU transition confirmed on `0.3.0` | Existing Codex traffic on `0.2.0` produced two real cooldown/recovery windows. After the `0.3.0` LRU update, live traffic produced `3 → 2 → 3` candidates and explicit `least_recently_used` selections while the authenticated status route and `cpactl doctor` stayed healthy without restart or deliberate probe. |
 | Official upstream refresh/storage seam | Not confirmed | The released `v7.2.104` source and official `origin/main` at `c9417c8ae9b16fabc0386ca35d36f13bf8b1d678` leave `sdk/pluginabi/types.go`, `sdk/pluginapi/types.go`, and `internal/pluginhost/auth_provider.go` unchanged from `v7.2.103`; no callback persists refreshed built-in OAuth data through plugin-owned encryption. |
 | Cockpit Tools encryption boundary | Confirmed, not directly portable | Official `jlcodes99/cockpit-tools` source at `923cc6c45b8dbfe743ea2e04be33d2fe4fbf5654` encrypts application-owned account detail files with AES-256-GCM, then materializes separate plaintext `0600` OAuth JSON files for its embedded CLIProxyAPI sidecar and registers runtime auth with `WithSkipPersist`. It does not implement encryption through the native CLIProxyAPI plugin ABI. |
@@ -118,6 +119,18 @@ changes clear local selection state. Disable removes scheduler and management
 routes through the host; shutdown resets all process-local state. The plugin
 writes no separate account database.
 
+The read-only status projection also exposes bounded operational observability.
+Generation and reconfigure counters identify hot-reload epochs; strategy and
+affinity counters are process-local; effectiveness evidence resets for each
+generation. Provider/model state sizes are capped to the first 100 sorted
+scopes, with an omission count. Configured tenant/quota/plan/weight/backup or
+affinity inputs are reported as ineffective only after scheduler traffic has
+been observed without the corresponding safe signal/attribute. Cooldown
+counts include only statuses present in the plugin's `Candidates`; the host
+may have filtered cooldown credentials before `scheduler.pick`. Older mapped
+shared objects cannot be enumerated through the current ABI, so status emits an
+operator warning requiring an external `/proc/<pid>/maps` check after reload.
+
 Affinity values are never stored or returned. The plugin HMACs provider set,
 model, tenant, source kind, and signal with a process-random 256-bit key, then
 retains only the digest-to-`AuthID` binding in memory. The binding is accepted
@@ -130,7 +143,8 @@ key. This is request-routing privacy, not credential encryption-at-rest.
 On the deployed built-in Codex path, live evidence confirms `Authorization`
 is consumed before `scheduler.pick`, so API-key affinity cannot be claimed from
 that header. The live policy uses `Session_id`, which produced a real sticky
-hit. Per-API-key affinity requires the host or a compatible provider to supply
+hit on the earlier `0.2.0` generation but has not appeared in current `0.3.1`
+traffic. Per-API-key affinity requires the host or a compatible provider to supply
 an opaque string identity in configured scheduler metadata; the plugin does
 not read auth files or invent that identity.
 
@@ -174,7 +188,7 @@ The intended capability boundary is:
   with bounded constant-time chunk handling.
 
 Credential selection or rejection remains exclusively in `scheduler`. The
-bounded session-affinity portion is implemented in live version `0.3.0`; it
+bounded session-affinity portion is implemented in live version `0.3.1`; it
 does not make `auth_provider` ownership safer
 or satisfy the encryption gate. No interceptor may call an upstream model or
 log `StorageJSON`, an access token, a refresh token, cookie, management key, or

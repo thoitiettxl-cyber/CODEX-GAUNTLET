@@ -216,6 +216,7 @@ type policyEngine struct {
 	sequence        uint64
 	lastPicked      map[string]uint64
 	weightedCurrent map[string]int
+	selectionRoutes map[string]string
 	rotationCursors map[string]uint64
 	decisions       []policyDecision
 	aliaser         *credentialAliaser
@@ -223,11 +224,13 @@ type policyEngine struct {
 	affinityReady   bool
 	affinityTick    uint64
 	affinity        map[string]affinityBinding
+	metrics         engineMetrics
 	now             func() time.Time
 }
 
 type affinityBinding struct {
 	AuthID    string
+	RouteKey  string
 	ExpiresAt time.Time
 	LastUsed  uint64
 }
@@ -237,28 +240,54 @@ func newPolicyEngine(cfg pluginConfig) *policyEngine {
 		config:          cfg,
 		lastPicked:      make(map[string]uint64),
 		weightedCurrent: make(map[string]int),
+		selectionRoutes: make(map[string]string),
 		rotationCursors: make(map[string]uint64),
 		aliaser:         newCredentialAliaser(),
 		affinity:        make(map[string]affinityBinding),
+		metrics:         newEngineMetrics(),
 		now:             time.Now,
 	}
 	engine.resetAffinityKeyLocked()
 	return engine
 }
 
+func (engine *policyEngine) register(cfg pluginConfig) {
+	engine.applyConfig(cfg, false)
+}
+
 func (engine *policyEngine) reconfigure(cfg pluginConfig) {
+	engine.applyConfig(cfg, true)
+}
+
+func (engine *policyEngine) applyConfig(cfg pluginConfig, reconfigure bool) {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
 	if affinityConfigChanged(engine.config, cfg) {
+		if reconfigure {
+			engine.metrics.Affinity.ReconfigureResets++
+			engine.metrics.Affinity.BindingsCleared += uint64(len(engine.affinity))
+		}
 		engine.affinity = make(map[string]affinityBinding)
 		engine.affinityTick = 0
 	}
 	if balanceConfigChanged(engine.config, cfg) {
+		if reconfigure {
+			engine.metrics.BalanceStateResets++
+		}
 		engine.lastPicked = make(map[string]uint64)
 		engine.weightedCurrent = make(map[string]int)
+		engine.selectionRoutes = make(map[string]string)
 		engine.rotationCursors = make(map[string]uint64)
 	}
 	engine.config = cfg
+	engine.metrics.Generation++
+	if reconfigure {
+		engine.metrics.ReconfigureCount++
+	} else {
+		engine.metrics.RegisterCount++
+	}
+	engine.metrics.CurrentGenerationPicks = 0
+	engine.metrics.Effectiveness = effectivenessEvidence{}
 	if len(engine.decisions) > cfg.DecisionHistoryLimit {
 		engine.decisions = append([]policyDecision(nil), engine.decisions[len(engine.decisions)-cfg.DecisionHistoryLimit:]...)
 	}
@@ -271,11 +300,13 @@ func (engine *policyEngine) shutdown() {
 	engine.sequence = 0
 	engine.lastPicked = make(map[string]uint64)
 	engine.weightedCurrent = make(map[string]int)
+	engine.selectionRoutes = make(map[string]string)
 	engine.rotationCursors = make(map[string]uint64)
 	engine.decisions = nil
 	engine.aliaser = newCredentialAliaser()
 	engine.affinity = make(map[string]affinityBinding)
 	engine.affinityTick = 0
+	engine.metrics = newEngineMetrics()
 	engine.resetAffinityKeyLocked()
 }
 
@@ -311,6 +342,7 @@ func (engine *policyEngine) pick(req pluginapi.SchedulerPickRequest) (pluginapi.
 		decision.Tenant = "present"
 	}
 	decision.CandidateTags = engine.candidateTags(req.Candidates, cfg)
+	engine.observePickInputsLocked(req, cfg)
 
 	active := filterActive(req.Candidates)
 	decision.AfterStatus = len(active)
@@ -362,7 +394,7 @@ func (engine *policyEngine) pick(req pluginapi.SchedulerPickRequest) (pluginapi.
 			if _, existed := engine.affinity[cacheKey]; existed {
 				outcome = "failover"
 			}
-			engine.bindAffinityLocked(cacheKey, selected.ID, now, cfg)
+			engine.bindAffinityLocked(cacheKey, routeKey, selected.ID, now, cfg)
 			decision.AffinityOutcome = outcome
 			return engine.selectLocked(&decision, routeKey, selected, "session_affinity_"+outcome), nil
 		}
@@ -472,7 +504,7 @@ func (engine *policyEngine) pickAffinityFallbackLocked(req pluginapi.SchedulerPi
 	}
 }
 
-func (engine *policyEngine) bindAffinityLocked(cacheKey, authID string, now time.Time, cfg pluginConfig) {
+func (engine *policyEngine) bindAffinityLocked(cacheKey, routeKey, authID string, now time.Time, cfg pluginConfig) {
 	engine.purgeExpiredAffinityLocked(now)
 	if _, exists := engine.affinity[cacheKey]; !exists && len(engine.affinity) >= cfg.SessionAffinityMax {
 		oldestKey := ""
@@ -484,21 +516,26 @@ func (engine *policyEngine) bindAffinityLocked(cacheKey, authID string, now time
 			}
 		}
 		delete(engine.affinity, oldestKey)
+		engine.metrics.Affinity.Evictions++
 	}
 	engine.affinityTick++
 	engine.affinity[cacheKey] = affinityBinding{
 		AuthID:    authID,
+		RouteKey:  routeKey,
 		ExpiresAt: now.Add(time.Duration(cfg.SessionAffinityTTL) * time.Second),
 		LastUsed:  engine.affinityTick,
 	}
 }
 
 func (engine *policyEngine) purgeExpiredAffinityLocked(now time.Time) {
+	expired := uint64(0)
 	for key, binding := range engine.affinity {
 		if !binding.ExpiresAt.After(now) {
 			delete(engine.affinity, key)
+			expired++
 		}
 	}
+	engine.metrics.Affinity.Expiries += expired
 }
 
 func (engine *policyEngine) failLocked(decision *policyDecision, message string) error {
@@ -510,7 +547,9 @@ func (engine *policyEngine) failLocked(decision *policyDecision, message string)
 
 func (engine *policyEngine) selectLocked(decision *policyDecision, routeKey string, candidate pluginapi.SchedulerAuthCandidate, reason string) pluginapi.SchedulerPickResponse {
 	engine.sequence++
-	engine.lastPicked[selectionStateKey(routeKey, candidate.ID)] = engine.sequence
+	stateKey := selectionStateKey(routeKey, candidate.ID)
+	engine.lastPicked[stateKey] = engine.sequence
+	engine.selectionRoutes[stateKey] = routeKey
 	decision.Outcome = "selected"
 	decision.SelectedAlias = engine.aliaser.Alias(candidate.ID)
 	decision.Reason = reason
@@ -519,6 +558,7 @@ func (engine *policyEngine) selectLocked(decision *policyDecision, routeKey stri
 }
 
 func (engine *policyEngine) recordLocked(decision policyDecision) {
+	engine.recordDecisionMetricsLocked(decision)
 	limit := engine.config.DecisionHistoryLimit
 	if limit <= 0 {
 		return
@@ -591,6 +631,7 @@ func (engine *policyEngine) pickWeightedLocked(routeKey string, candidates []plu
 		weight := candidateWeight(candidate, attribute)
 		total += weight
 		stateKey := selectionStateKey(routeKey, candidate.ID)
+		engine.selectionRoutes[stateKey] = routeKey
 		engine.weightedCurrent[stateKey] += weight
 		current := engine.weightedCurrent[stateKey]
 		if index == 0 || current > best {

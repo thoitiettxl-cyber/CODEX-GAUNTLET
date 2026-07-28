@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PREFIX_DIR=${PREFIX:-/data/data/com.termux/files/usr}
 CORE=${CPA_PLUGIN_TEST_CORE:-$ROOT/.cache/core-7.2.103/cli-proxy-api}
-PLUGIN=${CPA_PLUGIN_TEST_BINARY:-$ROOT/dist/policy-scheduler-v0.3.0.so}
+PLUGIN=${CPA_PLUGIN_TEST_BINARY:-$ROOT/dist/policy-scheduler-v0.3.1.so}
 PORT=${CPA_PLUGIN_TEST_PORT:-18317}
 MANAGEMENT_KEY=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 
@@ -38,7 +38,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$lab/auth" "$lab/plugins/linux/arm64"
-cp -p "$PLUGIN" "$lab/plugins/linux/arm64/policy-scheduler-v0.3.0.so"
+cp -p "$PLUGIN" "$lab/plugins/linux/arm64/policy-scheduler-v0.3.1.so"
 sed \
 	-e "s|__PORT__|$PORT|g" \
 	-e "s|__AUTH_DIR__|$lab/auth|g" \
@@ -75,7 +75,7 @@ management_curl=(curl --fail --silent --show-error --max-time 3 -H "X-Management
 jq -e '.plugins_enabled == true and any(.plugins[]; .id == "policy-scheduler" and .registered == true and .effective_enabled == true and (.config_fields | length) >= 19)' "$lab/plugins.json" >/dev/null
 
 "${management_curl[@]}" "http://127.0.0.1:$PORT/v0/management/policy-scheduler/status" >"$lab/status.json"
-jq -e '.plugin == "policy-scheduler" and .version == "0.3.0" and .host_state_available == true and .config.quota_reserve_percent == 10 and .config.session_affinity_enabled == false and .config.session_affinity_ttl_seconds == 3600 and .affinity.active_bindings == 0 and .affinity.key_available == true and (.host_contract_limitations | length) == 3' "$lab/status.json" >/dev/null
+jq -e '.plugin == "policy-scheduler" and .version == "0.3.1" and .host_state_available == true and .config.quota_reserve_percent == 10 and .config.session_affinity_enabled == false and .config.session_affinity_ttl_seconds == 3600 and .affinity.active_bindings == 0 and .affinity.key_available == true and (.host_contract_limitations | length) == 3 and (.operational_warnings | length) >= 1 and .observability.generation >= 1 and .observability.register_count >= 1 and .observability.effectiveness_evaluation == "awaiting_scheduler_traffic" and (.observability.picks_by_strategy | type) == "object" and (.observability.state_by_provider_model | type) == "array"' "$lab/status.json" >/dev/null
 if rg -i '"(storage_?json|access[_ -]?token|refresh[_ -]?token|authorization)"[[:space:]]*:|bearer[[:space:]]+[[:graph:]]+' "$lab/status.json" >/dev/null; then
 	echo "redacted status contains a forbidden credential field" >&2
 	exit 1
@@ -99,7 +99,7 @@ for _ in $(seq 1 50); do
 	fi
 	sleep 0.1
 done
-"${management_curl[@]}" "http://127.0.0.1:$PORT/v0/management/policy-scheduler/status" | jq -e '.config.quota_reserve_percent == 25 and .config.session_affinity_enabled == true and .config.session_affinity_ttl_seconds == 600 and .config.session_affinity_max_entries == 128' >/dev/null
+"${management_curl[@]}" "http://127.0.0.1:$PORT/v0/management/policy-scheduler/status" | jq -e '.config.quota_reserve_percent == 25 and .config.session_affinity_enabled == true and .config.session_affinity_ttl_seconds == 600 and .config.session_affinity_max_entries == 128 and .observability.generation >= 2 and .observability.reconfigure_count >= 1 and .observability.effectiveness_evaluation == "awaiting_scheduler_traffic"' >/dev/null
 
 "${management_curl[@]}" -H 'Content-Type: application/json' -X PATCH \
 	-d '{"enabled":false}' \

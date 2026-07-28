@@ -139,15 +139,17 @@ type affinityView struct {
 }
 
 type statusResponse struct {
-	Plugin                  string           `json:"plugin"`
-	Version                 string           `json:"version"`
-	HostContractLimitations []string         `json:"host_contract_limitations"`
-	Config                  configView       `json:"config"`
-	Credentials             []credentialView `json:"credentials"`
-	Decisions               []policyDecision `json:"decisions"`
-	Affinity                affinityView     `json:"affinity"`
-	HostStateAvailable      bool             `json:"host_state_available"`
-	HostStateError          string           `json:"host_state_error,omitempty"`
+	Plugin                  string            `json:"plugin"`
+	Version                 string            `json:"version"`
+	HostContractLimitations []string          `json:"host_contract_limitations"`
+	OperationalWarnings     []string          `json:"operational_warnings"`
+	Config                  configView        `json:"config"`
+	Credentials             []credentialView  `json:"credentials"`
+	Decisions               []policyDecision  `json:"decisions"`
+	Affinity                affinityView      `json:"affinity"`
+	Observability           observabilityView `json:"observability"`
+	HostStateAvailable      bool              `json:"host_state_available"`
+	HostStateError          string            `json:"host_state_error,omitempty"`
 }
 
 var hostCall = callHost
@@ -171,9 +173,9 @@ func registerManagement() managementRegistration {
 }
 
 func handleManagement(raw []byte) ([]byte, error) {
-	var req managementRequest
-	if err := json.Unmarshal(raw, &req); err != nil {
-		return nil, fmt.Errorf("decode management request: %w", err)
+	req, err := decodeManagementRequest(raw)
+	if err != nil {
+		return nil, err
 	}
 	if strings.HasSuffix(req.Path, resourceDashboardPath) {
 		return okEnvelope(managementResponse{
@@ -219,9 +221,18 @@ func handleManagement(raw []byte) ([]byte, error) {
 	})
 }
 
+func decodeManagementRequest(raw []byte) (managementRequest, error) {
+	var req managementRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return managementRequest{}, fmt.Errorf("decode management request: %w", err)
+	}
+	return req, nil
+}
+
 func buildStatusResponse(engine *policyEngine) statusResponse {
 	cfg := engine.configSnapshot()
 	affinityBindings, affinityKeyAvailable := engine.affinityStateSnapshot()
+	observability := engine.observabilitySnapshot()
 	credentials, err := collectCredentialViews(engine.aliaser)
 	status := statusResponse{
 		Plugin:  pluginID,
@@ -230,6 +241,9 @@ func buildStatusResponse(engine *policyEngine) statusResponse {
 			"CLIProxyAPI filters cooldown/disabled credentials and lower priority tiers before scheduler.pick.",
 			"scheduler.pick can select only an AuthID present in Candidates; lower-tier backups are not reachable.",
 			"CLIProxyAPI 7.2.103 does not populate Candidates.Metadata; quota and tenant policy require safe candidate Attributes.",
+		},
+		OperationalWarnings: []string{
+			"The plugin ABI cannot enumerate older shared objects left mapped after hot reload; verify /proc/<pid>/maps externally after promotion.",
 		},
 		Config: configView{
 			TenantHeader:            cfg.TenantHeader,
@@ -257,6 +271,7 @@ func buildStatusResponse(engine *policyEngine) statusResponse {
 			ActiveBindings: affinityBindings,
 			KeyAvailable:   affinityKeyAvailable,
 		},
+		Observability: observability,
 	}
 	status.HostStateAvailable = err == nil
 	if err != nil {

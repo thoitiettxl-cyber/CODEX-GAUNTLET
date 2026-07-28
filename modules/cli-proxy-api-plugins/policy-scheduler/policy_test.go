@@ -460,7 +460,7 @@ func TestBalanceReconfigureClearsSelectionState(t *testing.T) {
 	changed := cfg
 	changed.DelegateBuiltin = pluginapi.SchedulerBuiltinFillFirst
 	engine.reconfigure(changed)
-	if len(engine.rotationCursors) != 0 || len(engine.lastPicked) != 0 || len(engine.weightedCurrent) != 0 {
+	if len(engine.rotationCursors) != 0 || len(engine.lastPicked) != 0 || len(engine.weightedCurrent) != 0 || len(engine.selectionRoutes) != 0 {
 		t.Fatal("balance strategy reconfigure retained selection state")
 	}
 }
@@ -486,6 +486,7 @@ func TestPolicyEngineSupportsConcurrentPickReconfigureAndRead(t *testing.T) {
 			default:
 				_ = engine.configSnapshot()
 				_ = engine.decisionsSnapshot()
+				_ = engine.observabilitySnapshot()
 			}
 		}()
 	}

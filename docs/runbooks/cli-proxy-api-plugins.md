@@ -33,7 +33,7 @@ AArch64 ELF identity, `cliproxy_plugin_init`, and an allowed glibc dependency
 set. Ignored output is:
 
 ```text
-modules/cli-proxy-api-plugins/dist/policy-scheduler-v0.3.0.so
+modules/cli-proxy-api-plugins/dist/policy-scheduler-v0.3.1.so
 ```
 
 `integration` starts a temporary loopback CLIProxyAPI on port 18317 with an
@@ -64,7 +64,7 @@ The current observed target returned `1` for version `7.2.103`, commit
 A live canary requires explicit authorization for these exact effects:
 
 - copy one reviewed `.so` to
-  `/data/local/cli-proxy-api/plugins/linux/arm64/policy-scheduler-v0.3.0.so`;
+  `/data/local/cli-proxy-api/plugins/linux/arm64/policy-scheduler-v0.3.1.so`;
 - update only `plugins.configs.policy-scheduler` in
   `/data/local/cli-proxy-api/config/config.yaml` through Management API;
 - possibly restart only `cli_proxy_api` if the host reports
@@ -99,6 +99,16 @@ The page keeps the supplied management key in memory only. The equivalent
 read-only API is `GET /v0/management/policy-scheduler/status` with the
 `X-Management-Key` header. It reports redacted credential projections, active
 policy, host limitations, and recent decisions.
+
+Source `0.3.1` additionally reports `observability`: lifecycle generation,
+register/reconfigure counts, picks grouped by bounded strategy names, affinity
+events, plugin-observed cooldown exclusions, current-generation policy
+effectiveness, aggregate state sizes, and up to 100 sorted provider/model state
+rows plus an omission count. These counters are process-local and reset on
+shutdown; effectiveness returns to `awaiting_scheduler_traffic` after every
+generation change. A zero cooldown counter does not prove that no credential
+cooled down because the host normally removes those candidates before the
+plugin sees them.
 
 The current live policy leaves quota/tenant/plan/weight filters disabled,
 uses plugin-owned least-recently-used selection, and keeps the live-proven
@@ -187,11 +197,47 @@ page plugin can read a key stored by Management Center and act with current
 admin authority.
 
 Credential Security encryption-at-rest is not implemented. The current source
-and live deployment are both version `0.3.0` and implement only the
-scheduler-owned affinity slice. Future encryption-at-rest
+and live deployment are version `0.3.1` and implement only the scheduler-owned
+affinity slice. Future encryption-at-rest
 protects only copied/backed-up ciphertext. The plugin remains in-process and
 decrypts while operating; it is not an HSM and cannot protect against a
 compromised host or malicious same-origin page.
+
+## Linux race/fuzz gate
+
+The Android/Termux target cannot natively execute Go ThreadSanitizer or fuzzing.
+Run the Linux-only proof from the plugin module before declaring the release
+evidence complete:
+
+```bash
+cd modules/cli-proxy-api-plugins/policy-scheduler
+make linux-ci
+```
+
+This runs `go test -race`, the three named fuzz targets, and C-shared ABI
+symbol inspection. All three coverage-guided fuzz targets have passed with a
+Linux/glibc test binary. The race binary compiled, but ThreadSanitizer cannot
+run under Android's 39-bit VMA layout; an executable race pass on a true Linux
+runner remains required. The Termux `test` target still runs the fuzz seed
+corpus through ordinary unit execution and does not substitute for that race
+proof.
+
+## Soak and rollback rehearsal
+
+After a separately authorized promotion, collect redacted status snapshots at
+start, 24 hours, and 72 hours. Check generation/reconfigure counts, strategy
+distribution, affinity `new/hit/failover/expiry/eviction`, observed cooldown
+exclusions, ineffective-policy fields, state sizes, status HTTP 200, PID and
+listener health, and `cpactl doctor`. Do not send a deliberate upstream model
+request solely for this rehearsal. Check `/proc/<pid>/maps` externally for old
+`policy-scheduler` shared objects after each hot reload.
+
+Rehearse `0.3.1 → 0.3.0 → 0.3.1` only inside an authorized maintenance window:
+disable the exact plugin, verify its routes return 404, preserve the current
+artifact, restore one prior discoverable version, re-enable with a material
+config change, and repeat in the opposite direction. Verify the same redacted
+status/health invariants after each transition. Never delete the whole plugin
+directory or mutate auth files.
 
 ## Rollback and recovery
 
@@ -206,13 +252,15 @@ plugins directory or purge `/data/local/cli-proxy-api`. Verify `cpactl doctor`,
 loopback listener ownership, management header, plugin list, and client/provider
 boundaries after recovery.
 
-The current live `0.3.0` recovery inputs are private policy backup
-`cli-proxy-api-state.20260728T152248Z.tar.gz`, promotion backup
-`cli-proxy-api-state.20260728T145931Z.tar.gz`, and non-discoverable files
-`policy-scheduler-v0.2.0.so.rollback` and
+The current live `0.3.1` recovery inputs are promotion backup
+`cli-proxy-api-state.20260728T165717Z.tar.gz` and non-discoverable files
+`policy-scheduler-v0.3.0.so.rollback`,
+`policy-scheduler-v0.2.0.so.rollback`, and
 `policy-scheduler-v0.1.0.so.rollback`. To roll back without deleting an
-artifact, disable the plugin, move `v0.3.0.so` aside, restore the `v0.2.0`
-rollback filename to `policy-scheduler-v0.2.0.so`, then re-enable the plugin.
+artifact, disable the plugin, move `v0.3.1.so` aside, restore the `v0.3.0`
+rollback filename to `policy-scheduler-v0.3.0.so`, then re-enable the plugin.
+The live `0.3.1 → 0.3.0 → 0.3.1` rehearsal completed without a restart while
+preserving PID `11065`, loopback health, and the safe LRU/affinity policy.
 CLIProxyAPI `7.2.103` hash-checks config contents, so touching the config or
 saving the same value does not trigger reload; use an actual Management API
 config change and restore it after registration is confirmed. Restart only if

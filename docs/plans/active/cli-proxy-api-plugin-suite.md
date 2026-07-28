@@ -86,29 +86,60 @@ Git, Harness state, test output, or documentation.
       `2026-07-28T13:57:07Z`, after the observed new/hit pair, so the documented
       affinity reconfigure reset cleared the process-local cache; PID, artifact,
       and listener remained unchanged and later metadata stayed stable.
+- [x] Implement source `policy-scheduler` `0.3.1` operational hardening with
+      bounded/redacted lifecycle, strategy, affinity, cooldown, effectiveness,
+      and provider/model state-size projections plus config/scheduler/management
+      fuzz targets.
+- [x] Prove `0.3.1` with vet/unit and fuzz seeds, deterministic Linux/glibc ARM64
+      build, ABI/dependency inspection, and isolated official-host registration,
+      status, reconfigure, disable, and re-enable. The artifact SHA-256 is
+      `76b828080d3d708aed5ca5f492898f00bb0a927ccd02169d44fba167c164aa2e`.
+- [ ] Wire the protected GitHub workflow to run `make linux-ci`, then obtain an
+      executable Linux `go test -race` pass. The three coverage-guided fuzz
+      targets passed with the Linux/glibc test binary, but Android's VMA layout
+      still blocks ThreadSanitizer execution.
+- [x] Under the owner's explicit live-write authorization, hot-promote the
+      reviewed `0.3.1` artifact without restart, apply the safe JSON policy,
+      and verify registration, redacted status, PID/listener health, artifact
+      hash, and `cpactl doctor`.
+- [x] Complete the authorized `0.3.1 → 0.3.0 → 0.3.1` rollback rehearsal:
+      each direction disabled the exact plugin, verified its route returned
+      404, swapped only the versioned artifacts, re-enabled through the
+      Management API, and checked the registered version and health.
+- [ ] Complete the 24-hour then 72-hour soak and obtain a fresh
+      `session_affinity_new → hit → failover/recovery` sequence on natural live
+      traffic; if `Session_id` remains absent, disable affinity so config
+      reflects reality.
 - [x] Run focused proof, `./qa/verify --mode targeted`, and final diff review.
 - [ ] Complete the story only after the Credential-Security provider/refresh
       gate above is satisfied, then run final verification.
 
 ## Last safe boundary
 
-Plugin #1 source version `0.3.0` now adds strategy-preserving, provider/model
-scoped selection and affinity over the bounded `0.2.0` slice. Go vet/unit
-proof, deterministic Linux ARM64 build, ABI/dependency checks, and isolated
-official-host integration pass for source artifact SHA-256
-`786b6f35407706858700cfe6378bc0037e090e662bf0bd90d2678660a72f8759`.
-Canonical `./qa/verify --mode targeted` also passes on the complete worktree.
-The separately managed live service now runs `0.3.0`; the only discoverable
+Plugin #1 version `0.3.1` in source and live retains the `0.3.0` strategy-preserving,
+provider/model-scoped selection and affinity behavior and adds bounded/redacted
+operational projections. Go vet/unit and fuzz seeds, deterministic Linux ARM64
+build, ABI/dependency checks, and isolated official-host integration pass for
+source artifact SHA-256
+`76b828080d3d708aed5ca5f492898f00bb0a927ccd02169d44fba167c164aa2e`.
+Coverage-guided Linux/glibc fuzzing passed for all three targets, but native
+Android fuzz and ThreadSanitizer execution remain unsupported. The protected
+Linux workflow is not yet wired; `make linux-ci` remains the module-owned gate
+for an executable race pass.
+Canonical `./qa/verify --mode targeted` passes on the complete worktree after
+the `0.3.1` changes. The live service now runs `0.3.1`; the only discoverable
 artifact has exact SHA-256
-`786b6f35407706858700cfe6378bc0037e090e662bf0bd90d2678660a72f8759`
-and retains
-`session_affinity_enabled: true`, `session_affinity_header: Session_id`,
+`76b828080d3d708aed5ca5f492898f00bb0a927ccd02169d44fba167c164aa2e` and
+retains `session_affinity_enabled: true`, `session_affinity_header: Session_id`,
 `quota_reserve_percent: 0`, no tenant/plan/backup mapping, and
 `balance_strategy: least-recently-used`; `delegate_builtin: round-robin`
-remains the explicit fallback setting. Promotion created private backup
-`cli-proxy-api-state.20260728T145931Z.tar.gz`; the later policy update created
-`cli-proxy-api-state.20260728T152248Z.tar.gz`; reviewed `0.2.0` and `0.1.0`
-artifacts remain recoverable as non-discoverable `.rollback` files.
+remains the explicit fallback setting. Promotion backup
+`cli-proxy-api-state.20260728T165717Z.tar.gz` is retained; reviewed `0.3.0`,
+`0.2.0`, and `0.1.0` artifacts remain recoverable as non-discoverable
+`.rollback` files. The final authenticated status snapshot recorded 46 LRU
+decisions, zero active affinity bindings, and a bounded
+`configured_but_ineffective` warning because no `Session_id` or metadata
+signal was observed after the promotion.
 
 The initial file swap and config mtime touch did not activate `0.3.0` because
 CLIProxyAPI `7.2.103` skips reload when the config content hash is unchanged.
@@ -238,6 +269,16 @@ Harness metadata.
 
 Focused proof completed:
 
+- Version `0.3.1`: `scripts/termux-control cli-proxy-api-plugins test`, `build`,
+  and `integration` passed Go formatting/vet/unit/fuzz seeds, deterministic
+  Linux ARM64 build, ABI/dependency checks, redacted observability assertions,
+  and isolated official-host registration/reconfigure/disable/re-enable. The
+  source artifact SHA-256 is
+  `76b828080d3d708aed5ca5f492898f00bb0a927ccd02169d44fba167c164aa2e`.
+  Direct Android fuzz execution was attempted and rejected by the Go tool with
+  `-fuzz flag is not supported on android/arm64`; all three fuzz targets later
+  passed with the Linux/glibc test binary, while executable Linux race proof
+  remains open.
 - Version `0.3.0`: `scripts/termux-control cli-proxy-api-plugins all` passed Go
   formatting, vet/unit tests for strategy-preserving affinity and route-scoped
   rotation/LRU/weighted state, deterministic Linux ARM64 build,
@@ -310,3 +351,17 @@ Focused proof completed:
 - After the `0.3.0` strategy hardening, `./qa/verify --mode targeted` again
   passed all canonical Harness, policy, build, unit, integration, acceptance,
   coverage, and mutation gates on the complete worktree.
+- After the `0.3.1` operational hardening, `./qa/verify --mode targeted` passed
+  the same canonical gates on the complete worktree. This does not replace the
+  still-pending executable Linux race gate.
+- Live promotion and rollback rehearsal on 2026-07-28/29 UTC used the reviewed
+  `0.3.1` hash above, preserved PID `11065` and listener `127.0.0.1:8317`,
+  kept exactly one discoverable `.so`, and passed `cpactl status`/`cpactl doctor`
+  at the final boundary. No auth file, management secret, or deliberate
+  upstream model request was accessed or emitted.
+- Detailed partial implementation trace `#26` records the repository proof and
+  the protected-workflow, Linux race/fuzz, live affinity, soak, and rollback
+  gaps under stable run ID `cliproxyapi-plugin-suite-20260728`.
+- Partial trace `#27` records the separately authorized live `0.3.1` promotion,
+  safe policy application, rollback rehearsal, final health boundary, and the
+  remaining affinity/soak/race evidence under the same stable run ID.
