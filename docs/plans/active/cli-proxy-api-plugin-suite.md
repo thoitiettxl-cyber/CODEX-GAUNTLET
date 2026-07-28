@@ -35,6 +35,35 @@ Git, Harness state, test output, or documentation.
    and separately authorized live plugin checks. Never bundle `.so` files into
    the Magisk module archive.
 
+## Plugin #2 authorized scope
+
+The owner requested implementation and live proof after pointing to
+`simplez2/cpa-codex-agent-identity`. Primary-source review at commit
+`b282b894626409c7e1524f2daec31dd62a394018` confirms a safe seam that does not
+pretend to re-encrypt built-in OAuth: an `auth_provider` recognizes only
+sidecar-owned Codex projections, CPA receives an opaque revocable key and
+loopback `base_url`, and a separate process owns encrypted originals and the
+data plane.
+
+Plugin #2 will implement the smallest independently useful version of that
+architecture:
+
+- a `credential-security` native plugin declaring `auth_provider` and a
+  redacted authenticated `management_api` status route;
+- exact recognition of one versioned `credential_security_sidecar` Codex auth
+  projection containing only an opaque `cpcs_` key, loopback endpoint, safe
+  credential ID, and disable/prefix metadata;
+- a companion Android/arm64 loopback sidecar with AES-256-GCM storage, external
+  owner-only key files, authenticated import/list/rotate/delete management,
+  and bounded HTTP/SSE forwarding to a fixed upstream;
+- an isolated local upstream test plus a live-host canary using only a disabled
+  synthetic projection, followed by exact canary cleanup.
+
+This slice deliberately excludes built-in OAuth files, token refresh, Agent
+Identity JWT/AgentAssertion, WebSocket forwarding, automatic migration, model
+routing, and a plugin executor. Those require separate provider semantics or
+credential authority and cannot be inferred from a registration canary.
+
 ## Progress
 
 - [x] Verify the exact live core supports dynamic plugins.
@@ -60,8 +89,18 @@ Git, Harness state, test output, or documentation.
 - [x] Hot-promote `policy-scheduler` `0.2.0` to live without restart, enable the
       verified `Session_id` signal, and observe a real affinity new/hit pair on
       the same opaque credential alias over three candidates.
-- [ ] Obtain a concrete plugin-owned provider or new official refresh/storage
-      seam before implementing Credential-Security encryption-at-rest.
+- [x] Obtain a concrete sidecar-owned provider seam from verified primary
+      source without weakening the built-in OAuth boundary. The accepted first
+      slice is static bearer/PAT only; transparent built-in OAuth encryption
+      remains unsupported.
+- [x] Implement and prove source Plugin #2 `credential-security` `0.1.0` plus
+      its encrypted loopback sidecar with vet/unit, deterministic plugin and
+      Android sidecar builds, exact-host registration, disabled synthetic
+      parsing, redacted management status, and disable/re-enable coverage.
+- [x] Run the separately authorized disabled synthetic live-auth canary and
+      remove that exact canary without touching real credentials; verify live
+      Plugin #2 status redaction, no public ResourceRoute, and `200 → 404 →
+      200` disable/re-enable lifecycle.
 - [x] Add the supported interceptor design, operational documentation, and the
       explicit Model Router/Executor decision.
 - [x] Recheck the official `v7.2.104` source after its release: credential
@@ -136,10 +175,29 @@ retains `session_affinity_enabled: true`, `session_affinity_header: Session_id`,
 remains the explicit fallback setting. Promotion backup
 `cli-proxy-api-state.20260728T165717Z.tar.gz` is retained; reviewed `0.3.0`,
 `0.2.0`, and `0.1.0` artifacts remain recoverable as non-discoverable
-`.rollback` files. The final authenticated status snapshot recorded 46 LRU
-decisions, zero active affinity bindings, and a bounded
+`.rollback` files. The latest post-Plugin #2 lifecycle snapshot retained 50
+bounded decisions, 258 process-total LRU picks, zero active affinity bindings,
+and a bounded
 `configured_but_ineffective` warning because no `Session_id` or metadata
 signal was observed after the promotion.
+
+Plugin #2 source `0.1.0` now implements the accepted sidecar-owned static
+bearer/PAT slice. Unit proof covers AES-256-GCM persistence, wrong-key failure,
+owner-only paths, default-disable, opaque-key rotation, delete, parser
+coexistence, header stripping, fixed-upstream enforcement, redacted management,
+and local HTTP/SSE forwarding. The sidecar additionally bounds the record store,
+rejects proxy path traversal, and refuses cross-origin redirects. CLIProxyAPI
+`7.2.103` isolated integration registered both plugins, parsed one disabled
+synthetic projection, exposed no public Plugin #2 ResourceRoute, and
+disabled/re-enabled cleanly. Deterministic artifact SHA-256 values are
+`93579313869e031a266e12e13f2f9fa58dfa3b94131183396294f08770a1cfe8`
+for the plugin and
+`a473bbf4384ff842729f8d81e94a88be8ade749b07483f697869cf9a38f306f1`
+for the Android sidecar. The authorized live host registered both plugins;
+the disabled synthetic projection incremented Plugin #2 parsing counters,
+remained disabled, was deleted by exact filename, and the plugin lifecycle
+returned `200 → 404 → 200` without a PID change. No real credential, sidecar
+store/key, or upstream model request entered this proof.
 
 The initial file swap and config mtime touch did not activate `0.3.0` because
 CLIProxyAPI `7.2.103` skips reload when the config content hash is unchanged.
@@ -166,8 +224,9 @@ scheduler candidate set fell from three to two and later returned to three at
 `2026-07-28T12:38:48Z` and `2026-07-28T12:59:01Z`. Decisions remained
 `delegated/no_strong_policy_decision`; no deliberate upstream probe or service
 restart was generated by this work, and `cpactl doctor` passed after recovery.
-Plugin #2 remains gated on a concrete provider or official refresh/storage
-seam as described above.
+Plugin #2's static sidecar-owned slice is locally implemented; any extension
+to built-in OAuth remains gated on an official refresh/storage seam as
+described above.
 
 ## Decisions
 
@@ -206,17 +265,19 @@ seam as described above.
 
 ## Recovery
 
-Before live deployment, recovery is removing only suite-owned source/docs and
-ignored build outputs after exact diff review. For the current live canary,
-disable the exact plugin through the Management API first, move only
-`policy-scheduler-v0.3.0.so` aside, restore
-`policy-scheduler-v0.2.0.so.rollback` to its discoverable `.so` filename, and
-re-enable it through a material config change. The private policy backup is
-`cli-proxy-api-state.20260728T152248Z.tar.gz`; promotion backup
-`cli-proxy-api-state.20260728T145931Z.tar.gz` remains separately available.
-Restart the module only if hot
-reload cannot recover, using the existing `cpactl` recovery procedure. Never
-purge `/data/local/cli-proxy-api`.
+Before Plugin #2 live deployment, recovery is removing only suite-owned
+source/docs and ignored build outputs after exact diff review. Plugin #1 live
+recovery remains: disable `policy-scheduler`, move only
+`policy-scheduler-v0.3.1.so` aside, restore
+`policy-scheduler-v0.3.0.so.rollback`, and re-enable. Promotion backup
+`cli-proxy-api-state.20260728T165717Z.tar.gz` remains available.
+
+Plugin #2 canary recovery is independent: disable `credential-security`,
+verify its authenticated route returns 404, delete only the exact disabled
+synthetic auth filename, and move only `credential-security-v0.1.0.so` out of
+discovery. Preserve any real sidecar data/key directories; none are authorized
+for the parser canary. Restart only if hot unload cannot recover, using the
+existing `cpactl` procedure. Never purge `/data/local/cli-proxy-api`.
 
 ## External side effects
 
@@ -227,9 +288,13 @@ and upstream model requests require separately stated exact scope and impact.
 
 Actual external reads used official CLIProxyAPI source/tag/release metadata,
 official `zhumengling/codex-token-usage` HEAD
-`a5221681fbcca071ac9f0dcb1ff37f8edcd97a6d`, the checksum-pinned `7.2.103`
-Linux ARM64 archive, the checksum-pinned Termux Go package, and signed pacman
-GCC/glibc packages. No package was installed.
+`a5221681fbcca071ac9f0dcb1ff37f8edcd97a6d`,
+`simplez2/cpa-codex-agent-identity` HEAD
+`b282b894626409c7e1524f2daec31dd62a394018` for the verified sidecar-owned
+opaque-projection architecture. Plugin #2 source was implemented locally and
+does not copy that repository's Agent Identity/JWT data plane. Build inputs
+used the checksum-pinned `7.2.103` Linux ARM64 archive, Termux Go package, and
+signed pacman GCC/glibc packages. No package was installed.
 
 The authorized live canary created one private `cpactl` backup, installed the
 exact reviewed `.so` under the persistent plugin directory, and persisted only
@@ -241,6 +306,15 @@ The subsequent authorized controller maintenance backed up only the installed
 `scripts/cpactl`, replaced it with the reviewed plugin-neutral implementation,
 and did not restart or reconfigure the running core. The backup is
 `cpactl.pre-plugin-neutral-20260728` beside the live controller.
+
+The authorized Plugin #2 live canary uploaded one disabled synthetic projection
+through `POST /v0/management/auth-files`, verified the exact filename and
+disabled state, deleted it through the matching `DELETE`, and toggled only
+`credential-security` through the Management API. It did not start the
+sidecar, create a data/key directory, read a real auth file, emit a management
+key, or send an upstream request. Final live checks retained PID `11065`,
+loopback listener `127.0.0.1:8317`, two registered/enabled plugins, status
+redaction, and `cpactl doctor` pass.
 
 The official `v7.2.104` tag was checked after release. Its source adds
 validated persisted credential `weight` handling and changes cooldown/selector
@@ -365,3 +439,27 @@ Focused proof completed:
 - Partial trace `#27` records the separately authorized live `0.3.1` promotion,
   safe policy application, rollback rehearsal, final health boundary, and the
   remaining affinity/soak/race evidence under the same stable run ID.
+- Partial trace `#28` records Plugin #2 primary-source verification, the local
+  sidecar-owned implementation, focused proof, deterministic artifact hashes,
+  and the remaining Linux/live-canary evidence under the same stable run ID.
+- Credential Security `scripts/termux-control cli-proxy-api-plugins test`,
+  `build`, and `integration` passed vet/unit, deterministic Linux/glibc plugin
+  and Android sidecar builds, ABI inspection, exact-host `7.2.103` parsing
+  coexistence, redacted status, public
+  ResourceRoute rejection, and disable/re-enable. The focused hardening added
+  bounded store capacity and fixed-upstream path/redirect tests; the
+  deterministic sidecar hash is
+  `a473bbf4384ff842729f8d81e94a88be8ade749b07483f697869cf9a38f306f1`.
+  A Linux race attempt compiled the non-root packages but execution hit
+  Android's 39-bit VMA limitation; the root cgo test additionally hit the local
+  glibc stack-guard link limitation.
+- The authorized live Plugin #2 canary passed with `parse_total=8` before the
+  final lifecycle check, `parse_handled=3`, `parse_rejected=0`, exact canary
+  deletion, status redaction, public resource `404`, and `200 → 404 → 200`
+  disable/re-enable. `cpactl status`/`doctor` remained healthy with PID `11065`;
+  `/proc/11065/maps` still shows older scheduler generations as the documented
+  hot-reload warning.
+- After Plugin #2 sidecar hardening, live parser/lifecycle proof, and final
+  documentation updates, `./qa/verify --mode targeted` passed the canonical
+  Harness, policy, build, unit, integration, acceptance, coverage, and mutation
+  gates on the complete worktree.

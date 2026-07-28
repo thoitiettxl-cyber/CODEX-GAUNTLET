@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 SUITE="$ROOT/modules/cli-proxy-api-plugins"
 POLICY="$SUITE/policy-scheduler"
+CREDENTIAL="$SUITE/credential-security"
 CACHE="$SUITE/.cache"
 DIST="$SUITE/dist"
 GO_VERSION=1.26.5
@@ -18,6 +19,8 @@ CORE_URL="https://github.com/router-for-me/CLIProxyAPI/releases/download/v${CORE
 PACMAN_CACHE="$CACHE/pacman"
 GCC_PACKAGE_VERSION=14.2.1-1
 PLUGIN="$DIST/policy-scheduler-v0.3.1.so"
+CREDENTIAL_PLUGIN="$DIST/credential-security-v0.1.0.so"
+CREDENTIAL_SIDECAR="$DIST/credential-security-sidecar-v0.1.0-android-arm64"
 
 usage() {
 	echo "Usage: scripts/termux-control cli-proxy-api-plugins {status|prepare|format|test|build|integration|all}"
@@ -109,11 +112,13 @@ prepare() {
 }
 
 go_command() {
+	local module=$1
+	shift
 	prepare_go
 	local go_cache="$CACHE/go-build" module_cache="$CACHE/go-mod"
 	mkdir -p "$go_cache" "$module_cache"
 	(
-		cd "$POLICY"
+		cd "$module"
 		GOROOT="$GO_ROOT" GOTOOLCHAIN=local GOENV=off \
 			GOCACHE="$go_cache" GOMODCACHE="$module_cache" \
 			"$GO_ROOT/bin/go" "$@"
@@ -122,17 +127,19 @@ go_command() {
 
 format_source() {
 	prepare_go
-	GOROOT="$GO_ROOT" "$GO_ROOT/bin/gofmt" -w "$POLICY"/*.go
-	echo "PASS: policy-scheduler Go source formatted"
+	find "$POLICY" "$CREDENTIAL" -type f -name '*.go' -print0 | xargs -0 "$GO_ROOT/bin/gofmt" -w
+	echo "PASS: CLIProxyAPI plugin Go source formatted"
 }
 
 test_source() {
-	go_command vet ./...
-	go_command test ./...
-	echo "PASS: policy-scheduler vet and unit tests"
+	go_command "$POLICY" vet ./...
+	go_command "$POLICY" test ./...
+	go_command "$CREDENTIAL" vet ./...
+	go_command "$CREDENTIAL" test ./...
+	echo "PASS: policy-scheduler and credential-security vet/unit tests"
 }
 
-build_once() {
+build_policy_once() {
 	local output=$1
 	prepare_go
 	prepare_gcc
@@ -144,6 +151,35 @@ build_once() {
 			GOCACHE="$go_cache" GOMODCACHE="$module_cache" \
 			GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC="$SUITE/cc-glibc.sh" \
 			"$GO_ROOT/bin/go" build -trimpath -buildvcs=false -buildmode=c-shared -o "$output" .
+	)
+}
+
+build_credential_plugin_once() {
+	local output=$1
+	prepare_go
+	prepare_gcc
+	local go_cache="$CACHE/go-build" module_cache="$CACHE/go-mod"
+	mkdir -p "$go_cache" "$module_cache" "$(dirname "$output")"
+	(
+		cd "$CREDENTIAL"
+		GOROOT="$GO_ROOT" GOTOOLCHAIN=local GOENV=off \
+			GOCACHE="$go_cache" GOMODCACHE="$module_cache" \
+			GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC="$SUITE/cc-glibc.sh" \
+			"$GO_ROOT/bin/go" build -trimpath -buildvcs=false -buildmode=c-shared -o "$output" .
+	)
+}
+
+build_credential_sidecar_once() {
+	local output=$1
+	prepare_go
+	local go_cache="$CACHE/go-build" module_cache="$CACHE/go-mod"
+	mkdir -p "$go_cache" "$module_cache" "$(dirname "$output")"
+	(
+		cd "$CREDENTIAL"
+		GOROOT="$GO_ROOT" GOTOOLCHAIN=local GOENV=off \
+			GOCACHE="$go_cache" GOMODCACHE="$module_cache" \
+			GOOS=android GOARCH=arm64 CGO_ENABLED=0 \
+			"$GO_ROOT/bin/go" build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o "$output" ./cmd/credential-security-sidecar
 	)
 }
 
@@ -166,15 +202,15 @@ verify_plugin() {
 build_plugin() (
 	require_commands cmp file readelf sha256sum
 	local prefix_dir=${PREFIX:-/data/data/com.termux/files/usr}
-	local build_dir first second first_header second_header
-	build_dir=$(mktemp -d "$prefix_dir/tmp/policy-scheduler-build.XXXXXX")
+	local build_dir first second first_header second_header credential_first credential_second credential_first_header credential_sidecar_first credential_sidecar_second
+	build_dir=$(mktemp -d "$prefix_dir/tmp/cli-proxy-plugins-build.XXXXXX")
 	trap 'rm -rf "$build_dir"' EXIT
 	first="$build_dir/policy-scheduler-first.so"
 	second="$build_dir/policy-scheduler-second.so"
 	first_header=${first%.so}.h
 	second_header=${second%.so}.h
-	build_once "$first"
-	build_once "$second"
+	build_policy_once "$first"
+	build_policy_once "$second"
 	cmp "$first" "$second"
 	verify_plugin "$first"
 	mkdir -p "$DIST"
@@ -182,19 +218,42 @@ build_plugin() (
 	[[ ! -f "$first_header" ]] || cp -p "$first_header" "${PLUGIN%.so}.h"
 	chmod 0755 "$PLUGIN"
 	[[ ! -f "${PLUGIN%.so}.h" ]] || chmod 0644 "${PLUGIN%.so}.h"
+	credential_first="$build_dir/credential-security-first.so"
+	credential_second="$build_dir/credential-security-second.so"
+	credential_first_header=${credential_first%.so}.h
+	build_credential_plugin_once "$credential_first"
+	build_credential_plugin_once "$credential_second"
+	cmp "$credential_first" "$credential_second"
+	verify_plugin "$credential_first"
+	cp -p "$credential_first" "$CREDENTIAL_PLUGIN"
+	[[ ! -f "$credential_first_header" ]] || cp -p "$credential_first_header" "${CREDENTIAL_PLUGIN%.so}.h"
+	chmod 0755 "$CREDENTIAL_PLUGIN"
+	[[ ! -f "${CREDENTIAL_PLUGIN%.so}.h" ]] || chmod 0644 "${CREDENTIAL_PLUGIN%.so}.h"
+	credential_sidecar_first="$build_dir/credential-security-sidecar-first"
+	credential_sidecar_second="$build_dir/credential-security-sidecar-second"
+	build_credential_sidecar_once "$credential_sidecar_first"
+	build_credential_sidecar_once "$credential_sidecar_second"
+	cmp "$credential_sidecar_first" "$credential_sidecar_second"
+	file "$credential_sidecar_first" | grep -q 'ELF 64-bit LSB.*ARM aarch64'
+	readelf -h "$credential_sidecar_first" | grep -q 'Machine:.*AArch64'
+	cp -p "$credential_sidecar_first" "$CREDENTIAL_SIDECAR"
+	chmod 0755 "$CREDENTIAL_SIDECAR"
 	sha256sum "$PLUGIN"
-	echo "PASS: deterministic Linux/glibc ARM64 policy-scheduler build"
+	sha256sum "$CREDENTIAL_PLUGIN"
+	sha256sum "$CREDENTIAL_SIDECAR"
+	echo "PASS: deterministic policy-scheduler, credential-security, and Android sidecar builds"
 )
 
 integration_test() {
 	prepare_core
-	[[ -f "$PLUGIN" ]] || build_plugin
+	[[ -f "$PLUGIN" && -f "$CREDENTIAL_PLUGIN" && -f "$CREDENTIAL_SIDECAR" ]] || build_plugin
 	"$SUITE/test-host-integration.sh"
 }
 
 status() {
 	echo "suite_root=$SUITE"
 	echo "policy_source=$POLICY"
+	echo "credential_source=$CREDENTIAL"
 	echo "target=linux/arm64-glibc"
 	echo "cliproxyapi_sdk=v7.2.103"
 	echo "go_toolchain=termux-$GO_VERSION-download-only"
@@ -204,6 +263,16 @@ status() {
 		echo "plugin_sha256=$(sha256sum "$PLUGIN" | awk '{print $1}')"
 	else
 		echo "plugin_sha256=missing"
+	fi
+	if [[ -f "$CREDENTIAL_PLUGIN" ]]; then
+		echo "credential_plugin_sha256=$(sha256sum "$CREDENTIAL_PLUGIN" | awk '{print $1}')"
+	else
+		echo "credential_plugin_sha256=missing"
+	fi
+	if [[ -f "$CREDENTIAL_SIDECAR" ]]; then
+		echo "credential_sidecar_sha256=$(sha256sum "$CREDENTIAL_SIDECAR" | awk '{print $1}')"
+	else
+		echo "credential_sidecar_sha256=missing"
 	fi
 	echo "live_install=root-managed-and-separately-authorized"
 	echo "verification_authority=./qa/verify"

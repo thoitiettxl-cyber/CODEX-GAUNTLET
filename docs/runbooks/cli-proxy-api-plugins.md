@@ -28,18 +28,23 @@ cache, verifies exact SHA-256 values, and extracts them privately. It also
 downloads official plugin-capable CLIProxyAPI `7.2.103` with SHA-256
 `134097d189c11c882a77bd72eb82b7beecc19545397b622954b4ff79fa8c4b43`.
 
-`build` creates two Linux/glibc ARM64 shared objects and requires byte equality,
-AArch64 ELF identity, `cliproxy_plugin_init`, and an allowed glibc dependency
+`build` creates two Linux/glibc ARM64 shared objects and one Android/arm64
+sidecar executable. It requires byte equality across two builds, correct ELF
+identity, `cliproxy_plugin_init` on each plugin, and an allowed glibc dependency
 set. Ignored output is:
 
 ```text
 modules/cli-proxy-api-plugins/dist/policy-scheduler-v0.3.1.so
+modules/cli-proxy-api-plugins/dist/credential-security-v0.1.0.so
+modules/cli-proxy-api-plugins/dist/credential-security-sidecar-v0.1.0-android-arm64
 ```
 
-`integration` starts a temporary loopback CLIProxyAPI on port 18317 with an
-empty auth directory and test-only keys. It proves registration, redacted
-status, local dashboard assets, hot reconfigure, disable, and re-enable. It
-sends no upstream model request and removes its temporary lab.
+`integration` starts a temporary loopback CLIProxyAPI on port 18317 with
+test-only keys and one disabled synthetic Credential Security projection. It
+proves both plugins register, Plugin #2 declines unrelated auth, management
+status is redacted, Plugin #2 has no public ResourceRoute, and both plugins
+disable/re-enable. It sends no upstream model request and removes its temporary
+lab.
 
 ## Mandatory target preflight
 
@@ -65,6 +70,9 @@ A live canary requires explicit authorization for these exact effects:
 
 - copy one reviewed `.so` to
   `/data/local/cli-proxy-api/plugins/linux/arm64/policy-scheduler-v0.3.1.so`;
+- for a Plugin #2 canary, copy reviewed
+  `credential-security-v0.1.0.so` beside it and leave the Android sidecar
+  outside the plugin discovery tree;
 - update only `plugins.configs.policy-scheduler` in
   `/data/local/cli-proxy-api/config/config.yaml` through Management API;
 - possibly restart only `cli_proxy_api` if the host reports
@@ -188,6 +196,59 @@ them and must not invent quota or tenant state.
 6. Disable through `PATCH /plugins/policy-scheduler/enabled`; verify routes and
    scheduler effects disappear before re-enabling.
 
+## Use Credential Security Plugin #2
+
+Plugin #2 implements one narrow sidecar-owned static bearer/PAT boundary. The
+native plugin recognizes only `auth_mode: credential_security_sidecar`, an
+opaque `cpcs_` key, a versioned `cs-` credential ID, and the exact loopback
+endpoint configured by `sidecar_port`. It declines ordinary Codex OAuth files.
+Its authenticated read-only status route is:
+
+```text
+GET /v0/management/credential-security/status
+```
+
+There is intentionally no `/v0/resource/plugins/credential-security/...`
+route. The companion sidecar listens on `127.0.0.1:18319` by default and
+requires three owner-only inputs:
+
+- an encrypted data directory with mode `0700`;
+- a separate 32-byte encryption key file with mode `0600`;
+- a sidecar management-key file with mode `0600` and at least eight bytes.
+
+Start it only under an explicit process supervisor or a bounded canary:
+
+```bash
+modules/cli-proxy-api-plugins/dist/credential-security-sidecar-v0.1.0-android-arm64 \
+  -listen 127.0.0.1:18319 \
+  -data-dir /explicit/owner-only/data \
+  -key-file /explicit/owner-only/encryption-key \
+  -management-key-file /explicit/owner-only/management-key
+```
+
+Do not put either key in argv, environment variables, plugin config, auth
+files, logs, or Git. Import is disabled by default and returns one projection
+containing the opaque key; the caller must persist that projection through the
+CPA auth-file Management API and must update it after enable/disable/rotation.
+The sidecar list/status routes never return the original or opaque key.
+
+The initial production boundary supports HTTP/SSE forwarding to the fixed
+`https://chatgpt.com/backend-api/codex` origin. `--allow-test-upstream` permits
+only a loopback HTTP upstream and is for isolated tests. Built-in OAuth login,
+refresh, Agent Identity JWT/AgentAssertion, WebSockets, automatic auth-file
+synchronization, and real-token migration are not implemented.
+
+The sidecar rejects `.`/`..` proxy path segments, does not follow upstream
+redirects, and refuses imports after the bounded 4096-record store limit. These
+checks preserve the fixed-upstream and bounded-state contract; a redirect is
+returned to the caller instead of receiving the decrypted bearer.
+
+For a live parser canary, upload only a disabled synthetic projection with a
+unique exact filename, verify the Plugin #2 parse counter increments and the
+auth remains disabled, then delete that exact file. Never reuse a real token,
+opaque key, credential ID, or auth filename for this test. Registration and a
+synthetic parse canary do not prove real upstream authentication.
+
 ## Same-origin and encryption warnings
 
 The resource page is unauthenticated static HTML on Management Center's origin.
@@ -196,31 +257,32 @@ key in memory. This does not weaken the trust boundary: any enabled resource
 page plugin can read a key stored by Management Center and act with current
 admin authority.
 
-Credential Security encryption-at-rest is not implemented. The current source
-and live deployment are version `0.3.1` and implement only the scheduler-owned
-affinity slice. Future encryption-at-rest
-protects only copied/backed-up ciphertext. The plugin remains in-process and
-decrypts while operating; it is not an HSM and cannot protect against a
-compromised host or malicious same-origin page.
+Credential Security `0.1.0` implements encryption-at-rest only for credentials
+created inside its companion sidecar. It does not encrypt existing CPA OAuth
+files. Encryption protects copied/backed-up ciphertext; the sidecar decrypts
+while forwarding and is not an HSM. It cannot protect against a compromised
+service process, stolen encryption key, or malicious administrator.
 
 ## Linux race/fuzz gate
 
 The Android/Termux target cannot natively execute Go ThreadSanitizer or fuzzing.
-Run the Linux-only proof from the plugin module before declaring the release
+Run the Linux-only proof from both plugin modules before declaring the release
 evidence complete:
 
 ```bash
 cd modules/cli-proxy-api-plugins/policy-scheduler
 make linux-ci
+cd ../credential-security
+make test-race
+make fuzz
 ```
 
-This runs `go test -race`, the three named fuzz targets, and C-shared ABI
-symbol inspection. All three coverage-guided fuzz targets have passed with a
-Linux/glibc test binary. The race binary compiled, but ThreadSanitizer cannot
-run under Android's 39-bit VMA layout; an executable race pass on a true Linux
-runner remains required. The Termux `test` target still runs the fuzz seed
-corpus through ordinary unit execution and does not substitute for that race
-proof.
+The Policy Scheduler's three coverage-guided fuzz targets have passed with a
+Linux/glibc test binary. Credential Security adds projection and management
+fuzz targets; their seed corpora run in the Termux suite, while coverage-guided
+execution and `go test -race` require a true Linux runner. The Policy Scheduler
+race binary compiled, but ThreadSanitizer cannot run under Android's 39-bit VMA
+layout. Termux unit execution does not substitute for either race proof.
 
 ## Soak and rollback rehearsal
 
@@ -239,6 +301,11 @@ config change, and repeat in the opposite direction. Verify the same redacted
 status/health invariants after each transition. Never delete the whole plugin
 directory or mutate auth files.
 
+If Credential Security is promoted beyond a parser-only canary, separately
+soak the sidecar store/restart path, opaque-key rotation, projection update,
+HTTP/SSE forwarding, and exact disable/delete recovery. Do not infer these
+properties from the native plugin's registration status.
+
 ## Rollback and recovery
 
 First set `plugins.configs.policy-scheduler.enabled` to false and verify the
@@ -251,6 +318,13 @@ Restore the prior redacted config stanza or backup. Never delete the complete
 plugins directory or purge `/data/local/cli-proxy-api`. Verify `cpactl doctor`,
 loopback listener ownership, management header, plugin list, and client/provider
 boundaries after recovery.
+
+For Plugin #2, disable only `credential-security`, confirm its authenticated
+status route returns 404, remove the exact synthetic canary auth file if one
+was created, then move only `credential-security-v0.1.0.so` out of discovery.
+Stop a sidecar canary before removing its explicitly named temporary data and
+key paths. Never delete a real encrypted store or key during plugin rollback;
+preserve both until every projection has been disabled or removed.
 
 The current live `0.3.1` recovery inputs are promotion backup
 `cli-proxy-api-state.20260728T165717Z.tar.gz` and non-discoverable files

@@ -7,8 +7,9 @@ CLIProxyAPI plugin suite under `modules/cli-proxy-api-plugins/`. Plugin binaries
 remain runtime-installed artifacts and are never bundled into the Magisk module
 ZIP.
 
-The current source and separately managed live phase are plugin #1,
-`policy-scheduler` version `0.3.1`:
+The current source and separately managed live phase include plugin #1,
+`policy-scheduler` version `0.3.1`, and plugin #2,
+`credential-security` version `0.1.0`. Plugin #1 provides:
 
 - official capability `management_api`, providing read-only observability;
 - official capability `scheduler`, implementing `scheduler.pick`;
@@ -17,10 +18,12 @@ The current source and separately managed live phase are plugin #1,
 - no auth-file read, `host.auth.get`, `host.auth.save`, token logging, network
   execution, model routing, or executor capability.
 
-Plugin #2 is designed but intentionally not implemented until its provider and
-refresh ownership can be proven. Plugin #3 and an executor are explicitly
-omitted because no target requirement demonstrates cross-provider routing or a
-new backend. Strategy-preserving affinity behavior follows
+Plugin #2 is now scoped for a sidecar-owned static bearer/PAT vertical slice;
+source version `0.1.0` is implemented and its live disabled-parser canary has
+passed. It must not claim transparent encryption or refresh ownership for
+built-in OAuth. Plugin #3 and an executor are explicitly omitted because no
+target requirement demonstrates cross-provider routing or a new backend.
+Strategy-preserving affinity behavior follows
 [ADR 0014](../decisions/0014-preserve-policy-scheduler-routing-semantics.md).
 
 ## Evidence baseline
@@ -36,11 +39,13 @@ Evidence collected on 2026-07-28 UTC:
 | `codex-token-usage` scheduler reference | Confirmed from official repository | `zhumengling/codex-token-usage` HEAD `a5221681fbcca071ac9f0dcb1ff37f8edcd97a6d` on 2026-07-28 keeps rotation state per provider/model and, when affinity or filtering requires an explicit `AuthID`, mirrors CPA `fill-first` or `round-robin`. Its token-window concurrency protection depends on the separate `usage` capability, SQLite history, auth identity reads, and request reservations, so that portion is not portable into this scheduler-only boundary. |
 | Source version `0.3.0` strategy hardening | Confirmed in isolated host | Affinity keys and balancing state are provider/model scoped. New and failover bindings use explicit weighted/LRU policy when configured; otherwise they mirror `delegate_builtin`. Balance-strategy reconfigure clears local selection state. Vet/unit, deterministic Linux ARM64 build, ABI/dependency checks, and official-host integration passed for artifact SHA-256 `786b6f35407706858700cfe6378bc0037e090e662bf0bd90d2678660a72f8759`. No `usage` capability, auth read, SQLite store, token logging, or probe request was added. |
 | Source version `0.3.1` operational projection | Confirmed in repository/unit/isolated-host proof; executable race proof pending | Read-only status now includes process generation/reconfigure counts, strategy counters, affinity lifecycle counters, observed cooldown exclusions, configured-but-ineffective policy fields, bounded provider/model state sizes, and an explicit external mapped-library check warning. It stores no raw signal or `AuthID` in these projections. All three coverage-guided fuzz targets passed with the Linux/glibc test binary; the race binary compiled, but Android's 39-bit VMA layout prevents ThreadSanitizer execution, so true Linux race CI remains required. |
-| Live module plugin is installed | Confirmed | The reviewed SHA-256-identical `policy-scheduler-v0.3.1.so` is the only discoverable plugin below the persistent plugin directory. Authenticated status reports version `0.3.1` with `least-recently-used`; PID `11065`, loopback listener, and `cpactl doctor` remained healthy through promotion and the `0.3.1 → 0.3.0 → 0.3.1` rollback rehearsal without restart. Reviewed `v0.3.0`, `v0.2.0`, and `v0.1.0` artifacts remain recoverable as non-discoverable `.rollback` files. |
+| Source Plugin #2 `0.1.0` | Confirmed in unit, isolated-host, and live disabled-parser canary proof | The native AuthProvider recognizes only versioned sidecar projections, declines ordinary Codex files, exposes only a redacted authenticated status route, and registers no public ResourceRoute. The companion Android/arm64 sidecar encrypts static bearer/PAT values with AES-256-GCM, keeps the key in a separate owner-only file, returns disabled projections by default, rotates opaque keys, enforces a bounded record store and fixed proxy path/redirect boundary, and forwards bounded HTTP/SSE requests to a fixed upstream. Deterministic artifact SHA-256 values are `93579313869e031a266e12e13f2f9fa58dfa3b94131183396294f08770a1cfe8` for the plugin and `a473bbf4384ff842729f8d81e94a88be8ade749b07483f697869cf9a38f306f1` for the Android sidecar. |
+| Live module plugins are installed | Confirmed | SHA-256-identical `policy-scheduler-v0.3.1.so` and `credential-security-v0.1.0.so` are the two discoverable plugins below the persistent plugin directory. Authenticated status reports versions `0.3.1` and `0.1.0`; the disabled synthetic Plugin #2 parser canary was removed by exact filename and live disable/re-enable returned `200 → 404 → 200`. PID `11065`, loopback listener, and `cpactl doctor` remained healthy without restart. Reviewed scheduler `v0.3.0`, `v0.2.0`, and `v0.1.0` artifacts remain recoverable as non-discoverable `.rollback` files. |
 | Live session-affinity baseline | Confirmed on `0.2.0`; fresh `0.3.1` proof pending | Earlier Codex traffic produced `session_affinity_new` followed by `session_affinity_hit` with the same opaque credential alias over three eligible candidates. Live evidence also showed that client `Authorization` is not present in scheduler options on this path; the operational signal is `Session_id`, while `api_key_id` metadata remains available for a compatible future host/provider seam. The final `0.3.1` snapshot retained this configuration but reported zero bindings and `session_affinity` as configured but ineffective because no signal had been observed in current-generation traffic. |
 | Live cooldown/recovery baseline | Confirmed on `0.2.0`; LRU transition confirmed on `0.3.0` | Existing Codex traffic on `0.2.0` produced two real cooldown/recovery windows. After the `0.3.0` LRU update, live traffic produced `3 → 2 → 3` candidates and explicit `least_recently_used` selections while the authenticated status route and `cpactl doctor` stayed healthy without restart or deliberate probe. |
 | Official upstream refresh/storage seam | Not confirmed | The released `v7.2.104` source and official `origin/main` at `c9417c8ae9b16fabc0386ca35d36f13bf8b1d678` leave `sdk/pluginabi/types.go`, `sdk/pluginapi/types.go`, and `internal/pluginhost/auth_provider.go` unchanged from `v7.2.103`; no callback persists refreshed built-in OAuth data through plugin-owned encryption. |
 | Cockpit Tools encryption boundary | Confirmed, not directly portable | Official `jlcodes99/cockpit-tools` source at `923cc6c45b8dbfe743ea2e04be33d2fe4fbf5654` encrypts application-owned account detail files with AES-256-GCM, then materializes separate plaintext `0600` OAuth JSON files for its embedded CLIProxyAPI sidecar and registers runtime auth with `WithSkipPersist`. It does not implement encryption through the native CLIProxyAPI plugin ABI. |
+| Sidecar-owned Plugin #2 seam | Architecture confirmed from primary source; local exact-host and live parser proof passed | `simplez2/cpa-codex-agent-identity` HEAD `b282b894626409c7e1524f2daec31dd62a394018` keeps original JWT/PAT values in an AES-256-GCM sidecar store, exposes only an opaque sidecar key plus fixed `base_url` through CPA auth files, and registers an AuthProvider without a public ResourceRoute. Its release baseline is CPA `v7.2.95`; the local implementation supports the narrower static bearer/PAT slice on `7.2.103`. |
 
 The exact deployed binary, not this document, remains authoritative. Every
 deployment must recheck `X-CPA-SUPPORT-PLUGIN: 1` before installation.
@@ -171,7 +176,7 @@ The plugin rechecks the requested chain for defense in depth and exposes the
 limitations in its dashboard. It does not claim cross-tier fallback or
 automatic live quota measurement on this host version.
 
-## Plugin #2 — Credential Security design gate
+## Plugin #2 — Credential Security sidecar slice
 
 The intended capability boundary is:
 
@@ -188,27 +193,18 @@ The intended capability boundary is:
   with bounded constant-time chunk handling.
 
 Credential selection or rejection remains exclusively in `scheduler`. The
-bounded session-affinity portion is implemented in live version `0.3.1`; it
-does not make `auth_provider` ownership safer
-or satisfy the encryption gate. No interceptor may call an upstream model or
-log `StorageJSON`, an access token, a refresh token, cookie, management key, or
-raw credential.
+first Plugin #2 slice owns only sidecar-managed static bearer/PAT credentials:
+the sidecar encrypts the original at rest, returns an opaque `cpcs_` key for a
+disabled-or-enabled CPA projection, and forwards HTTP/SSE requests through a
+fixed loopback-to-upstream path. The plugin never reads auth files directly,
+and no interceptor may log `StorageJSON`, an access token, a refresh token,
+cookie, management key, or raw credential.
 
-Implementation is blocked on a concrete provider decision. On host `7.2.103`,
-an `auth_provider` owns one provider identifier. Returning decrypted
-`StorageJSON` for a built-in provider lets its native executor run, but native
-refresh does not call plugin `auth.refresh`; later token-store persistence can
-write decrypted JSON. Giving the plugin its own provider requires a matching
-executor/model path, forbidden here without a genuinely new backend. Shadowing
-a built-in provider also means duplicating real login and refresh behavior.
-
-A generic “encrypt every existing OAuth file” plugin would therefore be unsafe
-or non-functional. Stage 2 starts only after one of these is confirmed:
-
-- a provider fully owned by the plugin, including real login/poll/refresh and a
-  supported execution path; or
-- a new official host callback/storage seam that re-encrypts after native
-  refresh without forking core.
+This does not make a generic “encrypt every existing OAuth file” plugin safe or
+functional. On host `7.2.103`, native refresh of a built-in provider does not
+call plugin `auth.refresh`, and later token-store persistence can write
+decrypted JSON. Therefore Plugin #2 does not recognize ordinary built-in
+Codex auth files and does not provide automatic login/refresh for them.
 
 Cockpit Tools does not remove this gate. Its encrypted account-detail store is
 owned by the surrounding Rust application, while the embedded API sidecar gets
@@ -216,11 +212,13 @@ separate plaintext runtime projections. Reproducing that boundary here would
 require a new owning process/runtime-auth seam, not an `auth_provider` wrapper
 around the three live built-in `codex` files.
 
-When the gate is met, persisted storage must be versioned, use authenticated
-encryption and an external key identifier, preserve rollback/migration
-semantics, and coexist with the scheduler's sticky TTL/failover contract. Key
-material must not be stored beside ciphertext or rendered through
-ConfigFields.
+The sidecar store is versioned, uses authenticated AES-256-GCM with external
+key material, uses atomic record replacement plus directory sync for imports,
+state changes, and opaque-key rotation, and keeps key material out of
+ciphertext directories and plugin `ConfigFields`. Its first slice is complete
+only for static bearer/PAT credentials and bounded HTTP/SSE forwarding;
+Agent Identity JWT validation, AgentAssertion, WebSocket forwarding, and
+built-in OAuth refresh remain explicit follow-up capabilities.
 
 ## Plugin #3 and Executor decisions
 
