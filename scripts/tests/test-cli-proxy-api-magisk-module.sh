@@ -44,6 +44,11 @@ for file in "$MODULE/customize.sh" "$MODULE/service.sh" "$MODULE/action.sh" \
 done
 bash -n "$MODULE/build.sh"
 bash -n "$ROOT/scripts/tests/test-cli-proxy-api-magisk-feasibility.sh"
+if grep -Eq 'codex-token-usage|CPA_TOKEN_USAGE_DIR|CPA_MODEL_PRICE_FILE' \
+    "$MODULE/scripts/cpactl"; then
+  echo "controller contains plugin-specific runtime policy" >&2
+  exit 1
+fi
 echo "PASS shell syntax"
 
 CPA_MODULE_OUT_DIR="$BUILD_OUT" "$MODULE/build.sh" >/dev/null
@@ -109,11 +114,18 @@ printf '%s\n' \
 CPA_TEST_MODE=1 CPA_DATA_DIR="$tmp/data" CPA_MODULE_DIR="$tmp/module" \
   CPA_BUSYBOX="$(command -v busybox)" CPA_PORT=18318 \
   "$MODULE/scripts/cpactl" doctor >/dev/null
+[[ -d "$tmp/data/data" && ! -e "$tmp/data/data/codex-token-usage" ]]
 mkdir -p "$tmp/data/plugins/linux/arm64"
 printf 'store-installed plugin fixture\n' >"$tmp/data/plugins/linux/arm64/store-plugin.so"
 CPA_TEST_MODE=1 CPA_DATA_DIR="$tmp/data" CPA_MODULE_DIR="$tmp/module" \
   CPA_BUSYBOX="$(command -v busybox)" CPA_PORT=18318 \
   "$MODULE/scripts/cpactl" doctor >/dev/null
+status_output=$(CPA_TEST_MODE=1 CPA_DATA_DIR="$tmp/data" CPA_MODULE_DIR="$tmp/module" \
+  CPA_BUSYBOX="$(command -v busybox)" CPA_PORT=18318 \
+  "$MODULE/scripts/cpactl" status 2>/dev/null || true)
+grep -Fq 'plugins: 1 .so' <<<"$status_output"
+grep -Fq 'plugin support: unknown' <<<"$status_output"
+! grep -Fq 'dashboard' <<<"$status_output"
 echo "PASS persistent plugin directory with zero and installed plugins"
 
 cp "$tmp/data/config/config.yaml" "$tmp/safe.yaml"
@@ -244,13 +256,15 @@ purge_dir=${TMPDIR:-/data/data/com.termux/files/usr/tmp}/cpa-test-module-purge-$
 mkdir -p "$purge_dir/data"
 printf 'preserve-until-confirmed\n' >"$purge_dir/data/sentinel"
 if CPA_TEST_MODE=1 CPA_DATA_DIR="$purge_dir" CPA_MODULE_DIR="$tmp/module" \
-    CPA_BUSYBOX="$(command -v busybox)" "$MODULE/scripts/cpactl" purge-data >/dev/null 2>&1; then
+    CPA_BUSYBOX="$(command -v busybox)" CPA_PORT=18318 \
+    "$MODULE/scripts/cpactl" purge-data >/dev/null 2>&1; then
   echo "purge-data without confirmation unexpectedly passed" >&2
   exit 1
 fi
 [[ -f $purge_dir/data/sentinel ]]
 CPA_TEST_MODE=1 CPA_DATA_DIR="$purge_dir" CPA_MODULE_DIR="$tmp/module" \
-  CPA_BUSYBOX="$(command -v busybox)" "$MODULE/scripts/cpactl" purge-data --yes >/dev/null
+  CPA_BUSYBOX="$(command -v busybox)" CPA_PORT=18318 \
+  "$MODULE/scripts/cpactl" purge-data --yes >/dev/null
 [[ ! -e $purge_dir ]]
 echo "PASS destructive purge confirmation boundary"
 

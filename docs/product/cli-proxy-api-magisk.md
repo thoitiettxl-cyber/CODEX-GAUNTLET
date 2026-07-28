@@ -80,6 +80,12 @@ update, uninstall, and purge operations mutate root-managed state and require
 an explicitly authorized task. The operational safety procedure is
 [`docs/runbooks/cli-proxy-api-magisk.md`](../runbooks/cli-proxy-api-magisk.md).
 
+The controller remains plugin-neutral: it owns generic plugin/data roots and
+reports the host support header plus installed `.so` count. It does not assume
+a plugin ID, resource route, data subdirectory, or plugin-specific environment
+variables. Plugin health belongs to each plugin's registered Management API
+and resource routes.
+
 ## Security invariants
 
 - Never store or print API keys, OAuth tokens, management secrets, auth JSON,
@@ -94,6 +100,9 @@ an explicitly authorized task. The operational safety procedure is
 - The module ZIP contains no credentials or optional plugin binary. Plugins
   are installed by CLIProxyAPI Store/runtime under the persistent plugin
   directory.
+- Repository-owned plugin source follows the separate
+  [`CLIProxyAPI plugin suite contract`](cli-proxy-api-plugin-suite.md);
+  generated `.so` files remain runtime-installed and outside the module ZIP.
 - TLS verification remains enabled; the runtime carries its own CA bundle.
 
 ## Update and recovery invariants

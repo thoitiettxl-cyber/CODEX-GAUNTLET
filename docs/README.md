@@ -29,6 +29,12 @@
   safely separate repository proof from root/device runtime proof.
 - `inventory/cli-proxy-api-magisk.json`: durable runtime identity, ownership,
   materialized paths, and capability metadata.
+- `product/cli-proxy-api-plugin-suite.md`: capability taxonomy, implemented
+  scheduler policy, host limitations, and deferred credential-security design.
+- `runbooks/cli-proxy-api-plugins.md`: checksum-pinned build, isolated host
+  proof, live canary gate, rollback, and same-origin warnings.
+- `inventory/cli-proxy-api-plugins.json`: source/control identity and current
+  implemented/deferred plugin set.
 - `provenance/cli-proxy-api-magisk-knowledge.json`: pinned source commit and
   file hashes for the imported knowledge.
 - `provenance/cli-proxy-api-magisk-source.json`: byte and executable-mode

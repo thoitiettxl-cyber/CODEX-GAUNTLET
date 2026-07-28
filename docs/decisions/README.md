@@ -23,3 +23,4 @@ documents here as real choices are accepted, then index them in this file.
 - [0010 — Enable Pi Router raw management and protocol adapters](0010-enable-pi-router-raw-management-and-protocol-adapters.md)
 - [0012 — Import CLIProxyAPI Magisk as auxiliary runtime knowledge](0012-import-cli-proxy-api-magisk-knowledge.md)
 - [0013 — Vendor CLIProxyAPI Magisk maintenance source](0013-vendor-cli-proxy-api-magisk-maintenance-source.md)
+- [0014 — Preserve Policy Scheduler routing semantics](0014-preserve-policy-scheduler-routing-semantics.md)

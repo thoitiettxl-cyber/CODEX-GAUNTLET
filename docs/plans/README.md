@@ -31,7 +31,7 @@ plan.
 
 ## Active Plans
 
-None.
+- `TERMUX-014` — [Build the CLIProxyAPI policy and credential plugin suite](active/cli-proxy-api-plugin-suite.md)
 
 ## Recently Completed
 

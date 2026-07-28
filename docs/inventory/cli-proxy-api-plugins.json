@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "name": "cli-proxy-api-plugins",
+  "kind": "runtime-installed-native-plugin-suite",
+  "capability": "provider-gateway-policy-plugin",
+  "responsibility": "Policy and credential extensions",
+  "authority": "auxiliary-cli-proxy-api-runtime-extension",
+  "source_path": "modules/cli-proxy-api-plugins",
+  "control_entrypoint": "scripts/termux-control cli-proxy-api-plugins",
+  "product_contract": "docs/product/cli-proxy-api-plugin-suite.md",
+  "runbook": "docs/runbooks/cli-proxy-api-plugins.md",
+  "target_core_version": "7.2.103",
+  "target_core_commit": "cade44b9cdee6b9328ea2648fd119129fdf11e2d",
+  "target": "linux-arm64-glibc-cgo",
+  "implemented_plugins": [
+    {
+      "id": "policy-scheduler",
+      "version": "0.3.0",
+      "live_version": "0.2.0",
+      "capabilities": ["management_api", "scheduler"],
+      "methods": ["management.register", "management.handle", "scheduler.pick"],
+      "host_callbacks": ["host.auth.list", "host.auth.get_runtime"]
+    }
+  ],
+  "deferred_plugins": ["credential-security", "tenant-routing"],
+  "live_plugin_directory": "/data/local/cli-proxy-api/plugins/linux/arm64",
+  "bundled_in_magisk_zip": false,
+  "root_required_for_live_install": true,
+  "verification_authority": "./qa/verify"
+}

@@ -63,6 +63,18 @@ scripts/termux-control cli-proxy-api-magisk source-check
 scripts/termux-control cli-proxy-api-magisk syntax
 ```
 
+The staged native CLIProxyAPI policy plugin suite is maintained separately from
+the Magisk ZIP. Its checksum-pinned non-root workflow is:
+
+```bash
+scripts/termux-control cli-proxy-api-plugins status
+scripts/termux-control cli-proxy-api-plugins all
+```
+
+See the [plugin suite contract](docs/product/cli-proxy-api-plugin-suite.md) and
+[operations runbook](docs/runbooks/cli-proxy-api-plugins.md). Live installation
+remains a separately authorized root-managed action.
+
 `pi-router` is an optional loopback OpenAI Responses gateway built on Pi's
 provider runtime. It keeps router credentials separate from Pi CLI state and
 lets current Codex clients connect with `wire_api = "responses"`. Its

@@ -1,5 +1,11 @@
 # CLIProxyAPI Magisk Module Changelog
 
+## Unreleased
+
+- Remove the remaining `codex-token-usage` path, environment, and dashboard
+  assumptions from `cpactl`; the controller now manages generic plugin/data
+  roots and reports only host plugin support plus installed `.so` count.
+
 ## v1.1.0 — 2026-07-16
 
 - Stop bundling CLIProxyAPI plugins in the module ZIP.

@@ -7,11 +7,12 @@ ORCHESTRATOR_DB="${HARNESS_DB_PATH:-$ROOT/harness.db}"
 CHANGESET_DIR="$ROOT/.harness/changesets"
 
 usage() {
-  echo "Usage: scripts/termux-control {status|doctor|verify|rebuild-harness|orchestrator|continuity|rtk|cli-proxy-api-magisk}"
+  echo "Usage: scripts/termux-control {status|doctor|verify|rebuild-harness|orchestrator|continuity|rtk|cli-proxy-api-magisk|cli-proxy-api-plugins}"
   echo "       scripts/termux-control orchestrator {init|rebuild|status|<harness-cli args...>}"
   echo "       scripts/termux-control continuity {status|bind|checkpoint|verify|recover|audit|operation}"
   echo "       scripts/termux-control rtk {status|doctor|update --dry-run|rehearse}"
   echo "       scripts/termux-control cli-proxy-api-magisk {status|source-check|syntax|test|build}"
+  echo "       scripts/termux-control cli-proxy-api-plugins {status|prepare|format|test|build|integration|all}"
 }
 
 orchestrator() {
@@ -100,6 +101,10 @@ case "${1:-}" in
   cli-proxy-api-magisk)
     shift
     exec "$ROOT/scripts/cli-proxy-api-magisk-control" "$@"
+    ;;
+  cli-proxy-api-plugins)
+    shift
+    exec "$ROOT/scripts/cli-proxy-api-plugins-control" "$@"
     ;;
   orchestrator)
     shift

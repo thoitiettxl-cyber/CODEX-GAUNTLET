@@ -30,7 +30,7 @@ paths are:
 /data/local/cli-proxy-api/config/config.yaml
 /data/local/cli-proxy-api/auth/
 /data/local/cli-proxy-api/plugins/
-/data/local/cli-proxy-api/data/codex-token-usage/
+/data/local/cli-proxy-api/data/
 ```
 
 Required config replacements:
@@ -59,6 +59,11 @@ force-kills only matching module core processes. It never kills a foreign
 Termux/service listener. When `update-core` finds the service running, it
 performs this stop, promotes the candidate, and starts it again; failures
 roll back to the previous release.
+
+The controller is plugin-neutral. `cpactl status` reports the host plugin
+support header and installed `.so` count, but does not assume a plugin ID,
+dashboard route, data layout, or plugin-specific environment variables. Use
+each plugin's Management API/resource routes for its own health and policy.
 
 Ordinary uninstall preserves `/data/local/cli-proxy-api`. Destructive cleanup
 requires `cpactl purge-data --yes`.

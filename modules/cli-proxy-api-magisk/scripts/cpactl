@@ -7,7 +7,7 @@ DATA_DIR=${CPA_DATA_DIR:-/data/local/cli-proxy-api}
 CURRENT=$DATA_DIR/current
 CONFIG=$DATA_DIR/config/config.yaml
 AUTH_DIR=$DATA_DIR/auth
-PLUGIN_DATA_DIR=$DATA_DIR/data/codex-token-usage
+PLUGIN_DATA_ROOT=$DATA_DIR/data
 PLUGIN_ROOT=$DATA_DIR/plugins
 PLUGIN_DIR=$PLUGIN_ROOT/linux/arm64
 RUN_DIR=$DATA_DIR/run
@@ -61,19 +61,19 @@ runtime_paths() {
 }
 
 prepare_mutable_dirs() {
-  mkdir -p "$DATA_DIR" "$DATA_DIR/config" "$AUTH_DIR" "$PLUGIN_DATA_DIR" \
+  mkdir -p "$DATA_DIR" "$DATA_DIR/config" "$AUTH_DIR" "$PLUGIN_DATA_ROOT" \
     "$PLUGIN_DIR" "$RUN_DIR" "$LOG_DIR" "$BACKUP_DIR" \
     "$DATA_DIR/releases" "$RUN_DIR/tmp"
   chmod 0711 "$DATA_DIR"
-  chmod 0700 "$DATA_DIR/config" "$AUTH_DIR" "$DATA_DIR/data" \
-    "$PLUGIN_ROOT" "$PLUGIN_DIR" "$PLUGIN_DATA_DIR" "$RUN_DIR" \
+  chmod 0700 "$DATA_DIR/config" "$AUTH_DIR" "$PLUGIN_DATA_ROOT" \
+    "$PLUGIN_ROOT" "$PLUGIN_DIR" "$RUN_DIR" \
     "$RUN_DIR/tmp" "$LOG_DIR" "$BACKUP_DIR"
   if [ "$(id -u)" = 0 ]; then
     chown -R "$CORE_UID:$CORE_GID" "$DATA_DIR/config" "$AUTH_DIR" \
-      "$DATA_DIR/data" "$PLUGIN_ROOT" "$RUN_DIR" "$LOG_DIR" 2>/dev/null || true
-    bb find "$DATA_DIR/config" "$AUTH_DIR" "$DATA_DIR/data" "$RUN_DIR" "$LOG_DIR" \
+      "$PLUGIN_DATA_ROOT" "$PLUGIN_ROOT" "$RUN_DIR" "$LOG_DIR" 2>/dev/null || true
+    bb find "$DATA_DIR/config" "$AUTH_DIR" "$PLUGIN_DATA_ROOT" "$RUN_DIR" "$LOG_DIR" \
       -type d -exec chmod 0700 {} \; 2>/dev/null || true
-    bb find "$DATA_DIR/config" "$AUTH_DIR" "$DATA_DIR/data" "$RUN_DIR" "$LOG_DIR" \
+    bb find "$DATA_DIR/config" "$AUTH_DIR" "$PLUGIN_DATA_ROOT" "$RUN_DIR" "$LOG_DIR" \
       -type f -exec chmod 0600 {} \; 2>/dev/null || true
   fi
 }
@@ -190,6 +190,21 @@ http_status() {
   request="GET $path HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
   line=$(printf '%b' "$request" | bb nc -w 3 127.0.0.1 "$PORT" 2>/dev/null | head -1 || true)
   printf '%s\n' "$line" | bb awk '{print $2}'
+}
+
+http_header() {
+  path=$1
+  header=$2
+  request="GET $path HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+  printf '%b' "$request" | bb nc -w 3 127.0.0.1 "$PORT" 2>/dev/null |
+    bb awk -v header="$header" '
+      index(tolower($0), tolower(header) ":") == 1 {
+        sub("^[^:]*:[[:space:]]*", "")
+        sub("[[:space:]]*$", "")
+        print
+        exit
+      }
+    '
 }
 
 wait_http_status() {
@@ -384,8 +399,6 @@ start_locked() {
   export SSL_CERT_DIR="$CURRENT/ca"
   export CPA_CONFIG_PATH="$CONFIG"
   export CPA_AUTH_DIR="$AUTH_DIR"
-  export CPA_TOKEN_USAGE_DIR="$PLUGIN_DATA_DIR"
-  export CPA_MODEL_PRICE_FILE="$PLUGIN_DATA_DIR/model_prices.json"
 
   root_core=0
   [ -f "$DATA_DIR/config/allow-root-core" ] && root_core=1
@@ -459,10 +472,10 @@ status_service() {
   fi
   echo "  listener: $(listener_state) 127.0.0.1:$PORT"
   echo "  plugins: $(plugin_count) .so under $PLUGIN_ROOT"
+  plugin_support=$(http_header /v0/management/plugins X-CPA-SUPPORT-PLUGIN)
   models=$(http_status /v1/models)
-  dashboard=$(http_status /v0/resource/plugins/codex-token-usage/dashboard)
+  echo "  plugin support: ${plugin_support:-unknown}"
   echo "  health: /v1/models -> ${models:-unavailable}"
-  echo "  plugin: dashboard -> ${dashboard:-unavailable}"
   is_running && [ "$(listener_state)" = loopback ]
 }
 

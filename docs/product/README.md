@@ -17,6 +17,8 @@ are:
 - [`cli-proxy-api-magisk.md`](cli-proxy-api-magisk.md) for the imported,
   source-pinned operating contract of the optional root-managed CLIProxyAPI
   provider gateway.
+- [`cli-proxy-api-plugin-suite.md`](cli-proxy-api-plugin-suite.md) for the
+  staged native Policy/Scheduler implementation and credential-security gates.
 
 The continuity implementation is a local consumer application surface.
 `qa/project-commands.json` declares executable build, unit, integration,

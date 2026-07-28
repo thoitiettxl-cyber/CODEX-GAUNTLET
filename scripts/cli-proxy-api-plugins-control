@@ -1,0 +1,227 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+SUITE="$ROOT/modules/cli-proxy-api-plugins"
+POLICY="$SUITE/policy-scheduler"
+CACHE="$SUITE/.cache"
+DIST="$SUITE/dist"
+GO_VERSION=1.26.5
+GO_PACKAGE_VERSION='3:1.26.5'
+GO_DEB='golang_3%3a1.26.5_aarch64.deb'
+GO_DEB_SHA256=d6e7869ab6ed55635327ee2526bdc0dbd42848f8a8c5e1c0031e1ba33af494c5
+GO_ROOT="$CACHE/termux-go/data/data/com.termux/files/usr/lib/go"
+CORE_VERSION=7.2.103
+CORE_ARCHIVE="CLIProxyAPI_${CORE_VERSION}_linux_aarch64.tar.gz"
+CORE_SHA256=134097d189c11c882a77bd72eb82b7beecc19545397b622954b4ff79fa8c4b43
+CORE_URL="https://github.com/router-for-me/CLIProxyAPI/releases/download/v${CORE_VERSION}/${CORE_ARCHIVE}"
+PACMAN_CACHE="$CACHE/pacman"
+GCC_PACKAGE_VERSION=14.2.1-1
+PLUGIN="$DIST/policy-scheduler-v0.3.0.so"
+
+usage() {
+	echo "Usage: scripts/termux-control cli-proxy-api-plugins {status|prepare|format|test|build|integration|all}"
+}
+
+require_commands() {
+	local command missing=()
+	for command in "$@"; do
+		command -v "$command" >/dev/null 2>&1 || missing+=("$command")
+	done
+	if ((${#missing[@]})); then
+		echo "missing required commands: ${missing[*]}" >&2
+		exit 1
+	fi
+}
+
+check_sha() {
+	local expected=$1 path=$2
+	printf '%s  %s\n' "$expected" "$path" | sha256sum -c - >/dev/null
+}
+
+prepare_go() {
+	if [[ ! -x "$GO_ROOT/bin/go" ]]; then
+		mkdir -p "$CACHE"
+		if [[ ! -f "$CACHE/$GO_DEB" ]]; then
+			(
+				cd "$CACHE"
+				apt-get download "golang=$GO_PACKAGE_VERSION"
+			)
+		fi
+		check_sha "$GO_DEB_SHA256" "$CACHE/$GO_DEB"
+		mkdir -p "$CACHE/termux-go"
+		dpkg-deb -x "$CACHE/$GO_DEB" "$CACHE/termux-go"
+	fi
+	check_sha "$GO_DEB_SHA256" "$CACHE/$GO_DEB"
+	GOROOT="$GO_ROOT" "$GO_ROOT/bin/go" version | grep -q "go$GO_VERSION android/arm64"
+}
+
+prepare_gcc() {
+	mkdir -p "$PACMAN_CACHE"
+	local specs=(
+		'c470aef5ee0c53c1963df9e6b2e57e9bc82289ba2b9bedf7b2197764aded4e17 gcc-glibc-14.2.1-1-aarch64.pkg.tar.xz'
+		'4df908e7ea05893ce87ae25dea148719b195b4c052c95c663a4bf9848f2a9589 libgmp-glibc-6.3.0-2-aarch64.pkg.tar.xz'
+		'316457b4a68db49b242969f0ae2d7e06fc65950905f7c174db77ba6b6b9556fe libisl-glibc-0.26-0-aarch64.pkg.tar.xz'
+		'b3d671f8d4bb495fb5515e2b44038680d190f1803c5fa6be93cb54584262cc87 libmpc-glibc-1.3.1-0-aarch64.pkg.tar.xz'
+		'a4d53df4e44ce6fcfcafcf92e0eb9bbd8d063f2c3feb954adf658a5862e242bd libmpfr-glibc-4.2.1-0-aarch64.pkg.tar.xz'
+	)
+	local missing=0 spec expected file
+	for spec in "${specs[@]}"; do
+		read -r expected file <<<"$spec"
+		[[ -f "$PACMAN_CACHE/$file" ]] || missing=1
+	done
+	if [[ "$missing" == 1 ]]; then
+		pacman -Sw --cachedir "$PACMAN_CACHE" --noconfirm "gcc-glibc=$GCC_PACKAGE_VERSION"
+	fi
+	for spec in "${specs[@]}"; do
+		read -r expected file <<<"$spec"
+		check_sha "$expected" "$PACMAN_CACHE/$file"
+	done
+	mkdir -p "$CACHE/glibc-toolchain"
+	for spec in "${specs[@]}"; do
+		read -r _ file <<<"$spec"
+		tar -xf "$PACMAN_CACHE/$file" -C "$CACHE/glibc-toolchain"
+	done
+	"$SUITE/cc-glibc.sh" --version | grep -q '14.2.1'
+}
+
+prepare_core() {
+	mkdir -p "$CACHE/core-$CORE_VERSION"
+	if [[ ! -f "$CACHE/$CORE_ARCHIVE" ]]; then
+		curl -fL --retry 2 --output "$CACHE/$CORE_ARCHIVE" "$CORE_URL"
+	fi
+	check_sha "$CORE_SHA256" "$CACHE/$CORE_ARCHIVE"
+	if [[ ! -x "$CACHE/core-$CORE_VERSION/cli-proxy-api" ]]; then
+		tar -xzf "$CACHE/$CORE_ARCHIVE" -C "$CACHE/core-$CORE_VERSION"
+		chmod 0755 "$CACHE/core-$CORE_VERSION/cli-proxy-api"
+	fi
+	local version
+	version=$({ grun "$CACHE/core-$CORE_VERSION/cli-proxy-api" --version 2>&1 || true; })
+	grep -q "Version: $CORE_VERSION" <<<"$version"
+}
+
+prepare() {
+	require_commands apt-get curl dpkg-deb grun pacman sha256sum tar
+	prepare_go
+	prepare_gcc
+	prepare_core
+	echo "PASS: checksum-pinned CLIProxyAPI plugin toolchain is ready"
+}
+
+go_command() {
+	prepare_go
+	local go_cache="$CACHE/go-build" module_cache="$CACHE/go-mod"
+	mkdir -p "$go_cache" "$module_cache"
+	(
+		cd "$POLICY"
+		GOROOT="$GO_ROOT" GOTOOLCHAIN=local GOENV=off \
+			GOCACHE="$go_cache" GOMODCACHE="$module_cache" \
+			"$GO_ROOT/bin/go" "$@"
+	)
+}
+
+format_source() {
+	prepare_go
+	GOROOT="$GO_ROOT" "$GO_ROOT/bin/gofmt" -w "$POLICY"/*.go
+	echo "PASS: policy-scheduler Go source formatted"
+}
+
+test_source() {
+	go_command vet ./...
+	go_command test ./...
+	echo "PASS: policy-scheduler vet and unit tests"
+}
+
+build_once() {
+	local output=$1
+	prepare_go
+	prepare_gcc
+	local go_cache="$CACHE/go-build" module_cache="$CACHE/go-mod"
+	mkdir -p "$go_cache" "$module_cache" "$(dirname "$output")"
+	(
+		cd "$POLICY"
+		GOROOT="$GO_ROOT" GOTOOLCHAIN=local GOENV=off \
+			GOCACHE="$go_cache" GOMODCACHE="$module_cache" \
+			GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC="$SUITE/cc-glibc.sh" \
+			"$GO_ROOT/bin/go" build -trimpath -buildvcs=false -buildmode=c-shared -o "$output" .
+	)
+}
+
+verify_plugin() {
+	local plugin=$1 needed file_info elf_header symbols
+	file_info=$(file "$plugin")
+	elf_header=$(readelf -h "$plugin")
+	symbols=$(readelf -Ws "$plugin")
+	grep -q 'ELF 64-bit LSB shared object, ARM aarch64' <<<"$file_info"
+	grep -q 'Machine:.*AArch64' <<<"$elf_header"
+	grep -q ' cliproxy_plugin_init$' <<<"$symbols"
+	while IFS= read -r needed; do
+		case "$needed" in
+			libc.so.6|libresolv.so.2|libpthread.so.0|libdl.so.2) ;;
+			*) echo "unexpected plugin dependency: $needed" >&2; exit 1 ;;
+		esac
+	done < <(readelf -d "$plugin" | sed -n 's/.*Shared library: \[\([^]]*\)\].*/\1/p')
+}
+
+build_plugin() (
+	require_commands cmp file readelf sha256sum
+	local prefix_dir=${PREFIX:-/data/data/com.termux/files/usr}
+	local build_dir first second first_header second_header
+	build_dir=$(mktemp -d "$prefix_dir/tmp/policy-scheduler-build.XXXXXX")
+	trap 'rm -rf "$build_dir"' EXIT
+	first="$build_dir/policy-scheduler-first.so"
+	second="$build_dir/policy-scheduler-second.so"
+	first_header=${first%.so}.h
+	second_header=${second%.so}.h
+	build_once "$first"
+	build_once "$second"
+	cmp "$first" "$second"
+	verify_plugin "$first"
+	mkdir -p "$DIST"
+	cp -p "$first" "$PLUGIN"
+	[[ ! -f "$first_header" ]] || cp -p "$first_header" "${PLUGIN%.so}.h"
+	chmod 0755 "$PLUGIN"
+	[[ ! -f "${PLUGIN%.so}.h" ]] || chmod 0644 "${PLUGIN%.so}.h"
+	sha256sum "$PLUGIN"
+	echo "PASS: deterministic Linux/glibc ARM64 policy-scheduler build"
+)
+
+integration_test() {
+	prepare_core
+	[[ -f "$PLUGIN" ]] || build_plugin
+	"$SUITE/test-host-integration.sh"
+}
+
+status() {
+	echo "suite_root=$SUITE"
+	echo "policy_source=$POLICY"
+	echo "target=linux/arm64-glibc"
+	echo "cliproxyapi_sdk=v7.2.103"
+	echo "go_toolchain=termux-$GO_VERSION-download-only"
+	echo "gcc_toolchain=glibc-$GCC_PACKAGE_VERSION-download-only"
+	echo "plugin_binary=$PLUGIN"
+	if [[ -f "$PLUGIN" ]]; then
+		echo "plugin_sha256=$(sha256sum "$PLUGIN" | awk '{print $1}')"
+	else
+		echo "plugin_sha256=missing"
+	fi
+	echo "live_install=root-managed-and-separately-authorized"
+	echo "verification_authority=./qa/verify"
+}
+
+case "${1:-}" in
+	status) status ;;
+	prepare) prepare ;;
+	format) format_source ;;
+	test) test_source ;;
+	build) build_plugin ;;
+	integration) integration_test ;;
+	all)
+		prepare
+		test_source
+		build_plugin
+		integration_test
+		;;
+	-h|--help|help|'') usage ;;
+	*) usage >&2; exit 2 ;;
+esac

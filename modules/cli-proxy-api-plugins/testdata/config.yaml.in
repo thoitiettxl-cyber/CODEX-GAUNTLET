@@ -1,0 +1,30 @@
+host: "127.0.0.1"
+port: __PORT__
+tls:
+  enable: false
+remote-management:
+  allow-remote: false
+  secret-key: "__MANAGEMENT_KEY__"
+  disable-control-panel: true
+auth-dir: "__AUTH_DIR__"
+api-keys:
+  - "test-client-key"
+debug: false
+logging-to-file: false
+plugins:
+  enabled: true
+  dir: "__PLUGIN_DIR__"
+  configs:
+    policy-scheduler:
+      enabled: true
+      priority: 100
+      tenant_header: "X-CPA-Tenant"
+      quota_reserve_percent: 10
+      balance_strategy: "delegate"
+      delegate_builtin: "round-robin"
+      decision_history_limit: 20
+      session_affinity_enabled: false
+      session_affinity_header: "Authorization"
+      session_affinity_metadata_key: "api_key_id"
+      session_affinity_ttl_seconds: 3600
+      session_affinity_max_entries: 4096
