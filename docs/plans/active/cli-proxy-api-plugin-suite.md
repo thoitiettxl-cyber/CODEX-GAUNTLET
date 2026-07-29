@@ -5,15 +5,18 @@ Harness story: `TERMUX-014`
 ## Current context
 
 The live Magisk-managed CLIProxyAPI service on `127.0.0.1:8317` reports
-version `7.2.103`, commit `cade44b9`, and `X-CPA-SUPPORT-PLUGIN: 1`. The
+version `7.2.104`, commit `c9417c8a`, and `X-CPA-SUPPORT-PLUGIN: 1`. The
 matching upstream tag uses native ABI version 1 and JSON RPC schema version 2.
 The repository currently owns the Magisk controller but deliberately keeps
-runtime-installed plugin binaries outside the module ZIP.
+runtime-installed plugin binaries outside the module ZIP. Pi Router retirement
+is tracked independently by `TERMUX-015`; this plan does not treat its removal
+as plugin completion evidence.
 
 The requested suite is recovery-sensitive and must be staged in host-defined
-capability order. Existing unrelated `pi-router` worktree changes must remain
-untouched. No live config, management secret, auth payload, or token may enter
-Git, Harness state, test output, or documentation.
+capability order. The retired Pi Router worktree is preserved by `TERMUX-015`
+and must not be reapplied as plugin-suite work. No live config, management
+secret, auth payload, or token may enter Git, Harness state, test output, or
+documentation.
 
 ## Approach
 
@@ -115,6 +118,11 @@ credential authority and cannot be inferred from a registration canary.
       strategy for new/failover affinity bindings, isolate affinity and
       balancing by provider/model, and leave its usage/SQLite/token-protection
       features outside the scheduler-only contract.
+- [x] Review the official CLIProxyAPI Plugins Store at `809039b7`, Quota Router
+      at `fe7d617a`, Codex Quota Scheduler at `0eb9ff69`, Agent Identity at
+      `b282b894`, Key Policy at `d3bc0f13`, and Account Config Manager at
+      `4e920e4a`; accept only patterns that preserve the current capability and
+      credential boundaries.
 - [x] Hot-promote the reviewed `0.3.0` artifact, prove authenticated live
       metadata/status version `0.3.0`, and observe existing traffic continue
       delegating over three candidates without a PID change or restart.
@@ -133,10 +141,12 @@ credential authority and cannot be inferred from a registration canary.
       build, ABI/dependency inspection, and isolated official-host registration,
       status, reconfigure, disable, and re-enable. The artifact SHA-256 is
       `76b828080d3d708aed5ca5f492898f00bb0a927ccd02169d44fba167c164aa2e`.
-- [ ] Wire the protected GitHub workflow to run `make linux-ci`, then obtain an
-      executable Linux `go test -race` pass. The three coverage-guided fuzz
-      targets passed with the Linux/glibc test binary, but Android's VMA layout
-      still blocks ThreadSanitizer execution.
+- [ ] Integrate both plugins' platform gates into canonical `./qa/verify`, then
+      obtain executable Linux race and coverage-guided fuzz proof. The GitHub
+      workflow must continue to call `qa/verify` rather than create a second
+      verification authority. Policy Scheduler's three fuzz targets passed
+      with the Linux/glibc test binary, but Android's VMA layout still blocks
+      ThreadSanitizer execution.
 - [x] Under the owner's explicit live-write authorization, hot-promote the
       reviewed `0.3.1` artifact without restart, apply the safe JSON policy,
       and verify registration, redacted status, PID/listener health, artifact
@@ -150,8 +160,16 @@ credential authority and cannot be inferred from a registration canary.
       traffic; if `Session_id` remains absent, disable affinity so config
       reflects reality.
 - [x] Run focused proof, `./qa/verify --mode targeted`, and final diff review.
-- [ ] Complete the story only after the Credential-Security provider/refresh
-      gate above is satisfied, then run final verification.
+- [ ] Operationalize Credential Security's declared static bearer/PAT slice
+      with preview/commit, bounded revisions, serialized mutation, atomic CPA
+      projection synchronization, rollback, supervised restart, and authorized
+      live recovery proof. Built-in OAuth encryption/refresh remains an
+      intentional exclusion until the host exposes an official ownership seam.
+- [x] Record the follow-on technical handoff, execution order, decision gates,
+      recovery boundaries, and definition of done for later sessions.
+- [ ] Complete the story only after the canonical plugin gate, Policy Scheduler
+      soak, and Credential Security operational proof below pass, then run final
+      verification.
 
 ## Last safe boundary
 
@@ -228,6 +246,211 @@ Plugin #2's static sidecar-owned slice is locally implemented; any extension
 to built-in OAuth remains gated on an official refresh/storage seam as
 described above.
 
+## Follow-on technical handoff — 2026-07-29 UTC
+
+### Binding and start gate
+
+- Continue only `TERMUX-014` with stable Harness run ID
+  `cliproxyapi-plugin-suite-20260728`. Do not create a second story or plan.
+- The current worktree still contains the completed but uncommitted
+  `TERMUX-015` Pi Router retirement diff. Before any plugin code or protected
+  QA mutation, obtain explicit owner direction to commit that exact retirement
+  change or otherwise establish a clean post-retirement baseline. Do not reset,
+  restore, or apply stash
+  `3471b4d4b48929af817bcb67ee24f08c4ac0f2d6` onto plugin work.
+- Root commands, management API writes, plugin/config swaps, service lifecycle
+  changes, auth-file changes, sidecar keys/stores, and real upstream requests
+  require separately stated exact authorization. A handoff or Harness story
+  does not grant that authority.
+- Keep binaries outside the Magisk ZIP. Keep management secrets, auth payloads,
+  tokens, raw `StorageJSON`, and sidecar keys out of Git, Harness, command
+  output, test fixtures, and documentation.
+
+### Evidence and confidence at handoff
+
+| Claim | State | Consequence for the next session |
+|---|---|---|
+| Policy Scheduler source/live `0.3.1` and rollback artifacts | Confirmed by unit, deterministic build, isolated-host, live promotion, and rollback evidence | Preserve behavior; close platform and soak evidence before changing policy semantics |
+| Credential Security source `0.1.0` | Confirmed for the narrow static bearer/PAT sidecar slice by unit, deterministic build, isolated host, and disabled synthetic live parser proof | Do not treat parser registration as a working credential data plane |
+| Credential sidecar availability | Confirmed absent at handoff: `127.0.0.1:18319` refused a read-only connection | Supervision, restart, projection sync, and real recovery remain unproved |
+| Exact deployed core baseline | Conflicting: the plan header records live `7.2.104`/`c9417c8a`, while product, inventory, runbook, isolated host, and older evidence remain pinned to `7.2.103`/`cade44b9` | Re-query exact live metadata without exposing a secret, test against that exact official core, then reconcile every contract before live mutation |
+| Canonical repository gate | Confirmed passing, but `qa/project-commands.json` currently runs no Go plugin test/build/integration command | Focused plugin proof is not yet owned by the single verification authority; this blocks story completion |
+| Built-in OAuth encrypted refresh | Confirmed unsupported by checked `v7.2.104` and upstream-main plugin seams | Intentional non-goal; do not block the declared static bearer/PAT slice on speculative parity |
+
+### Execution order
+
+#### Work unit 0 — isolate and re-baseline
+
+Objective: establish one uncontested post-retirement Git baseline and one exact
+CLIProxyAPI target before changing either plugin.
+
+Deliverables and acceptance evidence:
+
+- cleanly separate the `TERMUX-015` retirement diff from `TERMUX-014` work;
+- query Harness status and matrix and confirm `TERMUX-014` remains
+  `in_progress` with this plan as `contract_doc`;
+- recheck exact live core version, commit, plugin-support flag, registered
+  plugin versions, artifact hashes, listener/PID health, and sidecar listener
+  state through redacted metadata only;
+- run both plugin unit/build/isolated-host workflows and
+  `./qa/verify --mode targeted` on the established baseline;
+- update product contract, inventory, runbook, toolchain pin, and isolated-host
+  fixture together if `7.2.104` is the accepted target. Historical `7.2.103`
+  evidence must remain labeled as historical rather than silently rewritten.
+
+Recovery: make no live write in this unit. If the source baseline cannot be
+separated without discarding work, stop and request owner direction.
+
+#### Work unit 1 — make canonical verification own the plugin suite
+
+Objective: remove the current split between focused plugin commands and the
+repository's sole pass/fail authority.
+
+Constraints and deliverables:
+
+- preserve `./qa/verify` as the only CI entrypoint;
+- add a repository-owned, non-secret plugin gate selected by the existing
+  change classifier/command matrix;
+- on Termux, run vet/unit, deterministic Linux/glibc ARM64 builds, ABI and
+  dependency inspection, Android sidecar build, and isolated exact-host
+  lifecycle proof;
+- on a true Linux runner, run executable `go test -race` and coverage-guided
+  fuzzing for both modules. Add the Credential Security equivalent of the
+  Policy Scheduler `linux-ci` target if one coherent entrypoint is useful;
+- pin the Go/core inputs used by CI and avoid treating an Android-compiled race
+  binary as executable Linux evidence;
+- change protected QA/workflow files only in a new process with an explicit
+  exact Gauntlet maintenance allowlist.
+
+Acceptance: a relevant plugin change causes local
+`./qa/verify --mode targeted` and CI `./qa/verify --mode ci` to execute the
+appropriate plugin gates; true Linux race/fuzz evidence passes; no additional
+workflow command becomes a competing verification authority.
+
+Recovery: revert only the scoped QA/workflow integration if it breaks unrelated
+gates; the existing focused `scripts/termux-control cli-proxy-api-plugins`
+entrypoint remains the diagnostic path, not the definition of pass.
+
+#### Work unit 2 — close Policy Scheduler operational evidence
+
+Objective: prove the existing `0.3.1` policy under natural traffic rather than
+add new routing capabilities.
+
+Acceptance evidence:
+
+- Linux race/fuzz proof from work unit 1 passes without a data race or panic;
+- collect redacted start, 24-hour, and 72-hour snapshots of lifecycle,
+  strategy, affinity, cooldown, effectiveness, provider/model state bounds,
+  authenticated status, PID/listener health, `cpactl doctor`, and externally
+  mapped plugin generations;
+- do not generate an upstream model request solely for the soak;
+- if a supported signal naturally appears, observe a fresh
+  `session_affinity_new → hit → failover/recovery` sequence without exposing
+  the signal or `AuthID`;
+- if no supported signal appears through the soak, disable session affinity
+  through a separately authorized material config change and prove status and
+  traffic health. Do not leave a knowingly ineffective policy enabled.
+
+Recovery: use the already rehearsed exact-plugin disable and
+`0.3.1 → 0.3.0` rollback path; never delete the plugin directory or restart
+unless hot recovery fails and restart is separately authorized.
+
+#### Work unit 3 — operationalize Credential Security's declared slice
+
+Objective: make the static bearer/PAT sidecar slice safely operable without
+claiming built-in OAuth ownership.
+
+Blocking decision: choose who owns CPA projection commits. The recommended
+boundary is an operator/controller-mediated commit path so the native plugin
+and data-plane sidecar do not acquire the long-lived CPA management key. Giving
+the sidecar direct Management API authority expands the security boundary and
+requires an explicit owner decision before implementation.
+
+Required source behavior and proof:
+
+- preview is read-only, bounded, redacted, expiring, and revision-bound;
+- commit serializes mutations, detects stale revisions, imports disabled by
+  default, and atomically coordinates encrypted record plus CPA projection;
+- rotate, enable/disable, and delete have explicit ordering, idempotent retry,
+  operation status, and tested rollback for every partial-failure point;
+- projection filenames and content remain versioned, path-safe, loopback-only,
+  opaque, and free of original credentials;
+- sidecar supervision defines exact executable, owner-only key/store paths,
+  health check, start/restart behavior, logs, and recovery without bundling it
+  into the Magisk ZIP;
+- local proof covers restart, wrong-key failure, old opaque-key rejection after
+  rotation, HTTP/SSE forwarding, store/projection reconciliation, interrupted
+  commit, and rollback with no plaintext persistence or output;
+- built-in OAuth files, refresh tokens, AgentAssertion, WebSockets, automatic
+  migration, model routing, and executor behavior remain out of scope.
+
+Live acceptance requires separate authorization and a disposable non-OAuth
+credential: preview, disabled commit, exact projection verification, enable,
+bounded HTTP/SSE canary, sidecar restart, opaque-key rotation, disable/delete,
+and exact rollback/recovery. Preserve all pre-existing auth files and real
+encrypted stores. Registration or a synthetic parser canary alone is not a
+pass.
+
+Recovery: disable the exact projection/plugin first, stop only the suite-owned
+sidecar, preserve key/store material, restore the pre-canary projection set,
+and verify CLIProxyAPI health. Delete only explicitly named disposable canary
+artifacts after reconciliation succeeds.
+
+#### Work unit 4 — reconcile contracts and complete the story
+
+Update the product contract, runbook, inventory, versions/hashes, plan progress,
+and recovery evidence from executable results. Store publication is not a
+completion requirement: the official schema-v1 store cannot describe the
+sidecar lifecycle, and split release ownership or a private registry remains a
+separate product/distribution decision.
+
+Definition of done:
+
+- no unresolved core-version or contract contradiction;
+- canonical Termux and true-Linux plugin gates pass through `qa/verify`;
+- Policy Scheduler's soak and affinity enable/disable decision are complete;
+- Credential Security's static bearer/PAT lifecycle, supervision, atomic
+  projection operations, live canary, and rollback are executable and proven;
+- no secret appears in Git, Harness, logs, fixtures, or documentation;
+- focused proof and `./qa/verify --mode targeted` pass, the implementation trace
+  records exact evidence, and the final scoped diff is reviewed;
+- move this plan to `docs/plans/completed/`, update `story.contract_doc`, run
+  `story complete TERMUX-014` for fresh proof, review the lifecycle-final diff,
+  then run `./qa/verify` once more before claiming completion.
+
+### Blocking and non-blocking decisions
+
+Blocking before mutation or rollout:
+
+- separation/commit strategy for the uncommitted `TERMUX-015` diff;
+- exact deployed CLIProxyAPI version and the accepted SDK/core pin;
+- exact protected QA/workflow maintenance allowlist;
+- CPA projection commit authority and sidecar supervision owner;
+- explicit scope for every root, live, credential, or upstream canary action.
+
+Non-blocking or out of scope for this story:
+
+- official Plugin Store listing and release-repository split;
+- transparent encryption/refresh of built-in OAuth until upstream exposes a
+  provider-owned persistence seam;
+- model router, executor, cross-provider routing, Key Policy RPM/budget, and
+  speculative Pi Router parity.
+
+### Next-session start sequence
+
+1. Read `AGENTS.md`, `docs/WORKFLOW.md`, this plan, the product contract,
+   ADR 0014, and the plugin runbook.
+2. Run `git status --short`; stop before mutation until the `TERMUX-015` diff
+   has an explicitly authorized clean boundary.
+3. Query `scripts/termux-control orchestrator status` and
+   `scripts/termux-control orchestrator query matrix --story TERMUX-014`.
+4. Run `scripts/termux-control cli-proxy-api-plugins status` and the read-only
+   baseline checks from work unit 0 without reading or printing secrets.
+5. Use `HARNESS_RUN_ID=cliproxyapi-plugin-suite-20260728` for every Harness
+   state-writing command, keep the story `in_progress`, and begin with work
+   unit 0. Do not call `story complete` until every definition-of-done item is
+   executable evidence rather than a plan or agent assertion.
+
 ## Decisions
 
 - The first plugin binary may declare both `management_api` and `scheduler`
@@ -249,6 +472,22 @@ described above.
   interceptor. Its cache is process-local, stores only an HMAC digest and
   `AuthID`, is bounded by TTL/entry count, and fails over within the host's
   already eligible candidate set.
+- Store distribution is not yet a completion signal. The official store expects
+  `v<version>` releases, root-level `<id>.so` archives named
+  `<id>_<version>_<goos>_<goarch>.zip`, and `checksums.txt`. The two local
+  plugins have independent versions in one repository and no store-compatible
+  release lane; Credential Security also requires an out-of-band supervised
+  sidecar. Choose split release ownership or a pinned schema-v2 private
+  registry before listing either plugin.
+- Quota Router's cancellable, coalesced, request-triggered refresh worker is a
+  useful future quota pattern, but adopting it would add auth reads and fixed
+  upstream network calls. Keep that as a separately accepted capability rather
+  than silently expanding Policy Scheduler's current no-token/no-network
+  boundary.
+- Credential Security should adopt Agent Identity and Account Config Manager's
+  preview/commit, bounded revision, mutation-lock, atomic projection sync, and
+  rollback patterns before any real credential rollout. Key Policy's
+  downstream-key/RPM/budget surface is not part of the current plugin contract.
 
 ## Risks
 
@@ -321,7 +560,9 @@ validated persisted credential `weight` handling and changes cooldown/selector
 internals, but `sdk/pluginabi/types.go`, `sdk/pluginapi/types.go`, and
 `internal/pluginhost/auth_provider.go` are unchanged from `v7.2.103`. It
 therefore does not provide the provider-owned refresh/storage seam required to
-open Credential-Security, and the deployed target remains `v7.2.103`.
+open Credential-Security. The isolated validation/toolchain baseline remains
+`v7.2.103`; later evidence records live `v7.2.104`, and work unit 0 must
+reconcile that split before another live mutation.
 
 Official upstream `origin/main` at
 `c9417c8ae9b16fabc0386ca35d36f13bf8b1d678` was also checked and retains the
