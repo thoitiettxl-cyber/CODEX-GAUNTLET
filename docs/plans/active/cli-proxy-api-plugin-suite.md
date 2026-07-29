@@ -252,10 +252,9 @@ described above.
 
 - Continue only `TERMUX-014` with stable Harness run ID
   `cliproxyapi-plugin-suite-20260728`. Do not create a second story or plan.
-- The current worktree still contains the completed but uncommitted
-  `TERMUX-015` Pi Router retirement diff. Before any plugin code or protected
-  QA mutation, obtain explicit owner direction to commit that exact retirement
-  change or otherwise establish a clean post-retirement baseline. Do not reset,
+- The post-retirement Git boundary is established: `91deb8d` contains only
+  `TERMUX-015`, and `a12c113` contains the `TERMUX-014` handoff. Begin future
+  plugin mutation only from a clean worktree after those commits. Do not reset,
   restore, or apply stash
   `3471b4d4b48929af817bcb67ee24f08c4ac0f2d6` onto plugin work.
 - Root commands, management API writes, plugin/config swaps, service lifecycle
@@ -286,7 +285,8 @@ CLIProxyAPI target before changing either plugin.
 
 Deliverables and acceptance evidence:
 
-- cleanly separate the `TERMUX-015` retirement diff from `TERMUX-014` work;
+- preserve the established `91deb8d` retirement and `a12c113` handoff commit
+  boundary and require a clean worktree before new `TERMUX-014` work;
 - query Harness status and matrix and confirm `TERMUX-014` remains
   `in_progress` with this plan as `contract_doc`;
 - recheck exact live core version, commit, plugin-support flag, registered
@@ -420,9 +420,13 @@ Definition of done:
 
 ### Blocking and non-blocking decisions
 
+Resolved start boundary:
+
+- `TERMUX-015` retirement is committed separately as `91deb8d`; the initial
+  `TERMUX-014` handoff is committed as `a12c113`.
+
 Blocking before mutation or rollout:
 
-- separation/commit strategy for the uncommitted `TERMUX-015` diff;
 - exact deployed CLIProxyAPI version and the accepted SDK/core pin;
 - exact protected QA/workflow maintenance allowlist;
 - CPA projection commit authority and sidecar supervision owner;
@@ -440,8 +444,8 @@ Non-blocking or out of scope for this story:
 
 1. Read `AGENTS.md`, `docs/WORKFLOW.md`, this plan, the product contract,
    ADR 0014, and the plugin runbook.
-2. Run `git status --short`; stop before mutation until the `TERMUX-015` diff
-   has an explicitly authorized clean boundary.
+2. Run `git status --short`; stop before mutation if the worktree is not clean
+   or if new changes cannot be attributed unambiguously to `TERMUX-014`.
 3. Query `scripts/termux-control orchestrator status` and
    `scripts/termux-control orchestrator query matrix --story TERMUX-014`.
 4. Run `scripts/termux-control cli-proxy-api-plugins status` and the read-only
