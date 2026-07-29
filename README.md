@@ -75,16 +75,6 @@ See the [plugin suite contract](docs/product/cli-proxy-api-plugin-suite.md) and
 [operations runbook](docs/runbooks/cli-proxy-api-plugins.md). Live installation
 remains a separately authorized root-managed action.
 
-`pi-router` is an optional loopback OpenAI Responses gateway built on Pi's
-provider runtime. It keeps router credentials separate from Pi CLI state and
-lets current Codex clients connect with `wire_api = "responses"`. Its
-self-contained Management Center at `/management.html` reports bounded runtime
-status, probes JSON or SSE Responses requests, and manages checksum-verified
-GitHub updates for the native Termux AArch64 binary without persisting bearer
-or prompt data.
-See the [package guide](pi-router/README.md) and
-[operations runbook](docs/runbooks/pi-router.md).
-
 ## Start
 
 ```bash

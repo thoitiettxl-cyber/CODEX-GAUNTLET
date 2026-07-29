@@ -12,11 +12,9 @@ are:
   capability and its accuracy, privacy, and update boundaries;
 - [`pi-gauntlet.md`](pi-gauntlet.md) for the trusted project-local Pi policy
   and mutation-settlement adapter;
-- [`pi-router.md`](pi-router.md) for the optional loopback provider gateway
-  that exposes Pi providers through an OpenAI Responses-compatible API.
 - [`cli-proxy-api-magisk.md`](cli-proxy-api-magisk.md) for the imported,
   source-pinned operating contract of the optional root-managed CLIProxyAPI
-  provider gateway.
+  provider gateway;
 - [`cli-proxy-api-plugin-suite.md`](cli-proxy-api-plugin-suite.md) for the
   staged native Policy/Scheduler implementation and credential-security gates.
 

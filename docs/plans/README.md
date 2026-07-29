@@ -35,10 +35,11 @@ plan.
 
 ## Recently Completed
 
-- `TERMUX-011` — [Port the Pi Router management UI stack and operator experience](completed/pi-router-management-ui-stack-port.md)
-- `TERMUX-010` — [Port CLI Proxy management capabilities to Pi Router](completed/pi-router-cli-proxy-capability-port.md)
-- `TERMUX-009` — [Rebuild Pi Router Management Center as an operations console](completed/pi-router-operations-console.md)
-- `TERMUX-007` — [Build the Pi Router MVP](completed/pi-router-mvp.md)
+- `TERMUX-015` — [Retire Pi Router from the active repository surface](completed/remove-pi-router.md)
+- `TERMUX-011` — [Historical: Port the Pi Router management UI stack and operator experience](completed/pi-router-management-ui-stack-port.md)
+- `TERMUX-010` — [Historical: Port CLI Proxy management capabilities to Pi Router](completed/pi-router-cli-proxy-capability-port.md)
+- `TERMUX-009` — [Historical: Rebuild Pi Router Management Center as an operations console](completed/pi-router-operations-console.md)
+- `TERMUX-007` — [Historical: Build the Pi Router MVP](completed/pi-router-mvp.md)
 - `TERMUX-006` — [Add Pi session continuity parity](completed/pi-session-continuity.md)
 - `TERMUX-005` — [Add a project-local Pi Gauntlet adapter](completed/pi-project-gauntlet.md)
 - `TERMUX-002` — [Add compaction-aware Codex session continuity](completed/session-continuity-v1.md)
