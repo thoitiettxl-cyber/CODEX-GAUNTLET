@@ -9,8 +9,18 @@ from contextlib import closing
 from unittest.mock import patch
 
 from tests.continuity.support import ROOT, ContinuityFixture
-from continuity.harness_bridge import HarnessUnavailable
+from continuity.harness_bridge import HarnessUnavailable, bounded_process
 from continuity.hook import handle_event
+
+
+class HarnessBridgeTests(unittest.TestCase):
+    def test_unlaunchable_harness_is_reported_unavailable(self) -> None:
+        with self.assertRaisesRegex(HarnessUnavailable, "could not start"):
+            bounded_process(
+                [str(ROOT / "scripts" / "bin" / "missing-harness")],
+                cwd=ROOT,
+                timeout_seconds=0.1,
+            )
 
 
 class HookFixtureTests(unittest.TestCase):

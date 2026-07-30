@@ -67,15 +67,18 @@ def bounded_process(
     cwd: Path,
     timeout_seconds: float,
 ) -> subprocess.CompletedProcess[str]:
-    process = subprocess.Popen(
-        argv,
-        cwd=cwd,
-        text=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-    )
+    try:
+        process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise HarnessUnavailable("Harness read could not start") from exc
     try:
         stdout, stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
