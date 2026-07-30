@@ -434,7 +434,7 @@ def validate_work_context(
         errors.append("complex WorkContext is not runnable")
 
     story_id = str(context.get("storyId") or "").strip()
-    if story_id:
+    if story_id and not errors:
         try:
             graph = load_work_graph(repo)
             story = work_graph_story(graph, story_id)

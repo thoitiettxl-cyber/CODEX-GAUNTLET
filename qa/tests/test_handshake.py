@@ -79,6 +79,28 @@ class HandshakeContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "story does not exist"):
                 validate_work_context(ROOT, nonexistent)
 
+    def test_structurally_invalid_context_does_not_query_harness(self) -> None:
+        context = create_work_context(
+            ROOT,
+            run_id="handshake-not-runnable-test",
+            requested_mode="targeted",
+            complexity_class="bounded",
+            runnable=True,
+            changed_paths=["README.md"],
+        )
+        context["storyId"] = "TERMUX-NOT-RUNNABLE"
+        context["harness"] = {
+            "complexityClass": "complex",
+            "runnable": False,
+            "linkedPlan": "docs/plans/active/not-runnable.md",
+        }
+        context["digest"] = payload_digest(context)
+
+        with mock.patch("gauntlet.handshake.load_work_graph") as load_work_graph:
+            with self.assertRaisesRegex(ValueError, "not runnable"):
+                validate_work_context(ROOT, context)
+        load_work_graph.assert_not_called()
+
     def test_direct_receipt_writer_is_disabled(self) -> None:
         with self.assertRaisesRegex(PermissionError, "run ./qa/verify"):
             write_receipt(ROOT, mode="targeted")
