@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 import unittest
 from contextlib import closing
 
@@ -18,9 +19,25 @@ class ContinuityCliTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.fixture.close()
 
+    @staticmethod
+    def cli_argv(*arguments: str) -> list[str]:
+        if os.environ.get("CODEX_GAUNTLET_CROSS_PLATFORM") == "1":
+            return [
+                sys.executable,
+                str(ROOT / "scripts" / "continuity_cli.py"),
+                "--repo-root",
+                str(ROOT),
+                *arguments,
+            ]
+        return [
+            str(ROOT / "scripts" / "termux-control"),
+            "continuity",
+            *arguments,
+        ]
+
     def run_cli(self, *arguments: str, expected: int = 0):
         result = subprocess.run(
-            [str(ROOT / "scripts" / "termux-control"), "continuity", *arguments],
+            self.cli_argv(*arguments),
             cwd=ROOT,
             env=self.fixture.environment,
             text=True,
@@ -92,9 +109,7 @@ class ContinuityCliTests(unittest.TestCase):
     def test_operation_commands_do_not_echo_canonical_input(self) -> None:
         canonical = '{"remote":"origin","token":"cli-operation-secret"}'
         begin_process = subprocess.run(
-            [
-                str(ROOT / "scripts" / "termux-control"),
-                "continuity",
+            self.cli_argv(
                 "operation",
                 "begin",
                 "--story",
@@ -105,7 +120,7 @@ class ContinuityCliTests(unittest.TestCase):
                 "git.push",
                 "--canonical-input",
                 canonical,
-            ],
+            ),
             cwd=ROOT,
             env=self.fixture.environment,
             text=True,

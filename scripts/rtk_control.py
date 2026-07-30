@@ -12,6 +12,7 @@ import stat
 import struct
 import subprocess
 import sys
+import tempfile
 import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -547,8 +548,7 @@ def isolated_runtime_probes(binary: Path, repo_root: Path) -> dict:
 
 @contextmanager
 def task_temp_dir(label: str) -> Iterator[Path]:
-    prefix = Path(os.environ.get("PREFIX", "/data/data/com.termux/files/usr"))
-    temp_parent = prefix / "tmp"
+    temp_parent = Path(tempfile.gettempdir())
     result = subprocess.run(
         ["mktemp", "-d", str(temp_parent / f"{label}.XXXXXX")],
         capture_output=True,

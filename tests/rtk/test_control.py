@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -20,6 +22,22 @@ from scripts.rtk_control import (
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "rtk" / "fixtures"
+
+
+def rtk_cli_argv(*arguments: str) -> list[str]:
+    if os.environ.get("CODEX_GAUNTLET_CROSS_PLATFORM") == "1":
+        return [
+            sys.executable,
+            str(ROOT / "scripts" / "rtk_control.py"),
+            "--repo-root",
+            str(ROOT),
+            *arguments,
+        ]
+    return [
+        str(ROOT / "scripts" / "termux-control"),
+        "rtk",
+        *arguments,
+    ]
 
 
 class ControlTests(unittest.TestCase):
@@ -44,15 +62,13 @@ class ControlTests(unittest.TestCase):
 
     def test_wrapper_exposes_machine_readable_dry_run(self) -> None:
         result = subprocess.run(
-            [
-                str(ROOT / "scripts" / "termux-control"),
-                "rtk",
+            rtk_cli_argv(
                 "update",
                 "--dry-run",
                 "--refs-file",
                 str(FIXTURES / "release-refs.txt"),
                 "--json",
-            ],
+            ),
             cwd=ROOT,
             capture_output=True,
             text=True,

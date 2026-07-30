@@ -11,7 +11,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-TERMUX_TMP = Path(os.environ.get("PREFIX", "/data/data/com.termux/files/usr")) / "tmp"
+TERMUX_TMP = Path(tempfile.gettempdir())
 
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))

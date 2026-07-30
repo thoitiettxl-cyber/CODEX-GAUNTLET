@@ -17,6 +17,7 @@ from qa.verify_v6 import (
     ROOT,
     _canonical_ref,
     _effective_exit_code,
+    _functional_argv,
     _project_proof_gaps,
     _security_target_args,
 )
@@ -37,6 +38,16 @@ class VerifierContractTests(unittest.TestCase):
         self.assertTrue(wrapper.startswith("#!/data/data/com.termux/files/usr/bin/bash"))
         self.assertIn("qa/verify_v6.py", wrapper)
         self.assertTrue((ROOT / "qa/verify").stat().st_mode & 0o111)
+
+    def test_cross_platform_functional_gate_uses_runner_bash(self) -> None:
+        self.assertEqual(
+            ["bash", "qa/run-build.sh"],
+            _functional_argv("build", cross_platform=True),
+        )
+        self.assertEqual(
+            ["qa/run-build.sh"],
+            _functional_argv("build", cross_platform=False),
+        )
 
     def test_missing_declared_consumer_gate_becomes_proof_gap(self) -> None:
         gaps = _project_proof_gaps(["migration"])

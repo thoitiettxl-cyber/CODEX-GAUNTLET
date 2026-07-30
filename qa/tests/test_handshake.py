@@ -4,7 +4,6 @@ import copy
 import hashlib
 import io
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -85,7 +84,7 @@ class HandshakeContractTests(unittest.TestCase):
             write_receipt(ROOT, mode="targeted")
 
     def test_constructed_issuer_cannot_seal_forged_evidence(self) -> None:
-        temp_parent = Path(os.environ.get("PREFIX", "/data/data/com.termux/files/usr")) / "tmp"
+        temp_parent = Path(tempfile.gettempdir())
         with tempfile.TemporaryDirectory(
             prefix="gauntlet-handshake-issuer-",
             dir=temp_parent,
@@ -153,7 +152,7 @@ class HandshakeContractTests(unittest.TestCase):
         self.assertIn("Harness story does not exist", stderr.getvalue())
 
     def test_lifecycle_changes_are_outside_receipt_dirty_state(self) -> None:
-        temp_parent = Path(os.environ.get("PREFIX", "/data/data/com.termux/files/usr")) / "tmp"
+        temp_parent = Path(tempfile.gettempdir())
         with tempfile.TemporaryDirectory(
             prefix="gauntlet-handshake-state-",
             dir=temp_parent,

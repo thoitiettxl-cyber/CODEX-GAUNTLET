@@ -50,6 +50,11 @@ FUNCTIONAL_SCRIPTS = {
 }
 
 
+def _functional_argv(gate: str, *, cross_platform: bool) -> list[str]:
+    script = FUNCTIONAL_SCRIPTS[gate]
+    return ["bash", script] if cross_platform else [script]
+
+
 class VerificationFailure(RuntimeError):
     pass
 
@@ -308,7 +313,10 @@ def _run_selected_gates(
                 ],
             )
         elif gate in FUNCTIONAL_SCRIPTS:
-            runner.run(gate, [FUNCTIONAL_SCRIPTS[gate]])
+            runner.run(
+                gate,
+                _functional_argv(gate, cross_platform=cross_platform),
+            )
 
     security_report_id: str | None = None
     profile = selection.get("securityProfile")

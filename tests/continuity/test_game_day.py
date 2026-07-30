@@ -138,6 +138,10 @@ class GameDayTests(unittest.TestCase):
         self.assertEqual("observed", outcome)
         self.assertEqual(["publish"], calls)
 
+    @unittest.skipIf(
+        os.environ.get("CODEX_GAUNTLET_CROSS_PLATFORM") == "1",
+        "Android harness-cli execution is covered by the native Termux gate",
+    )
     def test_semantic_changeset_replay_matches_live_logical_graph(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix="continuity-replay-", dir=TERMUX_TMP

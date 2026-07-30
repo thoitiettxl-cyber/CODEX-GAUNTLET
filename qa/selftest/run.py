@@ -29,7 +29,8 @@ def hook(path: str, event: dict, env=None):
 
 
 def orchestration_probe():
-    temp_root = os.environ.get('PREFIX', '/data/data/com.termux/files/usr') + '/tmp'
+    cross_platform = os.environ.get('CODEX_GAUNTLET_CROSS_PLATFORM') == '1'
+    temp_root = tempfile.gettempdir()
     lock_path = ROOT/'.harness/epoch-transition/writer.lock'
     nested_writer = False
     if lock_path.exists():
@@ -43,10 +44,15 @@ def orchestration_probe():
         db_path = str(Path(tmp) / 'harness.db')
         env = {**os.environ, 'HARNESS_DB_PATH': db_path}
         env.pop('HARNESS_RUN_ID', None)
-        if nested_writer:
+        control = [str(ROOT/'scripts/termux-control')]
+        if cross_platform:
+            control.insert(0, 'bash')
+        if nested_writer or cross_platform:
             # story complete holds the repository writer lock while running proof.
             # Re-entering rebuild through the same lock would deadlock, so nested
             # proof validates the already runtime-tested replay source instead.
+            # Hosted CI uses the same source proof because Android harness-cli
+            # execution remains the responsibility of the native Termux gate.
             changeset = ROOT/'.harness/changesets/20260724-orchestration-first.changeset.jsonl'
             try:
                 operations = [
@@ -65,11 +71,11 @@ def orchestration_probe():
             )
         else:
             init = subprocess.run(
-                [str(ROOT/'scripts/termux-control'), 'orchestrator', 'init'],
+                [*control, 'orchestrator', 'init'],
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
             )
             graph = subprocess.run(
-                [str(ROOT/'scripts/termux-control'), 'orchestrator', 'query', 'work-graph', '--json'],
+                [*control, 'orchestrator', 'query', 'work-graph', '--json'],
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
             )
             try:
@@ -82,22 +88,34 @@ def orchestration_probe():
             )
         guard = subprocess.run(
             [
-                str(ROOT/'scripts/termux-control'), 'orchestrator', 'story',
+                *control, 'orchestrator', 'story',
                 'update', '--id', 'TERMUX-001', '--status', 'planned', '--json'
             ],
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
         )
         help_value_guard = subprocess.run(
             [
-                str(ROOT/'scripts/termux-control'), 'orchestrator', 'story',
+                *control, 'orchestrator', 'story',
                 'update', '--id', 'help', '--status', 'planned', '--json'
             ],
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
         )
-        discovery = subprocess.run(
-            [str(ROOT/'scripts/termux-control'), 'orchestrator', 'story', '--help'],
-            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
-        )
+        if cross_platform:
+            discovery = subprocess.run(
+                control,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
+            )
+            discovery_ok = (
+                discovery.returncode == 2 and
+                'Usage:' in discovery.stderr and
+                '-h|--help' in text('scripts/termux-control')
+            )
+        else:
+            discovery = subprocess.run(
+                [*control, 'orchestrator', 'story', '--help'],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
+            )
+            discovery_ok = discovery.returncode == 0 and 'Usage:' in discovery.stdout
         run_id_guard_ok = (
             guard.returncode == 2 and
             'set a stable HARNESS_RUN_ID' in guard.stderr
@@ -106,7 +124,6 @@ def orchestration_probe():
             help_value_guard.returncode == 2 and
             'set a stable HARNESS_RUN_ID' in help_value_guard.stderr
         )
-        discovery_ok = discovery.returncode == 0 and 'Usage:' in discovery.stdout
         return rebuild_ok, run_id_guard_ok, discovery_ok, help_value_guard_ok
 
 
