@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "scopes": [
+    {
+      "id": "cliproxyapi",
+      "aliases": [
+        "cliproxy",
+        "cli-proxy-api"
+      ],
+      "root": "C:\\Users\\Administrator\\Documents\\CLIPROXY",
+      "entrypoint": "ops\\README.md"
+    },
+    {
+      "id": "sing-box-live-windows",
+      "aliases": [
+        "sing-box",
+        "singbox",
+        "sing-box-live-windown"
+      ],
+      "root": "C:\\Users\\Administrator\\Documents\\SING-BOX-LIVE-WINDOWN",
+      "entrypoint": "ops\\README.md"
+    }
+  ]
+}
