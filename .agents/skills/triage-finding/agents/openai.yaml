@@ -1,0 +1,5 @@
+interface:
+  display_name: "Record human-approved security triage"
+  short_description: "Record human-approved security triage"
+policy:
+  allow_implicit_invocation: false

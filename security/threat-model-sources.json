@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "include_exact": [
+    "AGENTS.md",
+    "SECURITY.md",
+    "docs/ARCHITECTURE.md",
+    "docs/quality/SECURITY-GATE.md",
+    "qa/security/thresholds.json",
+    "security/threat-model-sources.json"
+  ],
+  "include_globs": [
+    "**/auth/**",
+    "**/authentication/**",
+    "**/authorization/**",
+    "**/crypto/**",
+    "**/security/**",
+    "**/uploads/**",
+    "**/network/**",
+    "**/deserialization/**",
+    "gauntlet/security/**"
+  ],
+  "dependency_manifests": true,
+  "exclude_prefixes": [
+    ".git/",
+    ".qa-artifacts/",
+    "artifacts/",
+    "docs/plans/",
+    "qa/security/reports/",
+    "qa/security/triage/",
+    "qa/fixtures/"
+  ]
+}

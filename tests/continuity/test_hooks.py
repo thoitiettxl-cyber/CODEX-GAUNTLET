@@ -81,10 +81,33 @@ class HookFixtureTests(unittest.TestCase):
         )
 
     def test_runtime_neutral_lifecycle_protocol_matches_codex_adapter(self) -> None:
-        neutral_process = self.fixture.run_lifecycle("post_compact_manual.json")
+        # Exercise both adapters against the same deterministic degraded
+        # Harness state. Without a stable lock condition, the deliberately
+        # short fixture timeout can let one subprocess refresh successfully
+        # while the instrumented peer times out, which tests scheduler timing
+        # rather than protocol parity.
+        lock_path = ROOT / ".harness" / "epoch-transition" / "writer.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as lock:
+            acquired = False
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except BlockingIOError:
+                pass
+            try:
+                neutral_process = self.fixture.run_lifecycle(
+                    "post_compact_manual.json"
+                )
+                codex = self.output(
+                    self.fixture.run_hook("post_compact_manual.json")
+                )
+            finally:
+                if acquired:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+
         self.assertEqual(0, neutral_process.returncode, neutral_process.stderr)
         neutral = json.loads(neutral_process.stdout)
-        codex = self.output(self.fixture.run_hook("post_compact_manual.json"))
 
         self.assertEqual(1, neutral["protocol_version"])
         self.assertEqual("PostCompact", neutral["event"])

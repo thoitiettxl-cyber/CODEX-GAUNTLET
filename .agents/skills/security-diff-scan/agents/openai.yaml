@@ -1,0 +1,5 @@
+interface:
+  display_name: "Review a diff with repository security context"
+  short_description: "Review a diff with repository security context"
+policy:
+  allow_implicit_invocation: false

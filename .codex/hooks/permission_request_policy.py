@@ -12,7 +12,7 @@ def main() -> int:
     event = read_event()
     decision = policy_decision(event)
     if decision.action == "deny":
-        deny_permission(decision.reason)
+        deny_permission(decision.explanation())
     # No decision: normal user approval remains authoritative.
     return 0
 

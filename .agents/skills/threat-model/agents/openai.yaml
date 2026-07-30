@@ -1,0 +1,5 @@
+interface:
+  display_name: "Build or refresh the repository threat model"
+  short_description: "Build or refresh the repository threat model"
+policy:
+  allow_implicit_invocation: false

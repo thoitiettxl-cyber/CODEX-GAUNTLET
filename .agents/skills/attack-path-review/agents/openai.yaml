@@ -1,0 +1,5 @@
+interface:
+  display_name: "Analyze a finding against the threat model"
+  short_description: "Analyze a finding against the threat model"
+policy:
+  allow_implicit_invocation: false

@@ -25,11 +25,13 @@ Gauntlet maintenance uses two process-scoped variables:
   repository-relative targets.
 
 The operator must launch or resume Codex with both variables. Maintenance is
-accepted only for `apply_patch`, `Edit`, or `Write` events whose extracted
-targets are all in that exact allowlist. Shell mutation does not enter this
-lane. `.harness-core/**` and managed `.agents/skills/**` remain denied even if
-listed. `PermissionRequest` emits no allow decision for a valid maintenance
-request, so normal human approval remains authoritative.
+accepted for `apply_patch`, `Edit`, or `Write` events whose extracted targets
+are all in that exact allowlist. The sole shell exception is `chmod` on an
+exact allowlisted canonical entrypoint, used to restore its executable bit.
+Every other shell mutation remains outside this lane. `.harness-core/**` and
+managed `.agents/skills/**` remain denied even if listed. `PermissionRequest`
+emits no allow decision for a valid maintenance request, so normal human
+approval remains authoritative.
 
 The active project Pi adapter under `.pi/**` is also Gauntlet-managed and
 protected from ordinary mutation.
@@ -48,6 +50,23 @@ GitHub-hosted Ubuntu cannot execute Android ELF artifacts. CI runs the same
 authority with `CODEX_GAUNTLET_CROSS_PLATFORM=1`, which verifies their pinned
 checksums and all repository policy while skipping only native binary
 execution. The Termux local gate must execute the binaries and `harness doctor`.
+
+Experimental Rules are optional defense in depth and are not required for the
+core contract. Compatibility failure in a required hook, policy input, Harness
+artifact, classifier, or verifier fails closed.
+
+## V6 handshake and verification tiers
+
+Harness produces an integrity-protected `WorkContext`. Gauntlet validates it
+but does not mutate lifecycle. Only the internal verifier behind
+`./qa/verify` can acquire the process-bound issuer capability, seal structured
+command evidence, and mint a `VerificationReceipt`.
+
+The four canonical modes are `targeted`, `stop`, `ci`, and `audit`. Ordinary
+work does not run a security scan. Sensitive targeted/Stop work uses
+`security-fast`; sensitive CI uses `security-full-diff`; scheduled/release
+audit uses `security-audit-repository`. All security components remain offline,
+internal implementation details beneath `./qa/verify`.
 
 ## Pi defense-in-depth adapter
 

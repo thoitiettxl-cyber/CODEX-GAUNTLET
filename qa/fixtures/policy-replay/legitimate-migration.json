@@ -1,0 +1,4 @@
+{
+  "event": {"hook_event_name":"PreToolUse","tool_name":"Bash","cwd":".","tool_input":{"command":"touch migrations/20260729_add_index.sql"}},
+  "expect": {"decision":"allow","ruleId":"CG.POLICY.ALLOW_PROJECT_WRITE"}
+}

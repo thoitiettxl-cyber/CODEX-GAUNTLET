@@ -1,18 +1,34 @@
-schema_version: 1
+schema_version: 2
 single_authority: ./qa/verify
+
 classes:
   docs-only: [docs]
   pure-logic: [unit, coverage]
   api-contract: [unit, integration, acceptance, coverage]
   migration-schema: [unit, integration, migration, acceptance]
-  dependency: [build, unit, integration]
-  security-critical: [unit, integration, coverage, mutation]
-  codex: [gauntlet-selftest, full-relevant]
-  pi: [gauntlet-selftest, unit, integration, coverage]
-  qa: [gauntlet-selftest, full-relevant]
-  gauntlet-skill: [skill-contract, gauntlet-selftest]
-  harness-managed-core: [harness-integrity, gauntlet-integration, full-relevant]
-  harness-provenance: [provenance-update-integrity]
-  workflow: [harness-doc-contract, workflow-selftests]
-  agents-entrypoint: [instruction-chain, workflow-selftests]
-  unknown-mixed: [conservative-full-relevant]
+  dependency: [build, unit, integration, dependency-audit]
+  security-sensitive: [unit, integration, security-profile]
+  gauntlet-policy: [docs, selftest, policy-audit, unit, integration, security-profile]
+  harness-core: [harness-integrity, integration, acceptance]
+  harness-state: [harness-integrity]
+  threat-model-source: [threat-model-freshness, security-profile]
+  pi: [unit, integration, coverage]
+  unknown-mixed: [docs, build, unit, integration, acceptance, coverage, policy-audit]
+
+mode_profiles:
+  targeted:
+    ordinary: none
+    security-sensitive: security-fast
+  stop:
+    ordinary: none
+    security-sensitive: security-fast
+  ci:
+    ordinary: none
+    security-sensitive: security-full-diff
+  audit:
+    all: security-audit-repository
+
+mandatory:
+  all: [harness-integrity, final-state]
+  ci: [selftest, policy-audit]
+  audit: [selftest, policy-audit]

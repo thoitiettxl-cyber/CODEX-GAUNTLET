@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gauntlet Security Scan Manifest",
+  "type": "object",
+  "required": ["scanId", "createdAt", "revision", "target", "phase", "threatModel"]
+}

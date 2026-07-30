@@ -1,0 +1,5 @@
+interface:
+  display_name: "Validate a security candidate with bounded evidence"
+  short_description: "Validate a security candidate with bounded evidence"
+policy:
+  allow_implicit_invocation: false

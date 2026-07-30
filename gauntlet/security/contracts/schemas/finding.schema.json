@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gauntlet Security Finding",
+  "type": "object",
+  "required": ["findingId", "occurrenceId", "ruleId", "title", "severity", "confidence", "locations", "validation", "provenance"]
+}

@@ -108,6 +108,23 @@ class SharedPolicyTests(unittest.TestCase):
         )
         self.assertEqual("deny", result.action)
 
+    def test_exact_executable_mode_update_is_the_only_shell_maintenance_exception(self):
+        allowed = self.decision(
+            "shell",
+            text="chmod 755 qa/verify",
+            maintenance=True,
+            maintenance_targets=("qa/verify",),
+        )
+        denied = self.decision(
+            "shell",
+            text="printf x > qa/verify",
+            maintenance=True,
+            maintenance_targets=("qa/verify",),
+        )
+        self.assertEqual("requires_human", allowed.action)
+        self.assertEqual("CG.POLICY.EXACT_FILE_MODE_SCOPE", allowed.reason_code)
+        self.assertEqual("deny", denied.action)
+
     def test_hard_protected_paths_remain_denied(self):
         target = ".harness-core/manifest.json"
         result = self.decision(
@@ -136,6 +153,46 @@ class SharedPolicyTests(unittest.TestCase):
         )
         self.assertEqual("allow", result.action)
         self.assertFalse(result.mutation)
+
+    def test_read_only_search_can_quote_destructive_commands(self):
+        for command in (
+            "rg -n 'rm -rf /' docs",
+            "grep -R 'git reset --hard' docs",
+        ):
+            with self.subTest(command=command):
+                result = self.decision("shell", text=command)
+                self.assertEqual("allow", result.action)
+                self.assertFalse(result.mutation)
+
+        stdout_only = self.decision(
+            "shell",
+            text="printf '%s\\n' 'sandbox_workspace_write.network_access = true'",
+        )
+        self.assertEqual("allow", stdout_only.action)
+
+    def test_protected_write_redirection_has_stable_explanation(self):
+        result = self.decision(
+            "shell",
+            text="printf x > .codex/config.toml",
+        )
+        self.assertEqual("deny", result.action)
+        self.assertEqual("CG.POLICY.PROTECTED_WRITE", result.reason_code)
+        explanation = result.explanation()
+        for field in ("rule=", "target=", "reason=", "remediation="):
+            self.assertIn(field, explanation)
+
+    def test_external_scanner_invocation_is_denied_but_docs_search_is_allowed(self):
+        denied = self.decision(
+            "shell",
+            text="npx @openai/codex-security scan",
+        )
+        allowed = self.decision(
+            "shell",
+            text="rg -n 'codex-security' docs",
+        )
+        self.assertEqual("CG.POLICY.EXTERNAL_SCANNER", denied.reason_code)
+        self.assertEqual("deny", denied.action)
+        self.assertEqual("allow", allowed.action)
 
     def test_protected_prose_in_an_unprotected_patch_is_not_a_target(self):
         result = self.decision(

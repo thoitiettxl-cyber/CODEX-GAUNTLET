@@ -1,14 +1,17 @@
 #!/data/data/com.termux/files/usr/bin/python3
+"""Runtime-neutral normalized-operation policy for Codex and Pi adapters."""
+
 from __future__ import annotations
 
 import argparse
 import json
 import posixpath
 import re
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 PROTECTED_PATHS = (
@@ -20,6 +23,16 @@ PROTECTED_PATHS = (
     ".agents/skills/verify-suite/",
     ".agents/skills/spec-check/",
     ".agents/skills/mutation-audit/",
+    ".agents/skills/threat-model/",
+    ".agents/skills/security-diff-scan/",
+    ".agents/skills/validate-finding/",
+    ".agents/skills/attack-path-review/",
+    ".agents/skills/triage-finding/",
+    "gauntlet/handshake/",
+    "gauntlet/security/",
+    "qa/security/",
+    "qa/tests/",
+    "artifacts/verification/",
 )
 HARD_PROTECTED_PATHS = tuple(
     path
@@ -28,42 +41,97 @@ HARD_PROTECTED_PATHS = tuple(
 )
 POLICY_CRITICAL = (
     "qa/verify",
+    "qa/verify_v6.py",
+    "qa/policy.json",
     "qa/thresholds.json",
+    "qa/security/thresholds.json",
     "qa/compatibility.json",
     "qa/verify-matrix.yaml",
+    "qa/classify_changes.py",
+    "qa/gate_selection.py",
     "qa/policy_audit.py",
     "qa/check_harness.py",
+    "qa/repository-identity.json",
+    "scripts/gauntlet_handshake.py",
+    "scripts/gauntlet_policy.py",
+    "security/threat-model.md",
+    "security/threat-model-sources.json",
     ".github/workflows/codex-gauntlet.yml",
 )
 ALL_PROTECTED_PATHS = PROTECTED_PATHS + POLICY_CRITICAL
 
-ALLOWED_OPERATIONS = {"shell", "edit", "write", "patch", "unknown"}
+ALLOWED_OPERATIONS = {"shell", "edit", "write", "patch", "read", "unknown"}
 MAINTENANCE_OPERATIONS = {"edit", "write", "patch"}
+READ_ONLY_COMMANDS = {
+    "awk",
+    "basename",
+    "cat",
+    "command",
+    "cut",
+    "dirname",
+    "du",
+    "env",
+    "file",
+    "find",
+    "git",
+    "grep",
+    "head",
+    "jq",
+    "ls",
+    "pwd",
+    "readlink",
+    "realpath",
+    "rg",
+    "sed",
+    "sort",
+    "stat",
+    "tail",
+    "test",
+    "tr",
+    "tree",
+    "uname",
+    "uniq",
+    "wc",
+    "which",
+}
+MUTATING_COMMANDS = {
+    "chmod",
+    "chown",
+    "cp",
+    "install",
+    "ln",
+    "mkdir",
+    "mv",
+    "rm",
+    "rmdir",
+    "tee",
+    "touch",
+    "truncate",
+}
+GIT_MUTATING_SUBCOMMANDS = {
+    "add",
+    "am",
+    "apply",
+    "branch",
+    "checkout",
+    "cherry-pick",
+    "clean",
+    "commit",
+    "fetch",
+    "merge",
+    "mv",
+    "pull",
+    "push",
+    "rebase",
+    "reset",
+    "restore",
+    "revert",
+    "rm",
+    "stash",
+    "switch",
+    "tag",
+}
 MAX_REASON = 240
-
-DANGEROUS_COMMANDS = (
-    (
-        "destructive_root_remove",
-        r"\brm\s+(?:-[^\s]*r[^\s]*f|-[^\s]*f[^\s]*r)\s+(?:--\s+)?/(?:\s|$)",
-    ),
-    ("filesystem_format", r"\bmkfs(?:\.|\s)"),
-    ("raw_disk_write", r"\bdd\s+if="),
-    ("git_hard_reset", r"\bgit\s+reset\s+--hard\b"),
-    ("git_destructive_clean", r"\bgit\s+clean\s+-[^\n]*[xX]"),
-    ("git_force_push", r"\bgit\s+push\s+[^\n]*(?:--force|-f\b)"),
-    ("hook_trust_bypass", r"--dangerously-bypass-hook-trust"),
-    ("sandbox_bypass", r"\bdanger-full-access\b"),
-)
-
-MUTATION_PATTERNS = (
-    r"(?:^|[;&|]\s*|\s)(?:rm|mv|cp|touch|chmod|chown|mkdir|rmdir|ln|install|truncate)\s",
-    r"\b(?:git\s+(?:checkout\s+--|restore|apply|commit|merge|rebase|cherry-pick))\b",
-    r"\b(?:sed\s+-i|perl\s+-pi|python(?:3)?\s+-c)\b",
-    r"\bapply_patch\b",
-    r"\b(?:cat|tee)\s+[^\n]*(?:>|>>)",
-    r"(?<![<>])>{1,2}(?!>)",
-    r"\*\*\*\s+(?:update|add|delete)\s+file:",
-)
 
 PROHIBITED_CONFIG = (
     r"sandbox_mode\s*=\s*[\"']danger-full-access[\"']",
@@ -71,6 +139,17 @@ PROHIBITED_CONFIG = (
     r"sandbox_workspace_write\.network_access\s*=\s*true",
     r"\bnetwork_access\s*=\s*true",
 )
+PATCH_TARGET_RE = re.compile(
+    r"(?m)^\*\*\* (?:Add|Update|Delete) File: (.+)$"
+    r"|^\*\*\* Move to: (.+)$"
+)
+
+
+@dataclass(frozen=True)
+class ShellCommand:
+    argv: tuple[str, ...]
+    write_targets: tuple[str, ...]
+    side_effect: str
 
 
 @dataclass(frozen=True)
@@ -106,6 +185,7 @@ class PolicyContext:
     repo_root: Path
     maintenance_enabled: bool = False
     maintenance_targets: tuple[str, ...] = ()
+    human_triage_enabled: bool = False
 
     @classmethod
     def from_mapping(cls, value: dict[str, Any]) -> PolicyContext:
@@ -122,6 +202,7 @@ class PolicyContext:
             repo_root=repo_root,
             maintenance_enabled=value.get("maintenance_enabled") is True,
             maintenance_targets=targets,
+            human_triage_enabled=value.get("human_triage_enabled") is True,
         )
 
 
@@ -130,17 +211,32 @@ class PolicyDecision:
     action: str
     reason_code: str
     reason: str
+    remediation: str
+    target: str
     normalized_targets: tuple[str, ...]
     protected_targets: tuple[str, ...]
     mutation: bool
     policy_sensitive: bool
     covered: bool = True
 
+    def explanation(self) -> str:
+        return " | ".join(
+            (
+                f"rule={self.reason_code}",
+                f"target={self.target or '<operation>'}",
+                f"reason={self.reason[:MAX_REASON]}",
+                f"remediation={self.remediation[:MAX_REASON]}",
+            )
+        )
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "action": self.action,
             "reason_code": self.reason_code,
             "reason": self.reason[:MAX_REASON],
+            "remediation": self.remediation[:MAX_REASON],
+            "target": self.target,
+            "explanation": self.explanation(),
             "normalized_targets": list(self.normalized_targets),
             "protected_targets": list(self.protected_targets),
             "mutation": self.mutation,
@@ -189,24 +285,226 @@ def protected_paths_in_text(text: str) -> tuple[str, ...]:
     )
 
 
+def _tokenize_shell(text: str) -> list[str]:
+    try:
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=";&|<>")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        return list(lexer)
+    except ValueError:
+        return []
+
+
+def _command_side_effect(argv: list[str], write_targets: list[str]) -> str:
+    if write_targets:
+        return "definite"
+    if not argv:
+        return "none"
+    executable = Path(argv[0]).name.lower()
+    if executable in MUTATING_COMMANDS:
+        return "definite"
+    if executable == "git" and len(argv) > 1:
+        subcommand = next((item for item in argv[1:] if not item.startswith("-")), "")
+        return "definite" if subcommand in GIT_MUTATING_SUBCOMMANDS else "none"
+    if executable in {"sed", "perl"} and any(
+        item == "-i" or item.startswith("-i") or item == "-pi"
+        for item in argv[1:]
+    ):
+        return "definite"
+    if executable in {"apply_patch"} or "*** Begin Patch" in " ".join(argv):
+        return "definite"
+    if executable in {
+        "bash",
+        "node",
+        "perl",
+        "php",
+        "python",
+        "python3",
+        "ruby",
+        "sh",
+        "zsh",
+    } and any(item in {"-c", "-e"} for item in argv[1:]):
+        return "possible"
+    return "none" if executable in READ_ONLY_COMMANDS else "possible"
+
+
+def _argument_write_targets(argv: list[str], side_effect: str) -> list[str]:
+    if not argv or side_effect != "definite":
+        return []
+    executable = Path(argv[0]).name.lower()
+    args = [item for item in argv[1:] if item and not item.startswith("-")]
+    if executable == "chmod" and args and re.fullmatch(r"[0-7]{3,4}", args[0]):
+        args = args[1:]
+    if executable == "git":
+        return []
+    if executable in {"mv", "rm", "rmdir"}:
+        return args
+    if executable in MUTATING_COMMANDS:
+        return args[-1:] if executable in {"cp", "install", "ln", "tee"} else args
+    if executable in {"sed", "perl"}:
+        return args[-1:]
+    return []
+
+
+def normalized_shell_commands(text: str) -> tuple[ShellCommand, ...]:
+    tokens = _tokenize_shell(text)
+    if not tokens:
+        return ()
+    commands: list[ShellCommand] = []
+    argv: list[str] = []
+    redirects: list[str] = []
+    index = 0
+
+    def finish() -> None:
+        nonlocal argv, redirects
+        if not argv and not redirects:
+            return
+        side_effect = _command_side_effect(argv, redirects)
+        targets = redirects + _argument_write_targets(argv, side_effect)
+        commands.append(ShellCommand(tuple(argv), tuple(targets), side_effect))
+        argv = []
+        redirects = []
+
+    while index < len(tokens):
+        token = tokens[index]
+        if token and set(token) <= set(";&|"):
+            finish()
+            index += 1
+            continue
+        if token and set(token) <= set("<>"):
+            if ">" in token and index + 1 < len(tokens):
+                redirects.append(tokens[index + 1])
+            index += 2
+            continue
+        argv.append(token)
+        index += 1
+    finish()
+    return tuple(commands)
+
+
+def _patch_targets(text: str) -> tuple[str, ...]:
+    return tuple(
+        (match.group(1) or match.group(2)).strip()
+        for match in PATCH_TARGET_RE.finditer(text)
+    )
+
+
+def shell_write_targets(text: str) -> tuple[str, ...]:
+    targets = {
+        target
+        for command in normalized_shell_commands(text)
+        for target in command.write_targets
+    }
+    targets.update(_patch_targets(text))
+    return tuple(sorted(targets))
+
+
 def is_mutating_command(text: str) -> bool:
-    return any(re.search(pattern, text, re.IGNORECASE) for pattern in MUTATION_PATTERNS)
+    return any(
+        item.side_effect in {"possible", "definite"}
+        for item in normalized_shell_commands(text)
+    ) or bool(_patch_targets(text))
 
 
 def mutation_requested(policy_input: PolicyInput) -> bool:
     if policy_input.operation in {"edit", "write", "patch"}:
         return True
-    return (
-        policy_input.operation == "shell"
-        and is_mutating_command(policy_input.text)
-    )
+    return policy_input.operation == "shell" and is_mutating_command(policy_input.text)
+
+
+def _dangerous_shell_decision(
+    commands: Iterable[ShellCommand],
+) -> tuple[str, str, str, str] | None:
+    for command in commands:
+        argv = list(command.argv)
+        if not argv:
+            continue
+        executable = Path(argv[0]).name.lower()
+        lowered = [item.lower() for item in argv[1:]]
+        joined = " ".join(argv)
+
+        if any(
+            item in {"--dangerously-bypass-hook-trust", "danger-full-access"}
+            for item in lowered
+        ):
+            return (
+                "CG.POLICY.BYPASS",
+                joined,
+                "sandbox or hook-trust bypass is prohibited",
+                "use the repository approval and maintenance workflow",
+            )
+        if executable == "rm":
+            flags = "".join(item[1:] for item in argv[1:] if item.startswith("-"))
+            targets = [item for item in argv[1:] if not item.startswith("-")]
+            if "r" in flags and "f" in flags and any(
+                item in {"/", "~", "~/", "$HOME", "$HOME/"} for item in targets
+            ):
+                return (
+                    "CG.POLICY.DESTRUCTIVE_ROOT",
+                    next(item for item in targets if item in {"/", "~", "~/", "$HOME", "$HOME/"}),
+                    "destructive removal targets a root or home boundary",
+                    "resolve and review a narrow workspace-relative target",
+                )
+        if executable.startswith("mkfs"):
+            return (
+                "CG.POLICY.FILESYSTEM_FORMAT",
+                joined,
+                "filesystem formatting is outside repository scope",
+                "use a non-destructive repository-local operation",
+            )
+        if executable == "dd" and any(item.startswith("of=/dev/") for item in argv[1:]):
+            return (
+                "CG.POLICY.RAW_DISK_WRITE",
+                joined,
+                "raw device writes are prohibited",
+                "write only to an explicit repository-local file",
+            )
+        if executable == "git" and "reset" in lowered and "--hard" in lowered:
+            return (
+                "CG.POLICY.GIT_HARD_RESET",
+                joined,
+                "hard reset can discard unrelated user work",
+                "inspect the diff and use a narrow recoverable Git operation",
+            )
+        if executable == "git" and "clean" in lowered and any(
+            item.startswith("-") and "f" in item for item in lowered
+        ):
+            return (
+                "CG.POLICY.GIT_DESTRUCTIVE_CLEAN",
+                joined,
+                "forced Git clean can delete untracked user files",
+                "enumerate exact files and use a recoverable operation",
+            )
+        if executable == "git" and "push" in lowered and any(
+            item == "-f" or item.startswith("--force") for item in lowered
+        ):
+            return (
+                "CG.POLICY.GIT_FORCE_PUSH",
+                joined,
+                "force push rewrites shared history",
+                "use a normal push or obtain explicit authorization",
+            )
+        scanner_install = executable in {"npm", "pnpm", "yarn", "bun"} and any(
+            item in {"install", "add", "i"} for item in lowered
+        )
+        scanner_run = executable in {"npx", "bunx", "codex-security"}
+        if (scanner_install or scanner_run) and "codex-security" in " ".join(lowered):
+            return (
+                "CG.POLICY.EXTERNAL_SCANNER",
+                joined,
+                "external security scanner use violates the offline clean-room boundary",
+                "run the internal Security Intelligence gates through ./qa/verify",
+            )
+    return None
 
 
 def _decision(
     action: str,
     reason_code: str,
     reason: str,
+    remediation: str,
     *,
+    target: str,
     normalized_targets: tuple[str, ...],
     protected_targets: tuple[str, ...],
     mutation: bool,
@@ -216,6 +514,8 @@ def _decision(
         action=action,
         reason_code=reason_code,
         reason=reason[:MAX_REASON],
+        remediation=remediation[:MAX_REASON],
+        target=target,
         normalized_targets=normalized_targets,
         protected_targets=protected_targets,
         mutation=mutation,
@@ -224,28 +524,45 @@ def _decision(
     )
 
 
-def decide(
-    policy_input: PolicyInput,
-    context: PolicyContext,
-) -> PolicyDecision:
-    normalized_targets = tuple(
-        sorted({normalize_target(target, context) for target in policy_input.targets})
+def decide(policy_input: PolicyInput, context: PolicyContext) -> PolicyDecision:
+    raw_targets = set(policy_input.targets)
+    shell_commands = (
+        normalized_shell_commands(policy_input.text)
+        if policy_input.operation == "shell"
+        else ()
     )
+    if policy_input.operation == "shell":
+        raw_targets.update(shell_write_targets(policy_input.text))
+    if policy_input.operation == "patch":
+        raw_targets.update(_patch_targets(policy_input.text))
+    normalized_targets = tuple(
+        sorted({normalize_target(target, context) for target in raw_targets})
+    )
+    mutation = mutation_requested(policy_input)
+
     direct_protected = {
         protected
         for target in normalized_targets
         if (protected := protected_path_for_target(target))
     }
-    mutation = mutation_requested(policy_input)
-    text_protected = set(
-        protected_paths_in_text(policy_input.text)
-        if (
-            mutation or policy_input.authority_request
-        ) and (
-            policy_input.operation == "shell" or not normalized_targets
+    text_protected: set[str] = set()
+    unresolved_shell_mutation = any(
+        command.side_effect == "definite"
+        or (
+            command.side_effect == "possible"
+            and any(item in {"-c", "-e"} for item in command.argv[1:])
         )
-        else ()
+        for command in shell_commands
     )
+    if (
+        policy_input.authority_request
+        or (
+            policy_input.operation == "shell"
+            and unresolved_shell_mutation
+            and not normalized_targets
+        )
+    ):
+        text_protected.update(protected_paths_in_text(policy_input.text))
     protected_targets = tuple(sorted(direct_protected | text_protected))
     if policy_input.authority_request and protected_targets:
         mutation = True
@@ -253,8 +570,10 @@ def decide(
     if policy_input.operation == "unknown":
         return _decision(
             "allow",
-            "unsupported_tool",
-            "This tool is outside the shared Gauntlet decision contract.",
+            "CG.POLICY.UNCOVERED_TOOL",
+            "this tool is outside the shared normalized-operation contract",
+            "retain native sandbox and user approval for this tool",
+            target="<uncovered-tool>",
             normalized_targets=normalized_targets,
             protected_targets=protected_targets,
             mutation=False,
@@ -262,47 +581,125 @@ def decide(
         )
 
     if policy_input.operation == "shell":
-        for reason_code, pattern in DANGEROUS_COMMANDS:
-            if re.search(pattern, policy_input.text, re.IGNORECASE):
-                return _decision(
-                    "deny",
-                    reason_code,
-                    "Blocked destructive or policy-bypass shell operation.",
-                    normalized_targets=normalized_targets,
-                    protected_targets=protected_targets,
-                    mutation=True,
-                )
+        dangerous = _dangerous_shell_decision(shell_commands)
+        if dangerous:
+            rule_id, target, reason, remediation = dangerous
+            return _decision(
+                "deny",
+                rule_id,
+                reason,
+                remediation,
+                target=target,
+                normalized_targets=normalized_targets,
+                protected_targets=protected_targets,
+                mutation=True,
+            )
 
     config_targeted = any(
         target_matches(target, ".codex/config.toml")
         for target in normalized_targets
     )
-    if (
-        (policy_input.operation == "shell" or config_targeted)
-        and any(
-            re.search(pattern, policy_input.text, re.IGNORECASE)
-            for pattern in PROHIBITED_CONFIG
-        )
+    if config_targeted and any(
+        re.search(pattern, policy_input.text, re.IGNORECASE)
+        for pattern in PROHIBITED_CONFIG
     ):
         return _decision(
             "deny",
-            "codex_baseline_weakening",
-            "Codex sandbox, approval, or network policy may not be weakened.",
+            "CG.POLICY.CODEX_BASELINE",
+            "Codex sandbox, approval, or network policy may not be weakened",
+            "preserve the checked-in baseline and request a narrow operation",
+            target=".codex/config.toml",
             normalized_targets=normalized_targets,
             protected_targets=protected_targets,
             mutation=True,
         )
 
-    harness_update = (
-        policy_input.operation == "shell"
-        and ("scripts/bin/" + "harness update") in policy_input.text.lower()
+    harness_update = any(
+        command.argv
+        and str(command.argv[0]).replace("\\", "/").endswith("scripts/bin/harness")
+        and any(item in {"update", "activate"} for item in command.argv[1:])
+        for command in shell_commands
     )
     if harness_update:
         action = "requires_human" if context.maintenance_enabled else "deny"
         return _decision(
             action,
-            "harness_maintenance",
-            "Harness update requires explicit operator maintenance authority.",
+            "CG.POLICY.HARNESS_MAINTENANCE",
+            "Harness update requires explicit operator maintenance authority",
+            "enter the documented Harness maintenance lane",
+            target="scripts/bin/harness",
+            normalized_targets=normalized_targets,
+            protected_targets=protected_targets,
+            mutation=True,
+        )
+
+    triage_targeted = any(
+        target_matches(target, "qa/security/triage/")
+        for target in normalized_targets
+    )
+    if triage_targeted and mutation and not context.human_triage_enabled:
+        return _decision(
+            "deny",
+            "CG.POLICY.HUMAN_TRIAGE",
+            "security triage is human-only and requires auditable metadata",
+            "obtain a human approver, reason, timestamp, and optional expiry",
+            target="qa/security/triage/",
+            normalized_targets=normalized_targets,
+            protected_targets=protected_targets,
+            mutation=True,
+        )
+
+    # A canonical executable bit is a narrow maintenance concern. It is the
+    # only shell mutation admitted to this lane, and only for an exact target;
+    # ordinary shell writes continue to fail closed below.
+    chmod_commands = [
+        command
+        for command in shell_commands
+        if command.argv and Path(command.argv[0]).name.lower() == "chmod"
+    ]
+    if (
+        policy_input.operation == "shell"
+        and chmod_commands
+        and len(chmod_commands) == len(shell_commands)
+        and normalized_targets
+        and context.maintenance_enabled
+    ):
+        allowed = {
+            normalize_target(target, context)
+            for target in context.maintenance_targets
+            if target.strip()
+        }
+        if set(normalized_targets) <= allowed:
+            return _decision(
+                "requires_human",
+                "CG.POLICY.EXACT_FILE_MODE_SCOPE",
+                "exact executable-bit maintenance scope is valid",
+                "approve only the reviewed executable target",
+                target=normalized_targets[0],
+                normalized_targets=normalized_targets,
+                protected_targets=protected_targets,
+                mutation=True,
+            )
+
+    sealed_target = next(
+        (
+            path
+            for path in (
+                "qa/security/reports/",
+                "artifacts/verification/evidence/",
+                "artifacts/verification/receipts/",
+            )
+            if any(target_matches(target, path) for target in normalized_targets)
+        ),
+        None,
+    )
+    if sealed_target and mutation:
+        return _decision(
+            "deny",
+            "CG.POLICY.SEALED_ARTIFACT",
+            "sealed runtime evidence may only be created by its canonical issuer",
+            "run ./qa/verify instead of writing generated evidence directly",
+            target=sealed_target,
             normalized_targets=normalized_targets,
             protected_targets=protected_targets,
             mutation=True,
@@ -315,8 +712,10 @@ def decide(
         if hard_protected:
             return _decision(
                 "deny",
-                "hard_protected_target",
-                "Managed Harness and Agent Skill paths cannot enter this maintenance lane.",
+                "CG.POLICY.HARD_PROTECTED_WRITE",
+                "managed Harness and Agent Skill paths cannot enter this maintenance lane",
+                "use the owner-specific reviewed update process",
+                target=protected_targets[0],
                 normalized_targets=normalized_targets,
                 protected_targets=protected_targets,
                 mutation=True,
@@ -335,16 +734,20 @@ def decide(
         if context.maintenance_enabled and exact_scope:
             return _decision(
                 "requires_human",
-                "exact_maintenance_scope",
-                "Exact maintenance scope is valid; human approval remains authoritative.",
+                "CG.POLICY.EXACT_MAINTENANCE_SCOPE",
+                "the exact maintenance scope is valid; human approval remains authoritative",
+                "approve only the reviewed exact target set",
+                target=normalized_targets[0],
                 normalized_targets=normalized_targets,
                 protected_targets=protected_targets,
                 mutation=True,
             )
         return _decision(
             "deny",
-            "protected_target",
-            "Direct mutation of a protected path is outside the active exact maintenance scope.",
+            "CG.POLICY.PROTECTED_WRITE",
+            "direct mutation of a protected ownership path is outside the active scope",
+            "use the correct exact maintenance lane with human approval",
+            target=normalized_targets[0] if normalized_targets else protected_targets[0],
             normalized_targets=normalized_targets,
             protected_targets=protected_targets,
             mutation=True,
@@ -352,8 +755,10 @@ def decide(
 
     return _decision(
         "allow",
-        "ordinary_operation",
-        "Operation is allowed by the shared repository policy.",
+        "CG.POLICY.ALLOW",
+        "operation is allowed by the normalized repository policy",
+        "no remediation required",
+        target=normalized_targets[0] if normalized_targets else "<operation>",
         normalized_targets=normalized_targets,
         protected_targets=protected_targets,
         mutation=mutation,

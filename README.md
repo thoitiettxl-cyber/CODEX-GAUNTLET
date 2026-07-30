@@ -1,7 +1,8 @@
-# Codex Gauntlet v3 + Repository Harness for Termux
+# Codex Gauntlet v6 + Repository Harness for Termux
 
 The operating control plane for this Termux environment and its repositories,
-implementing **Codex Gauntlet v3 — Repository Harness Integrated**.
+implementing the one-way **WorkContext → VerificationReceipt** architecture
+without replacing the existing Termux control plane or product surfaces.
 
 ## What is implemented
 
@@ -9,13 +10,22 @@ implementing **Codex Gauntlet v3 — Repository Harness Integrated**.
 - repository knowledge, decisions, and durable plans under `docs/`;
 - orchestration-first intake, work graph, trace, and semantic replay through
   the pinned Harness CLI;
-- five repository skills under `.agents/skills/`;
+- ten repository skills under `.agents/skills/`, including explicit security
+  workflows;
 - Codex sandbox and lifecycle hooks under `.codex/`;
 - a single verification authority: `./qa/verify`;
 - Harness provenance and compatibility checks;
 - ownership-aware policy audit;
+- normalized-operation policy with stable rule IDs and remediation;
+- independent complexity and security classification;
+- targeted, Stop, CI, and repository-audit verification tiers;
+- offline Security Intelligence with meaningful threat-model freshness,
+  validation disposition, calibrated attack paths, stable findings, sealed
+  reports, human-only triage, and JSON/CSV/SARIF export;
+- structured, sealed verifier evidence and issuer-bound receipts;
 - a hermetic GitHub Actions workflow that never downloads the latest Harness;
-- 42 named structural acceptance checks (`G01–G21`, `H01–H21`).
+- 80 scenarios across Core, Handshake, Precision, Security, and Operational
+  integrity, plus the preserved v3/Termux regression suite.
 
 ## Native Termux tools
 
@@ -83,6 +93,9 @@ remains a separately authorized root-managed action.
 ./scripts/termux-control orchestrator init
 ./scripts/termux-control orchestrator status
 ./scripts/termux-control verify
+./qa/verify --mode targeted
+./qa/verify --mode ci
+./qa/verify --mode audit
 ```
 
 Use a stable `HARNESS_RUN_ID` for state-changing orchestrator commands. Complex
@@ -90,7 +103,10 @@ work uses one Harness story linked to one Git-native execution plan. The
 generated `harness.db` stays ignored; semantic changesets are committed so the
 database can be rebuilt.
 
-For a consumer application, set `application_present` to `true` in `qa/project-commands.json` and provide real executable commands for every required gate. Empty commands fail closed once an application is declared.
+This repository already declares `application_present=true` and retains its
+real continuity, Pi, RTK, Harness, and control-plane commands in
+`qa/project-commands.json`. An empty selected consumer gate is recorded as a
+proof gap and fails closed.
 
 ## Authority
 

@@ -1,15 +1,24 @@
-name: Codex Gauntlet
+name: Codex Gauntlet v6
 
 on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      audit:
+        description: Run repository-wide audit
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    if: github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.audit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,19 +27,53 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Verify checked-in repository state
+      - name: Prepare checked-in entrypoints
+        run: chmod +x qa/verify qa/run-*.sh .codex/hooks/*.py
+      - name: Canonical diff-scoped verification
         env:
           CODEX_GAUNTLET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           CODEX_GAUNTLET_CROSS_PLATFORM: "1"
-        run: |
-          # Ubuntu verifies the Android artifacts by pinned checksum. Native
-          # execution remains mandatory in the Termux local gate.
-          bash ./qa/verify --mode ci
-      - name: Upload diagnostics
-        if: failure()
+        run: ./qa/verify --mode ci
+      - name: Upload verification evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: codex-gauntlet-diagnostics
-          path: .qa-artifacts/
+          name: codex-gauntlet-v6-artifacts
+          path: |
+            .qa-artifacts/
+            artifacts/metrics/
+            artifacts/verification/evidence/
+            artifacts/verification/receipts/
+            qa/security/reports/
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 7
+
+  audit:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare checked-in entrypoints
+        run: chmod +x qa/verify qa/run-*.sh .codex/hooks/*.py
+      - name: Canonical repository audit
+        env:
+          CODEX_GAUNTLET_CROSS_PLATFORM: "1"
+        run: ./qa/verify --mode audit
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-gauntlet-v6-audit
+          path: |
+            .qa-artifacts/
+            artifacts/metrics/
+            artifacts/verification/evidence/
+            artifacts/verification/receipts/
+            qa/security/reports/
+          if-no-files-found: ignore
+          retention-days: 14

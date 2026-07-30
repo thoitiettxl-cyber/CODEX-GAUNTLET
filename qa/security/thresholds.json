@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "fail_on_severity": "high",
+  "threat_model_freshness_rate": 0.95,
+  "validation_completeness_rate": 1.0,
+  "evidence_backed_high_severity_rate": 1.0,
+  "read_only_false_block_rate_max": 0.0,
+  "ordinary_workflow_regression_rate_max": 0.0,
+  "known_benign_reportable_findings_max": 0,
+  "mandatory_vulnerable_rule_recall_min": 1.0,
+  "unsupported_surface_must_be_reported": true
+}

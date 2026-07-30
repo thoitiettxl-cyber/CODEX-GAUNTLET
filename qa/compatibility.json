@@ -1,6 +1,8 @@
 {
   "codex": {
     "baseline_date": "2026-07-24",
+    "gauntlet_version": "6",
+    "handshake_schema": "1",
     "required_features": [
       "project_trust",
       "project_hooks",
@@ -43,6 +45,8 @@
     "cli_payload_count": 23,
     "cli_payload_manifest_sha256": "eb4ae884262a7a03d117cb7b5dff5c932ecb4184d76aef27428b39bfe55e2067",
     "schema_count": 14,
-    "schema_manifest_sha256": "e31ac87a8afb2d37d1f6c24ab2d0b00e7ac73d2d6acc3c10f88f4dd525141f51"
+    "schema_manifest_sha256": "e31ac87a8afb2d37d1f6c24ab2d0b00e7ac73d2d6acc3c10f88f4dd525141f51",
+    "gauntlet_handshake": "work-context-receipt-v1",
+    "compatibility_review_date": "2026-07-29"
   }
 }

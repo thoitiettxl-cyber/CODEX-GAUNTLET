@@ -179,6 +179,8 @@ def policy_context(event: dict[str, Any]) -> PolicyContext:
             ).split(",")
             if target.strip()
         ),
+        human_triage_enabled=os.environ.get("CODEX_GAUNTLET_HUMAN_TRIAGE")
+        == "1",
     )
 
 
@@ -190,7 +192,10 @@ def maintenance_mutation_authorized(event: dict[str, Any]) -> bool:
     decision = policy_decision(event)
     return (
         decision.action == "requires_human"
-        and decision.reason_code == "exact_maintenance_scope"
+        and decision.reason_code in {
+            "CG.POLICY.EXACT_MAINTENANCE_SCOPE",
+            "CG.POLICY.EXACT_FILE_MODE_SCOPE",
+        }
     )
 
 

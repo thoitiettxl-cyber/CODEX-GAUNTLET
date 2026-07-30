@@ -133,6 +133,25 @@ def checks():
     pi_contract = text('docs/product/pi-gauntlet.md')
     compatibility = json.loads(text('qa/compatibility.json'))
 
+    classifier_probe = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / 'qa/classify_changes.py'),
+            '.pi/extensions/gauntlet/index.ts',
+            'src/math.py',
+            '--json',
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=ROOT,
+    )
+    try:
+        classifier_payload = json.loads(classifier_probe.stdout)
+    except json.JSONDecodeError:
+        classifier_payload = {}
+    classifier_classes = set(classifier_payload.get('classes', []))
+
     skill_paths = sorted((ROOT / '.agents/skills').glob('*/SKILL.md'))
     skill_names = []
     for path in skill_paths:
@@ -273,7 +292,12 @@ def checks():
     )
     _, network_enable, network_stderr = hook('.codex/hooks/pre_tool_use_policy.py', {
         'cwd': str(ROOT), 'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
-        'tool_input': {'command': 'echo sandbox_workspace_write.network_access = true'}
+        'tool_input': {
+            'command': (
+                'printf %s "sandbox_workspace_write.network_access = true" '
+                '> .codex/config.toml'
+            )
+        }
     })
     _, permission, _ = hook('.codex/hooks/permission_request_policy.py', {
         'cwd': str(ROOT), 'hook_event_name': 'PermissionRequest', 'tool_name': 'Bash',
@@ -307,13 +331,13 @@ def checks():
         'G12': ('CI canonical command', './qa/verify --mode ci' in ci),
         'G13': ('CI no remote Harness update', not re.search(r'\b(curl|wget)\b.*(latest|repository-harness)', ci, re.I)),
         'G14': ('central thresholds file', (ROOT/'qa/thresholds.json').exists()),
-        'G15': ('unknown is conservative', 'unknown-mixed: [conservative-full-relevant]' in matrix),
+        'G15': ('unknown is conservative', 'unknown-mixed:' in matrix and all(gate in matrix.split('unknown-mixed:', 1)[1].split('\n', 1)[0] for gate in ('build', 'unit', 'integration', 'acceptance', 'coverage', 'policy-audit'))),
         'G16': ('policy audit present', (ROOT/'qa/policy_audit.py').exists()),
         'G17': ('hook trust documented', 'hook trust' in quality.lower()),
         'G18': ('Rules optional', '.codex/rules' not in config and 'rules' not in hooks_json),
         'G19': ('Termux hook interpreters', all(command.startswith('/data/data/com.termux/files/usr/bin/python3 ') for command in hook_commands)),
-        'G20': ('untracked changes classified', 'git", "ls-files", "--others", "--exclude-standard' in text('qa/classify_changes.py')),
-        'G21': ('multiple change classes split', 'sep="\\n"' in text('qa/verify') and '"\\\\n".join' not in text('qa/verify')),
+        'G20': ('untracked changes classified', '"ls-files", "--others", "--exclude-standard"' in text('qa/classify_changes.py')),
+        'G21': ('multiple change classes split', classifier_probe.returncode == 0 and {'pi', 'pure-logic'} <= classifier_classes),
         'G22': ('hard reset denied', hard_reset.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
         'G23': ('ordinary protected patch denied', ordinary_patch.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
         'G24': ('exact scoped maintenance patch permitted', exact_patch == {}),
@@ -335,9 +359,14 @@ def checks():
         'G40': ('Pi adapter is dependency-free', not any((ROOT/'.pi'/name).exists() for name in ('package.json','package-lock.json','npm','node_modules'))),
         'G41': ('Pi verification is bounded and recursion-guarded', all(marker in pi_verification for marker in ('MAX_CAPTURE', 'inFlight', 'failureSignature', 'repairFollowUpSent', '"--mode", "stop"'))),
         'G42': ('Pi adapter is protected from ordinary mutation', '".pi/"' in shared_policy and 'from scripts.gauntlet_policy import' in text('.codex/hooks/common.py')),
-        'G43': ('Pi changes have an explicit verification class', 'pi: [' in matrix and 'classes.add("pi")' in text('qa/classify_changes.py')),
+        'G43': ('Pi changes have an explicit verification class', 'pi: [' in matrix and 'pi' in classifier_classes),
         'H01': ('Harness provenance', (ROOT/'.harness-core/manifest.json').exists()),
-        'H02': ('skill coexistence and unique names', set(skill_names) == {'onboard-repository','audit-onboarding-proposal','verify-suite','spec-check','mutation-audit'} and len(skill_names)==len(set(skill_names))),
+        'H02': ('skill coexistence and unique names', set(skill_names) == {
+            'onboard-repository', 'audit-onboarding-proposal', 'verify-suite',
+            'spec-check', 'mutation-audit', 'threat-model',
+            'security-diff-scan', 'validate-finding', 'attack-path-review',
+            'triage-finding',
+        } and len(skill_names) == len(set(skill_names))),
         'H03': ('compact AGENTS entrypoint', len(agents.splitlines()) < 45 and 'docs/WORKFLOW.md' in agents and './qa/verify' in agents),
         'H04': ('bounded task stays light', 'does not require a durable plan' in workflow),
         'H05': ('durable task structure', (ROOT/'docs/plans/active').is_dir() and (ROOT/'docs/plans/completed').is_dir() and (ROOT/'docs/templates/exec-plan.md').exists()),

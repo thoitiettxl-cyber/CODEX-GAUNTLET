@@ -12,7 +12,7 @@ def main() -> int:
     event = read_event()
     decision = policy_decision(event)
     if decision.action == "deny":
-        deny_pretool(decision.reason)
+        deny_pretool(decision.explanation())
     return 0
 
 

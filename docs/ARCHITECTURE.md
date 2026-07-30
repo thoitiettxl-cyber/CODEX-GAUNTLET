@@ -26,7 +26,17 @@ The Harness manifest must never claim `.codex/**`, `qa/**`, or `.github/workflow
 Agent done → Harness context complete → Local Gauntlet verified → Repository CI verified
 ```
 
-Only the final state is mergeable.
+Only the final state with the required status from repository CI is mergeable.
+
+```text
+Harness WorkContext
+        ↓ one-way validated input
+Gauntlet policy + ./qa/verify
+        ↓ sealed VerificationReceipt
+Explicit Harness completion reference
+        ↓
+Repository CI required status
+```
 
 ## Orchestration authority
 
@@ -38,6 +48,19 @@ reviewed and committed; the SQLite database is generated and ignored.
 Gauntlet retains sole executable pass/fail authority through `./qa/verify`.
 Story completion may invoke that command as fresh proof, but metadata never
 redefines verification.
+
+Lifecycle-only semantic changes are excluded from the receipt target-state
+digest, so an explicit completion event may reference a still-current receipt
+without triggering a circular rescan. Harness validates and links the receipt;
+it never recalculates application pass/fail.
+
+## Security Intelligence
+
+`gauntlet/security/` owns offline target normalization, knowledge ingestion,
+meaningful threat-model freshness, language-aware discovery, validation,
+attack-path calibration, stable finding identity, sealed history, and export.
+`qa/security/` is its internal gate adapter. Neither is a second verification
+authority, and no external scanner is installed or invoked.
 
 ## Runtime policy adapters
 

@@ -11,3 +11,16 @@ node_modules/
 harness.db
 harness.db-*
 .harness/epoch-transition/
+
+# Codex Gauntlet v6 generated evidence. The checked-in .gitkeep files retain
+# the stores; each run creates immutable, digest-addressed artifacts.
+qa/security/reports/*
+!qa/security/reports/.gitkeep
+artifacts/verification/receipts/*
+!artifacts/verification/receipts/.gitkeep
+artifacts/verification/evidence/*
+!artifacts/verification/evidence/.gitkeep
+artifacts/metrics/*
+!artifacts/metrics/.gitkeep
+.harness/work-context/*.json
+.harness/receipt-links/*.json

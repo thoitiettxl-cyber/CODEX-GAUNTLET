@@ -1,0 +1,1 @@
+vulnerable-fixture==0.0.1  # intentional gold fixture

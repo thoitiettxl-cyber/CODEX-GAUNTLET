@@ -10,11 +10,15 @@
 6. Code, tests, schemas, `qa/verify`, and runtime evidence.
 7. Completed plans and historical evidence.
 
+Nested `AGENTS.md` and `AGENTS.override.md` files apply by repository
+precedence: load the nearest applicable instruction only after this root entry
+map directs you into that subtree.
+
 ## Read-only question
 
 Inspect the smallest authoritative surface and answer with evidence. Querying
 `scripts/termux-control orchestrator status` is allowed when task state matters,
-but do not initialize or mutate Harness state.
+but perform no lifecycle write and no heavy verification.
 
 ## Bounded change
 
@@ -26,6 +30,8 @@ intake → inspect → edit → focused proof → trace when useful
 ```
 
 A bounded single-session task does not require a durable plan or story.
+Harness may emit a bounded `WorkContext`, but `storyId` remains optional and
+Gauntlet independently classifies the concrete diff.
 
 ## Complex change
 
@@ -40,6 +46,11 @@ from the final diff alone:
 5. Transition the story with compare-and-set and `--require-runnable`.
 6. Keep story lifecycle and plan progress current at each safe boundary.
 
+Before implementation, emit a runnable `WorkContext` linked to the active
+story and linked plan. Gauntlet validates repository identity, revisions,
+paths, graph revision, digest, and requested mode; the context is never
+application-pass evidence.
+
 The work graph owns lifecycle and scheduling. The plan owns outcome, approach,
 decisions, progress, risks, recovery, and validation context. Do not duplicate
 either source blindly into the other.
@@ -52,11 +63,28 @@ Pause before mutation. Present the concrete choice and effects. Continue only af
 
 For story-backed work:
 
-1. Run focused proof and record the implementation trace.
-2. Record validation in the plan and move it to `completed/`.
-3. Update the story contract path, then run `story complete` for a fresh,
-   atomic lifecycle transition.
-4. Review the final diff and run `./qa/verify` again on the final state.
+1. Review the final diff and run `./qa/verify` with the validated WorkContext.
+2. Require a passing `VerificationReceipt` with structured command records,
+   sealed logs, current policy/target digest, and no stale final state.
+3. Validate the receipt through `scripts/gauntlet_handshake.py
+   validate-receipt`; Harness links the receipt without interpreting tests.
+4. Record validation and recovery context in the linked plan, then move it to
+   `completed/`.
+5. Update the story contract/evidence and run `story complete`; completion
+   may reuse the current receipt digest and does not activate another scan.
+6. Review the lifecycle-final diff and run `./qa/verify` once more.
+
+Canonical verification tiers are:
+
+- `targeted`: selected focused functional gates; security-sensitive work uses
+  `security-fast`;
+- `stop`: bounded Stop proof with recursion guard and no ordinary full scan;
+- `ci`: final diff-scoped proof; sensitive changes use `security-full-diff`;
+- `audit`: scheduled/release repository-wide proof through
+  `security-audit-repository`.
+
+Harness status/doctor never invoke Gauntlet, and Gauntlet never creates or
+transitions a Harness story. This one-way handshake prevents activation loops.
 
 `./qa/verify` is the only definition-of-pass. Harness metadata, hook feedback,
 and agent statements are not application evidence.
