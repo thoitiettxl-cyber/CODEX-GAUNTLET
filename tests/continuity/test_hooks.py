@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
 import sqlite3
 import time
 import unittest
@@ -9,7 +10,11 @@ from contextlib import closing
 from unittest.mock import patch
 
 from tests.continuity.support import ROOT, ContinuityFixture
-from continuity.harness_bridge import HarnessUnavailable, bounded_process
+from continuity.harness_bridge import (
+    HarnessTimedOut,
+    HarnessUnavailable,
+    bounded_process,
+)
 from continuity.hook import handle_event
 
 
@@ -250,23 +255,34 @@ class HookFixtureTests(unittest.TestCase):
         self.assertNotIn("fixture unavailable", result["systemMessage"])
 
     def test_held_harness_writer_lock_uses_bounded_checkpoint_fallback(self) -> None:
-        lock_path = ROOT / ".harness" / "epoch-transition" / "writer.lock"
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("a+b") as lock:
-            acquired = False
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                acquired = True
-            except BlockingIOError:
-                # A nested story-completion proof already holds the same lock.
-                pass
-            started = time.monotonic()
-            result = self.output(
-                self.fixture.run_hook("session_start_resume.json")
-            )
-            elapsed = time.monotonic() - started
-            if acquired:
-                fcntl.flock(lock, fcntl.LOCK_UN)
+        started = time.monotonic()
+        if os.environ.get("CODEX_GAUNTLET_CROSS_PLATFORM") == "1":
+            # Ubuntu cannot execute the Android Harness binary. Inject the
+            # native timeout boundary while exercising the same fallback logic.
+            with patch(
+                "continuity.harness_bridge.query_work_graph",
+                side_effect=HarnessTimedOut("synthetic native lock timeout"),
+            ):
+                result = handle_event(
+                    self.fixture.event("session_start_resume.json")
+                )
+        else:
+            lock_path = ROOT / ".harness" / "epoch-transition" / "writer.lock"
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            with lock_path.open("a+b") as lock:
+                acquired = False
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                except BlockingIOError:
+                    # A nested story-completion proof already holds the same lock.
+                    pass
+                result = self.output(
+                    self.fixture.run_hook("session_start_resume.json")
+                )
+                if acquired:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+        elapsed = time.monotonic() - started
 
         self.assertLess(elapsed, 2.0)
         self.assertIn(
