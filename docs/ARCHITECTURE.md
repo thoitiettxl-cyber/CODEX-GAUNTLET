@@ -62,6 +62,15 @@ attack-path calibration, stable finding identity, sealed history, and export.
 `qa/security/` is its internal gate adapter. Neither is a second verification
 authority, and no external scanner is installed or invoked.
 
+`gauntlet/security/config_audit/` is a bounded domain inside that same layer.
+It audits Git-visible Codex configuration, hook declarations, MCP transports,
+and managed skill metadata with standard-library parsers and stable rule IDs.
+Skill inspection is deterministic and read-only: it can report malformed,
+overlapping, oversized, missing-reference, or unsafe-instruction evidence but
+cannot mutate `.agents/skills/**`, learn from sessions, or inject context. Its
+redacted candidates and coverage join the existing fast/full report; only
+`qa/security/gates.py` under `./qa/verify` evaluates the sealed result.
+
 ## Runtime policy adapters
 
 `scripts/gauntlet_policy.py` owns pure destructive-command, protected-path,

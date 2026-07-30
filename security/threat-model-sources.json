@@ -3,6 +3,11 @@
   "include_exact": [
     "AGENTS.md",
     "SECURITY.md",
+    ".codex/config.toml",
+    ".codex/hooks.json",
+    ".codex/mcp.json",
+    ".mcp.json",
+    "mcp.json",
     "docs/ARCHITECTURE.md",
     "docs/quality/SECURITY-GATE.md",
     "qa/security/thresholds.json",
@@ -17,6 +22,8 @@
     "**/uploads/**",
     "**/network/**",
     "**/deserialization/**",
+    ".agents/skills/**",
+    ".codex/hooks/**",
     "gauntlet/security/**"
   ],
   "dependency_manifests": true,

@@ -10,7 +10,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from gauntlet.handshake import policy_state
-from gauntlet.security.contracts import SEVERITIES, read_report, validate_scan_payload, verify_seal
+from gauntlet.security.contracts import (
+    SEVERITIES,
+    read_report,
+    validate_agent_configuration_coverage,
+    validate_scan_payload,
+    verify_seal,
+)
 from gauntlet.security.export import validate_sarif
 from gauntlet.security.history import load_active_triage
 from gauntlet.security.threat_model import is_stale, load_threat_model
@@ -41,6 +47,8 @@ def evaluate(report_dir: Path, repo: Path, *, expected_target_digest: str | None
     manifest, findings, coverage = read_report(report_dir)
     errors = validate_scan_payload(manifest, findings, coverage)
     errors.extend(verify_seal(report_dir))
+    if "agentConfigurationAudit" not in coverage:
+        errors.extend(validate_agent_configuration_coverage(None))
 
     if expected_target_digest and manifest.get("targetDigest") != expected_target_digest:
         errors.append("security report target digest does not match verification receipt target")

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..common import atomic_write_json, stable_digest, utc_now
+from ..config_audit.rules import SOURCE as AGENT_CONFIG_AUDIT_SOURCE
 from ..targets import NormalizedTarget
 
 SEVERITIES = ("informational", "low", "medium", "high", "critical")
@@ -153,6 +154,53 @@ def validate_finding(finding: dict) -> list[str]:
     return errors
 
 
+def validate_agent_configuration_coverage(record: dict | None) -> list[str]:
+    if not isinstance(record, dict):
+        return ["agentConfigurationAudit coverage missing"]
+    errors: list[str] = []
+    if record.get("schemaVersion") != "1":
+        errors.append("agentConfigurationAudit.schemaVersion invalid")
+    if record.get("status") != "complete":
+        errors.append("agentConfigurationAudit.status is not complete")
+    if record.get("scope") not in {
+        "repository",
+        "full-baseline",
+        "targeted",
+        "not-applicable",
+    }:
+        errors.append("agentConfigurationAudit.scope invalid")
+    for key in (
+        "filesConsidered",
+        "filesAudited",
+        "configFilesAudited",
+        "skillFilesAudited",
+        "skillsAudited",
+        "candidateCount",
+    ):
+        if (
+            not isinstance(record.get(key), int)
+            or isinstance(record.get(key), bool)
+            or record[key] < 0
+        ):
+            errors.append(f"agentConfigurationAudit.{key} invalid")
+    for key in (
+        "triggeredBy",
+        "ruleIds",
+        "malformedFiles",
+        "unsupportedFiles",
+        "skippedSymlinks",
+    ):
+        if not isinstance(record.get(key), list):
+            errors.append(f"agentConfigurationAudit.{key} must be a list")
+    if record.get("evidenceRedacted") is not True:
+        errors.append("agentConfigurationAudit evidence is not declared redacted")
+    if record.get("externalScanner") is not False:
+        errors.append("agentConfigurationAudit external scanner provenance is prohibited")
+    if record.get("networkUsed") is not False:
+        errors.append("agentConfigurationAudit network use is prohibited")
+    return errors
+
+
 def validate_scan_payload(manifest: dict, findings: list[dict], coverage: dict) -> list[str]:
     errors: list[str] = []
     for key in ("schemaVersion", "scanId", "targetDigest", "policyVersion", "threatModelDigest", "startedAt", "completedAt", "artifactDigests", "status", "revision", "target"):
@@ -174,6 +222,22 @@ def validate_scan_payload(manifest: dict, findings: list[dict], coverage: dict) 
         errors.append("coverage.untestedAttackSurfaces must be a list")
     if coverage.get("validatedCount") != len(findings):
         errors.append("coverage validatedCount does not equal findings length")
+    if "agentConfigurationAudit" in coverage:
+        agent_coverage = coverage.get("agentConfigurationAudit")
+        errors.extend(
+            validate_agent_configuration_coverage(agent_coverage)
+        )
+        if isinstance(agent_coverage, dict):
+            agent_finding_count = sum(
+                1
+                for finding in findings
+                if finding.get("provenance", {}).get("source")
+                == AGENT_CONFIG_AUDIT_SOURCE
+            )
+            if agent_coverage.get("candidateCount") != agent_finding_count:
+                errors.append(
+                    "agentConfigurationAudit candidateCount does not equal materialized agent findings"
+                )
     return errors
 
 
@@ -182,8 +246,15 @@ def _report_text(scan_id: str, target: NormalizedTarget, findings: list[dict], c
         f"# Security scan {scan_id}", "", f"- Revision: `{target.revision}`", f"- Target: `{target.kind}`",
         f"- Files considered: {coverage['filesConsidered']}", f"- Files scanned: {coverage['filesScanned']}",
         f"- Unsupported: {coverage['unsupportedLanguageCount']}", f"- Candidates: {coverage['candidateCount']}",
-        f"- Validated: {coverage['validatedCount']}", "", "## Findings", "",
     ]
+    agent_coverage = coverage.get("agentConfigurationAudit")
+    if isinstance(agent_coverage, dict):
+        lines.extend([
+            f"- Agent config files audited: {agent_coverage.get('configFilesAudited', 0)}",
+            f"- Skill metadata files audited: {agent_coverage.get('skillFilesAudited', 0)}",
+            f"- Agent config audit scope: `{agent_coverage.get('scope', 'unknown')}`",
+        ])
+    lines.extend([f"- Validated: {coverage['validatedCount']}", "", "## Findings", ""])
     if findings:
         for finding in findings:
             lines.append(f"- **{finding['severity']['level']}** `{finding['findingId']}` — {finding['title']} ({finding['validation']['disposition']})")

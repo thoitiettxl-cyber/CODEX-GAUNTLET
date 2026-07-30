@@ -10,7 +10,13 @@ from gauntlet.handshake import compute_target_digest, policy_state
 
 from .attack_path import analyze_attack_path
 from .common import atomic_write_json, utc_now
-from .contracts import materialize_finding, verify_seal, write_contracts
+from .config_audit import audit_agent_configuration
+from .contracts import (
+    materialize_finding,
+    validate_agent_configuration_coverage,
+    verify_seal,
+    write_contracts,
+)
 from .discovery import discover_candidates
 from .kb import ingest_knowledge_base
 from .targets import normalize_target
@@ -94,6 +100,37 @@ def run(ns: argparse.Namespace) -> dict:
         knowledge_base_digest=kb.digest if kb else "",
     )
     candidates, coverage_base = discover_candidates(repo, target, threat_model.to_dict(), kb.text if kb else "")
+    agent_candidates, agent_coverage = audit_agent_configuration(repo, target)
+    if coverage_errors := validate_agent_configuration_coverage(agent_coverage):
+        raise ValueError(
+            "invalid agent configuration coverage: " + "; ".join(coverage_errors)
+        )
+    if agent_coverage["candidateCount"] != len(agent_candidates):
+        raise ValueError("agent configuration candidate count is inconsistent")
+    unique_candidates: dict[tuple[str, str, str, int], dict] = {}
+    for item in [*candidates, *agent_candidates]:
+        location = item["location"]
+        unique_candidates[
+            (
+                item["ruleId"],
+                item["rootCauseKey"],
+                location["path"],
+                location["startLine"],
+            )
+        ] = item
+    candidates = sorted(
+        unique_candidates.values(),
+        key=lambda item: (
+            item["location"]["path"],
+            item["location"]["startLine"],
+            item["ruleId"],
+            item["rootCauseKey"],
+        ),
+    )
+    coverage_base = {
+        **coverage_base,
+        "agentConfigurationAudit": agent_coverage,
+    }
 
     if ns.phase == "fast":
         payload = {

@@ -284,6 +284,7 @@ def main() -> int:
 
     security_packages = {
         "attack_path",
+        "config_audit",
         "contracts",
         "discovery",
         "export",
@@ -296,6 +297,23 @@ def main() -> int:
     for package in security_packages:
         if not (ROOT / "gauntlet/security" / package / "__init__.py").is_file():
             errors.append(f"security package missing: {package}")
+
+    config_audit = _text("gauntlet/security/config_audit/audit.py")
+    security_run = _text("gauntlet/security/run.py")
+    security_contracts = _text("gauntlet/security/contracts/__init__.py")
+    security_gates = _text("qa/security/gates.py")
+    if "audit_agent_configuration" not in config_audit or "audit_agent_configuration" not in security_run:
+        errors.append("agent configuration audit is outside the internal security pipeline")
+    if not all(
+        "agentConfigurationAudit" in content
+        for content in (security_run, security_contracts, security_gates)
+    ):
+        errors.append("agent configuration audit lacks sealed coverage and gate enforcement")
+    if any(
+        token in config_audit
+        for token in ("ecc-agentshield", "subprocess.run", "requests.", "urllib.request")
+    ):
+        errors.append("agent configuration audit depends on an external scanner or network runner")
 
     manifest_names = {
         "Cargo.toml",
