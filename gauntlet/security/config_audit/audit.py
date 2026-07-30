@@ -52,11 +52,7 @@ AUDIT_IMPLEMENTATION_PREFIXES = (
     "security/threat-model-sources.json",
     "docs/quality/SECURITY-GATE.md",
 )
-TERMUX_BIN = Path("/data/data/com.termux/files/usr/bin")
-PINNED_INTERPRETERS = {
-    TERMUX_BIN / "bash",
-    TERMUX_BIN / "python3",
-}
+WINDOWS_INTERPRETERS = {"python", "python.exe"}
 REQUIRED_MUTATION_TOOLS = {"Bash", "apply_patch", "Edit", "Write"}
 MAX_CONFIG_BYTES = 256 * 1024
 MAX_SKILL_BYTES = 16 * 1024
@@ -255,8 +251,7 @@ def _hook_command_candidates(
 ) -> list[dict]:
     line = _command_line(text, command)
     findings: list[dict] = []
-    root_expression = "$(git rev-parse --show-toplevel)"
-    scrubbed = command.replace(root_expression, "REPOSITORY_ROOT")
+    scrubbed = command
     if (
         not command.strip()
         or len(command) > 4096
@@ -278,9 +273,8 @@ def _hook_command_candidates(
         )
         return findings
 
-    expanded = command.replace(root_expression, str(repo))
     try:
-        argv = shlex.split(expanded)
+        argv = shlex.split(command)
     except ValueError:
         return [
             candidate(
@@ -301,7 +295,7 @@ def _hook_command_candidates(
         ]
 
     executable = Path(argv[0])
-    if not executable.is_absolute() or executable not in PINNED_INTERPRETERS:
+    if executable.name.lower() not in WINDOWS_INTERPRETERS:
         findings.append(
             candidate(
                 "CG.AGENT.HOOK_PATH_ESCAPE",
@@ -323,7 +317,7 @@ def _hook_command_candidates(
     repository_path_seen = False
     for token in argv[1:]:
         path_token = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
-        if path_token.startswith("-") or "/" not in path_token:
+        if path_token.startswith("-") or not ({"/", "\\"} & set(path_token)):
             continue
         token_path = Path(path_token)
         candidate_path = token_path if token_path.is_absolute() else repo / token_path
@@ -424,17 +418,12 @@ def _mcp_server_candidates(
                 and executable.is_file()
                 and not executable.is_symlink()
             )
-            termux_executable = (
-                executable.is_absolute()
-                and executable.is_relative_to(TERMUX_BIN)
-                and executable.is_file()
-                and not executable.is_symlink()
-            )
+            windows_interpreter = executable.name.lower() in WINDOWS_INTERPRETERS
             path_arguments_safe = True
             repository_path_seen = False
             for token in [*argv[1:], *args]:
                 path_token = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
-                if path_token.startswith("-") or "/" not in path_token or "://" in path_token:
+                if path_token.startswith("-") or not ({"/", "\\"} & set(path_token)) or "://" in path_token:
                     continue
                 token_path = Path(path_token)
                 candidate_path = token_path if token_path.is_absolute() else repo / token_path
@@ -442,10 +431,10 @@ def _mcp_server_candidates(
                     path_arguments_safe = False
                     break
                 repository_path_seen = True
-            interpreter_needs_script = executable in PINNED_INTERPRETERS
+            interpreter_needs_script = windows_interpreter
             unsafe = (
                 not argv
-                or not (repo_executable or termux_executable)
+                or not (repo_executable or windows_interpreter)
                 or not path_arguments_safe
                 or (interpreter_needs_script and not repository_path_seen)
                 or any(item in {"-c", "-e", "-m"} for item in [*argv[1:], *args])
@@ -635,18 +624,19 @@ def _audit_hooks_json(repo: Path, path: str, text: str) -> tuple[list[dict], boo
                         )
                     )
                     continue
-                command = handler.get("command")
-                if not isinstance(command, str):
-                    findings.append(
-                        candidate(
-                            "CG.AGENT.CONFIG_MALFORMED",
-                            path,
-                            _line_for(text, "command"),
-                            f"event-{event}-command-not-string",
+                for field in ("command", "commandWindows"):
+                    command = handler.get(field)
+                    if not isinstance(command, str):
+                        findings.append(
+                            candidate(
+                                "CG.AGENT.CONFIG_MALFORMED",
+                                path,
+                                _line_for(text, field),
+                                f"event-{event}-{field}-not-string",
+                            )
                         )
-                    )
-                else:
-                    findings.extend(_hook_command_candidates(repo, path, text, command))
+                    else:
+                        findings.extend(_hook_command_candidates(repo, path, text, command))
                 timeout = handler.get("timeout")
                 if not isinstance(timeout, int) or isinstance(timeout, bool) or not 1 <= timeout <= 900:
                     findings.append(

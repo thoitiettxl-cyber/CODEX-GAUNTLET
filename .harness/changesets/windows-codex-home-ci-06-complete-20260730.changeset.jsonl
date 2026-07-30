@@ -1,0 +1,2 @@
+{"base_schema_version":14,"op":"changeset.header","run_id":"windows-codex-home-ci-06-complete-20260730","version":1}
+{"expected_revision":6,"id":"WIN-002","op":"story.complete","payload":{"completed_at":"2026-07-30 09:03:11","completion_uid":"cmp_77066558e68bda253fe5856bc5a9d8d4","result":"pass"},"version":3}

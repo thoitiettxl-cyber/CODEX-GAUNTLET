@@ -1,5 +1,10 @@
-.harness-core/base/** -whitespace
-scripts/patches/*.patch -whitespace
-scripts/bin/harness binary
-scripts/bin/harness-cli binary
-scripts/bootstrap-harness.ps1 text eol=crlf whitespace=cr-at-eol
+* text=auto
+
+*.ps1 text eol=crlf
+*.py text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.exe binary

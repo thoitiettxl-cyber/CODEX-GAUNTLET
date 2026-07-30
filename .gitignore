@@ -10,6 +10,8 @@ coverage.xml
 node_modules/
 harness.db
 harness.db-*
+harness.windows.db
+harness.windows.db-*
 .harness/epoch-transition/
 
 # Codex Gauntlet v6 generated evidence. The checked-in .gitkeep files retain

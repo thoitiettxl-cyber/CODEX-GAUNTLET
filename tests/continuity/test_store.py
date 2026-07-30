@@ -171,12 +171,12 @@ class StoreTests(unittest.TestCase):
         graph = {
             "revision": "revision",
             "stories": [
-                {"id": "TERMUX-002", "status": "in_progress"},
-                {"id": "TERMUX-003", "status": "in_progress"},
+                {"id": "WIN-002", "status": "in_progress"},
+                {"id": "WIN-003", "status": "in_progress"},
             ],
         }
         with self.assertRaisesRegex(
-            AmbiguousBinding, "TERMUX-002, TERMUX-003"
+            AmbiguousBinding, "WIN-002, WIN-003"
         ):
             select_active_story(graph)
 

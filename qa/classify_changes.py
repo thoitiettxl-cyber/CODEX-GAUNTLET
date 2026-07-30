@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/python3
+#!/usr/bin/env python
 """Deterministic, explainable Codex Gauntlet v6 change classifier."""
 
 from __future__ import annotations
@@ -94,7 +94,6 @@ BASE_GATES = {
     "harness-core": ["harness-integrity", "integration", "acceptance"],
     "harness-state": ["harness-integrity"],
     "threat-model-source": ["threat-model-freshness"],
-    "pi": ["unit", "integration", "coverage"],
     "unknown-mixed": [
         "docs",
         "build",
@@ -353,16 +352,9 @@ def _base_record(path: str) -> ClassificationRecord:
             path,
             ["Gauntlet-owned policy, verification, or security path changed"],
         )
-    if parts[0] == ".pi":
-        return _record(
-            "pi",
-            "CG.CLASS.PI_ADAPTER",
-            path,
-            ["Pi auxiliary adapter path changed"],
-        )
     if (
         parts[0] == ".harness-core"
-        or path in {"scripts/bin/harness", "scripts/bin/harness-cli"}
+        or path in {"scripts/bin/harness.exe", "scripts/bin/harness-cli.exe"}
         or (
             parts[0] == ".agents"
             and any(

@@ -9,7 +9,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from tests.continuity.support import ROOT, TERMUX_TMP, ContinuityFixture
+from tests.continuity.support import ROOT, WINDOWS_TMP, ContinuityFixture
 
 from continuity.model import UnknownOperationOutcome, operation_key
 
@@ -96,7 +96,7 @@ class GameDayTests(unittest.TestCase):
                 "session_start_resume.json", session_id=new_session
             ).stdout
         )
-        self.assertIn("TERMUX-002", resumed["systemMessage"])
+        self.assertIn("WIN-002", resumed["systemMessage"])
         self.assertIn(self.fixture.plan_path, resumed["systemMessage"])
 
         key, input_hash = operation_key(
@@ -138,28 +138,20 @@ class GameDayTests(unittest.TestCase):
         self.assertEqual("observed", outcome)
         self.assertEqual(["publish"], calls)
 
-    @unittest.skipIf(
-        os.environ.get("CODEX_GAUNTLET_CROSS_PLATFORM") == "1",
-        "Android harness-cli execution is covered by the native Termux gate",
-    )
     def test_semantic_changeset_replay_matches_live_logical_graph(self) -> None:
         with tempfile.TemporaryDirectory(
-            prefix="continuity-replay-", dir=TERMUX_TMP
+            prefix="continuity-replay-", dir=WINDOWS_TMP
         ) as temporary:
             temp_root = Path(temporary)
             database = temp_root / "harness.db"
-            (temp_root / "scripts").mkdir()
-            (temp_root / "scripts" / "schema").symlink_to(
-                ROOT / "scripts" / "schema", target_is_directory=True
-            )
             environment = {
                 **os.environ,
-                "HARNESS_REPO_ROOT": str(temp_root),
+                "HARNESS_REPO_ROOT": str(ROOT),
                 "HARNESS_DB_PATH": str(database),
             }
             rebuild = subprocess.run(
                 [
-                    str(ROOT / "scripts" / "bin" / "harness-cli"),
+                    str(ROOT / "scripts" / "bin" / "harness-cli.exe"),
                     "db",
                     "rebuild",
                     "--from",
@@ -175,7 +167,7 @@ class GameDayTests(unittest.TestCase):
             self.assertEqual(0, rebuild.returncode, rebuild.stderr)
             replay = subprocess.run(
                 [
-                    str(ROOT / "scripts" / "bin" / "harness-cli"),
+                    str(ROOT / "scripts" / "bin" / "harness-cli.exe"),
                     "query",
                     "work-graph",
                     "--json",
@@ -207,13 +199,13 @@ class GameDayTests(unittest.TestCase):
                 "dependencies": replay_graph["dependencies"],
                 "hierarchy": replay_graph["hierarchy"],
             }
-            live_logical = logical_graph_from_database(ROOT / "harness.db")
+            live_logical = logical_graph_from_database(ROOT / "harness.windows.db")
 
         self.assertEqual(live_logical, replay_logical)
         matching = [
             story
             for story in replay_logical["stories"]
-            if story["id"] == "TERMUX-002"
+            if story["id"] == "WIN-002"
         ]
         self.assertEqual(1, len(matching))
 

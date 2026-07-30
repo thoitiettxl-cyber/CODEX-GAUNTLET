@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/python3
+#!/usr/bin/env python
 from __future__ import annotations
 
 import json
@@ -14,7 +14,14 @@ def main() -> int:
 
     root = repo_root(event)
     proc = subprocess.run(
-        [str(root / "qa" / "verify"), "--mode", "stop"],
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-File",
+            str(root / "qa" / "verify.ps1"),
+            "-Mode",
+            "stop",
+        ],
         cwd=root,
         text=True,
         stdout=subprocess.PIPE,

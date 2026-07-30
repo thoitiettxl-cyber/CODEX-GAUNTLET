@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/python3
+#!/usr/bin/env python
 """Final-diff policy and ownership audit for Codex Gauntlet v6."""
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TEXT_SUFFIXES = (".md", ".py", ".sh", ".json", ".yaml", ".yml", ".toml")
+TEXT_SUFFIXES = (".md", ".py", ".ps1", ".json", ".yaml", ".yml", ".toml")
 
 
 def _git(*args: str) -> list[str]:
@@ -148,7 +148,7 @@ def main() -> int:
             errors.append(f"possible secret file committed: {rel}")
 
     workflow = _text(".github/workflows/codex-gauntlet.yml")
-    for command in ("bash ./qa/verify --mode ci", "bash ./qa/verify --mode audit"):
+    for command in ("qa/verify.ps1 -Mode ci", "qa/verify.ps1 -Mode audit"):
         if command not in workflow:
             errors.append(f"CI does not invoke canonical command: {command}")
     if re.search(
@@ -168,8 +168,8 @@ def main() -> int:
         errors.append("CI does not publish verification and security evidence")
 
     agents = _text("AGENTS.md")
-    if "./qa/verify" not in agents:
-        errors.append("AGENTS.md does not point to qa/verify")
+    if "qa/verify.ps1" not in agents:
+        errors.append("AGENTS.md does not point to qa/verify.ps1")
     if any(
         token in agents.lower()
         for token in (
@@ -190,65 +190,42 @@ def main() -> int:
             for handler in group.get("hooks", []):
                 if handler.get("type") != "command":
                     errors.append(f"non-command hook handler configured for {event}")
-                command = str(handler.get("command") or "")
-                if not command.startswith(
-                    "/data/data/com.termux/files/usr/bin/python3 "
-                ):
-                    errors.append(f"non-Termux hook interpreter configured for {event}")
+                for field in ("command", "commandWindows"):
+                    command = str(handler.get(field) or "")
+                    if not command.startswith("python "):
+                        errors.append(f"non-Windows hook interpreter configured for {event}:{field}")
 
     compatibility = json.loads(_text("qa/compatibility.json"))
-    pi = compatibility.get("pi", {})
-    if (
-        pi.get("tested_version") != "0.82.1"
-        or pi.get("authority") != "auxiliary-only"
-        or pi.get("sandbox") is not False
-        or pi.get("verification_authority") is not False
-    ):
-        errors.append("Pi compatibility must remain pinned and auxiliary-only")
+    if compatibility.get("codex", {}).get("platform") != "windows-native":
+        errors.append("Codex compatibility must remain Windows-native")
+    if "pi" in compatibility:
+        errors.append("retired Pi compatibility remains active")
     harness = compatibility.get("repository_harness", {})
     if (
-        harness.get("binary_mode") != "termux-source-build"
+        harness.get("binary_mode") != "windows-release-core-source-cli"
+        or harness.get("platform") != "x86_64-pc-windows-msvc"
         or harness.get("tested_core_semver") != "0.1.7"
         or harness.get("tested_cli_version") != "0.1.23"
     ):
-        errors.append("Android Harness compatibility baseline drifted")
-
-    expected_pi = {
-        ".pi/extensions/gauntlet/index.ts",
-        ".pi/extensions/gauntlet/policy.ts",
-        ".pi/extensions/gauntlet/verification.ts",
-    }
-    actual_pi = {
-        path.relative_to(ROOT).as_posix()
-        for path in (ROOT / ".pi").rglob("*")
-        if path.is_file()
-    }
-    if actual_pi != expected_pi:
-        errors.append(
-            f"Pi adapter layout drift: expected={sorted(expected_pi)}, "
-            f"actual={sorted(actual_pi)}"
-        )
+        errors.append("Windows Harness compatibility baseline drifted")
+    if (ROOT / ".pi").exists():
+        errors.append("retired Pi adapter remains in the Windows repository")
 
     shared_policy = _text("scripts/gauntlet_policy.py")
     codex_common = _text(".codex/hooks/common.py")
-    pi_policy = _text(".pi/extensions/gauntlet/policy.ts")
     matrix = _text("qa/verify-matrix.yaml")
     classifier = _text("qa/classify_changes.py")
     verifier = _text("qa/verify_v6.py")
-    wrapper = _text("qa/verify")
-    if '".pi/"' not in shared_policy or "from scripts.gauntlet_policy import" not in codex_common:
-        errors.append("shared normalized policy no longer protects Codex and Pi")
-    if '"scripts", "gauntlet_policy.py"' not in pi_policy:
-        errors.append("Pi adapter does not delegate to shared policy")
-    if "pi:" not in matrix or '"pi"' not in classifier:
-        errors.append("Pi changes lack an explicit v6 verification class")
+    wrapper = _text("qa/verify.ps1")
+    if "from scripts.gauntlet_policy import" not in codex_common:
+        errors.append("Codex adapter no longer delegates to shared policy")
+    if "pi:" in matrix or '"pi"' in classifier:
+        errors.append("retired Pi verification class remains active")
 
-    if not wrapper.startswith("#!/data/data/com.termux/files/usr/bin/bash"):
-        errors.append("qa/verify lacks the Termux Bash entrypoint")
-    if not (ROOT / "qa/verify").stat().st_mode & 0o111:
-        errors.append("qa/verify is not executable")
+    if not wrapper.startswith("param("):
+        errors.append("qa/verify.ps1 lacks the PowerShell entrypoint")
     if "qa/verify_v6.py" not in wrapper:
-        errors.append("qa/verify does not delegate to the v6 verifier")
+        errors.append("qa/verify.ps1 does not delegate to the v6 verifier")
     if '"qa/selftest/v6.py"' not in verifier:
         errors.append("v6 acceptance suite is outside the canonical verifier")
     for mode in ("audit", "ci", "stop", "targeted"):
@@ -358,7 +335,7 @@ def main() -> int:
                 ".harness-core/",
             )
         )
-        or path in {"AGENTS.md", "docs/HARNESS.md", "docs/WORKFLOW.md", "scripts/bin/harness"}
+        or path in {"AGENTS.md", "docs/HARNESS.md", "docs/WORKFLOW.md", "scripts/bin/harness.exe"}
         for path in changed
     )
     if harness_changed and "qa/compatibility.json" not in changed:

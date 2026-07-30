@@ -33,26 +33,23 @@ RUN_CONFIGURED_SPEC.loader.exec_module(run_configured)
 
 
 class VerifierContractTests(unittest.TestCase):
-    def test_termux_wrapper_delegates_to_internal_verifier(self) -> None:
-        wrapper = (ROOT / "qa/verify").read_text(encoding="utf-8")
-        self.assertTrue(wrapper.startswith("#!/data/data/com.termux/files/usr/bin/bash"))
-        self.assertIn("qa/verify_v6.py", wrapper)
-        self.assertTrue((ROOT / "qa/verify").stat().st_mode & 0o111)
+    def test_windows_wrapper_delegates_to_internal_verifier(self) -> None:
+        wrapper = (ROOT / "qa/verify.ps1").read_text(encoding="utf-8")
+        self.assertTrue(wrapper.startswith("param("))
+        self.assertIn("verify_v6.py", wrapper)
 
-    def test_cross_platform_functional_gate_uses_runner_bash(self) -> None:
+    def test_windows_functional_gate_uses_python_runner(self) -> None:
         self.assertEqual(
-            ["bash", "qa/run-build.sh"],
-            _functional_argv("build", cross_platform=True),
+            [sys.executable, "qa/run-configured.py", "build"],
+            _functional_argv("build"),
         )
         self.assertEqual(
-            ["qa/run-build.sh"],
-            _functional_argv("build", cross_platform=False),
+            [sys.executable, "qa/run-configured.py", "build"],
+            _functional_argv("dependency-audit"),
         )
 
-    def test_missing_declared_consumer_gate_becomes_proof_gap(self) -> None:
-        gaps = _project_proof_gaps(["migration"])
-        self.assertEqual(1, len(gaps))
-        self.assertIn("consumer command missing", gaps[0])
+    def test_all_declared_consumer_gates_have_proof(self) -> None:
+        self.assertEqual([], _project_proof_gaps(["migration"]))
         self.assertEqual([], _project_proof_gaps(["unit"]))
 
     def test_security_target_scope_is_mode_specific(self) -> None:
@@ -135,11 +132,11 @@ class VerifierContractTests(unittest.TestCase):
                     "mkdir -p .qa-artifacts/coverage && python3 -c 'print(1)'"
                 )
                 self.assertTrue((repo / ".qa-artifacts/coverage").is_dir())
-                with self.assertRaisesRegex(ValueError, "escapes repository"):
+                with self.assertRaisesRegex(ValueError, "escapes repository|must be under"):
                     run_configured.command_argv(
                         "mkdir -p ../outside && python3 -c 'print(1)'"
                     )
-        self.assertEqual(["python3", "-c", "print(1)"], argv)
+        self.assertEqual([sys.executable, "-c", "print(1)"], argv)
 
     def test_coverage_cannot_mask_unittest_failure_with_zero_exit(self) -> None:
         output = "Ran 1 test\n\nFAILED (failures=1)\n"

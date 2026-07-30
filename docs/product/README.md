@@ -1,25 +1,14 @@
 # Product truth
 
-This repository is the Termux operating control plane. Its current contracts
-are:
+This repository is the native Windows operating control plane for Codex. Its
+current contracts are:
 
-- [`termux-control-plane.md`](termux-control-plane.md) for the control-plane
-  boundary and entrypoints;
-- [`session-continuity-v1.md`](session-continuity-v1.md) for bounded,
-  runtime-neutral Codex/Pi compaction/resume state and replay-safe operation
-  observations;
-- [`rtk-termux.md`](rtk-termux.md) for the pinned optional output-filtering
-  capability and its accuracy, privacy, and update boundaries;
-- [`pi-gauntlet.md`](pi-gauntlet.md) for the trusted project-local Pi policy
-  and mutation-settlement adapter;
-- [`cli-proxy-api-magisk.md`](cli-proxy-api-magisk.md) for the imported,
-  source-pinned operating contract of the optional root-managed CLIProxyAPI
-  provider gateway;
-- [`cli-proxy-api-plugin-suite.md`](cli-proxy-api-plugin-suite.md) for the
-  staged native Policy/Scheduler implementation and credential-security gates.
+- `windows-codex-home.md` for platform identity, entrypoints, Harness
+  provenance, verification, and non-goals;
+- `session-continuity-v1.md` for bounded Codex compaction/resume state and
+  replay-safe operation observations.
 
-The continuity implementation is a local consumer application surface.
+The continuity implementation is the local consumer application surface.
 `qa/project-commands.json` declares executable build, unit, integration,
-acceptance, coverage, and security-negative commands. Gauntlet structural and
-policy checks continue to run through the same canonical `./qa/verify`
-authority.
+acceptance, coverage, mutation, and migration commands. All pass/fail decisions
+remain under `qa/verify.ps1`.

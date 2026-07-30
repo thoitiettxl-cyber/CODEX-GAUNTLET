@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import sqlite3
@@ -16,6 +15,7 @@ from continuity.harness_bridge import (
     bounded_process,
 )
 from continuity.hook import handle_event
+from scripts.cross_platform_lock import try_exclusive_lock, unlock
 
 
 class HarnessBridgeTests(unittest.TestCase):
@@ -61,7 +61,7 @@ class HookFixtureTests(unittest.TestCase):
             with self.subTest(fixture=fixture_name):
                 result = self.output(self.fixture.run_hook(fixture_name))
                 message = result["systemMessage"]
-                self.assertIn("TERMUX-002", message)
+                self.assertIn("WIN-002", message)
                 self.assertIn(self.fixture.plan_path, message)
                 self.assertIn(
                     "Implementation and focused store tests are complete.", message
@@ -82,7 +82,7 @@ class HookFixtureTests(unittest.TestCase):
         ):
             with self.subTest(fixture=fixture_name):
                 result = self.output(self.fixture.run_hook(fixture_name))
-                self.assertIn("TERMUX-002", result["systemMessage"])
+                self.assertIn("WIN-002", result["systemMessage"])
                 self.assertIn(
                     "Run the compact/resume hook fixture suite.",
                     result["systemMessage"],
@@ -105,11 +105,7 @@ class HookFixtureTests(unittest.TestCase):
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+b") as lock:
             acquired = False
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                acquired = True
-            except BlockingIOError:
-                pass
+            acquired = try_exclusive_lock(lock)
             try:
                 neutral_process = self.fixture.run_lifecycle(
                     "post_compact_manual.json"
@@ -119,7 +115,7 @@ class HookFixtureTests(unittest.TestCase):
                 )
             finally:
                 if acquired:
-                    fcntl.flock(lock, fcntl.LOCK_UN)
+                    unlock(lock)
 
         self.assertEqual(0, neutral_process.returncode, neutral_process.stderr)
         neutral = json.loads(neutral_process.stdout)
@@ -172,7 +168,7 @@ class HookFixtureTests(unittest.TestCase):
         missing_session = "missing-session"
         self.fixture.store.bind(
             missing_session,
-            "TERMUX-MISSING",
+            "WIN-MISSING",
             "fixture-revision",
             "docs/plans/active/missing.md",
             explicit=True,
@@ -256,32 +252,15 @@ class HookFixtureTests(unittest.TestCase):
 
     def test_held_harness_writer_lock_uses_bounded_checkpoint_fallback(self) -> None:
         started = time.monotonic()
-        if os.environ.get("CODEX_GAUNTLET_CROSS_PLATFORM") == "1":
-            # Ubuntu cannot execute the Android Harness binary. Inject the
-            # native timeout boundary while exercising the same fallback logic.
-            with patch(
-                "continuity.harness_bridge.query_work_graph",
-                side_effect=HarnessTimedOut("synthetic native lock timeout"),
-            ):
-                result = handle_event(
-                    self.fixture.event("session_start_resume.json")
-                )
-        else:
-            lock_path = ROOT / ".harness" / "epoch-transition" / "writer.lock"
-            lock_path.parent.mkdir(parents=True, exist_ok=True)
-            with lock_path.open("a+b") as lock:
-                acquired = False
-                try:
-                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    acquired = True
-                except BlockingIOError:
-                    # A nested story-completion proof already holds the same lock.
-                    pass
-                result = self.output(
-                    self.fixture.run_hook("session_start_resume.json")
-                )
-                if acquired:
-                    fcntl.flock(lock, fcntl.LOCK_UN)
+        lock_path = ROOT / ".harness" / "epoch-transition" / "writer.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as lock:
+            acquired = try_exclusive_lock(lock)
+            result = self.output(
+                self.fixture.run_hook("session_start_resume.json")
+            )
+            if acquired:
+                unlock(lock)
         elapsed = time.monotonic() - started
 
         self.assertLess(elapsed, 2.0)

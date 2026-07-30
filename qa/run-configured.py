@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/python3
+#!/usr/bin/env python
 from __future__ import annotations
 
 import argparse
@@ -25,16 +25,20 @@ def command_argv(command: str) -> list[str]:
         if prelude[:2] != ["mkdir", "-p"] or len(prelude) < 3 or not tokens:
             raise ValueError("only a leading 'mkdir -p ... &&' prelude is supported")
         for value in prelude[2:]:
-            candidate = (ROOT / os.path.expandvars(value)).resolve()
+            root = ROOT.absolute()
+            candidate = (root / os.path.expandvars(value)).absolute()
             try:
-                relative = candidate.relative_to(ROOT)
+                relative = candidate.relative_to(root)
             except ValueError as exc:
                 raise ValueError("configured output directory escapes repository") from exc
             if not relative.as_posix().startswith(".qa-artifacts/"):
                 raise ValueError("configured output directory must be under .qa-artifacts/")
             candidate.mkdir(parents=True, exist_ok=True)
 
-    return [os.path.expandvars(token) for token in tokens]
+    expanded = [os.path.expandvars(token) for token in tokens]
+    if expanded[0] in {"python", "python3"}:
+        expanded[0] = sys.executable
+    return expanded
 
 
 def main() -> int:

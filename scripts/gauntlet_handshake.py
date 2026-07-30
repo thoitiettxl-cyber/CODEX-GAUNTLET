@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/python3
+#!/usr/bin/env python
 """Harness-owned adapter for the one-way Codex Gauntlet v6 handshake.
 
 This adapter may read Harness state, emit a WorkContext, and validate a

@@ -11,7 +11,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-TERMUX_TMP = Path(tempfile.gettempdir())
+WINDOWS_TMP = Path(tempfile.gettempdir())
 
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -22,13 +22,13 @@ from continuity.store import ContinuityStore  # noqa: E402
 
 
 class ContinuityFixture:
-    story_id = "TERMUX-002"
+    story_id = "WIN-002"
     story_revision = "fixture-revision"
     plan_path = "docs/plans/completed/session-continuity-v1.md"
 
     def __init__(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(
-            prefix="continuity-test-", dir=TERMUX_TMP
+            prefix="continuity-test-", dir=WINDOWS_TMP
         )
         self.state_root = Path(self.temporary.name) / "state"
         self.environment = {

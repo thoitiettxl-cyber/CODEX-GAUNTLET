@@ -3,7 +3,7 @@ name: Codex Gauntlet v6
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, win]
   schedule:
     - cron: '17 3 * * 1'
   workflow_dispatch:
@@ -19,7 +19,7 @@ permissions:
 jobs:
   verify:
     if: github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.audit)
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,13 +27,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Prepare checked-in entrypoints
-        run: chmod +x qa/verify qa/run-*.sh .codex/hooks/*.py
       - name: Canonical diff-scoped verification
         env:
           CODEX_GAUNTLET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          CODEX_GAUNTLET_CROSS_PLATFORM: "1"
-        run: bash ./qa/verify --mode ci
+        shell: powershell
+        run: '& ./qa/verify.ps1 -Mode ci'
       - name: Upload verification evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -50,7 +48,7 @@ jobs:
 
   audit:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.audit)
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,12 +56,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Prepare checked-in entrypoints
-        run: chmod +x qa/verify qa/run-*.sh .codex/hooks/*.py
       - name: Canonical repository audit
-        env:
-          CODEX_GAUNTLET_CROSS_PLATFORM: "1"
-        run: bash ./qa/verify --mode audit
+        shell: powershell
+        run: '& ./qa/verify.ps1 -Mode audit'
       - name: Upload audit evidence
         if: always()
         uses: actions/upload-artifact@v4

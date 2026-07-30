@@ -56,7 +56,7 @@ RULES = {
         "Hook command target is outside the reviewed repository boundary",
         "high",
         "high",
-        "Resolve hook scripts beneath the repository and use the pinned Termux interpreter.",
+        "Resolve hook scripts beneath the repository and use the reviewed Windows Python command.",
     ),
     "CG.AGENT.HOOK_COVERAGE": Rule(
         "Required mutation hook coverage is incomplete",
@@ -74,7 +74,7 @@ RULES = {
         "MCP server command is unpinned or shell-evaluated",
         "high",
         "high",
-        "Use a reviewed repository-local or exact Termux executable with fixed argv and no package runner.",
+        "Use a reviewed repository-local or Windows executable with fixed argv and no package runner.",
     ),
     "CG.AGENT.SKILL_METADATA": Rule(
         "Skill metadata is missing, malformed, or inconsistent",

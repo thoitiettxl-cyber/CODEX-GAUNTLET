@@ -46,15 +46,15 @@ class ClassificationTests(unittest.TestCase):
         classes = {record.className for record in records}
         self.assertEqual({"pure-logic", "security-sensitive"}, classes)
 
-    def test_pi_and_harness_state_have_explicit_non_security_classes(self) -> None:
+    def test_windows_harness_and_state_have_explicit_non_security_classes(self) -> None:
         records = classify_records(
             [
-                ".pi/extensions/gauntlet/index.ts",
+                "scripts/bin/harness.exe",
                 ".harness/changesets/example.changeset.jsonl",
             ]
         )
         classes = {record.className for record in records}
-        self.assertEqual({"harness-state", "pi"}, classes)
+        self.assertEqual({"harness-core", "harness-state"}, classes)
 
     def test_unsafe_changed_path_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsafe changed path"):

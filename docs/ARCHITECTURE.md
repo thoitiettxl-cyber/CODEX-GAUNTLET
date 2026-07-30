@@ -1,111 +1,69 @@
 # Architecture
 
-## Nine layers
+## Layers
 
 | Layer | Owner | Artifact | Role |
 |---|---|---|---|
 | 1 | Harness + project | `AGENTS.md` | Compact entry map |
-| 2 | Harness | `docs/` | Repository knowledge and plans |
-| 3 | Harness | `.agents/skills/onboard-*` | Brownfield discovery |
-| 4 | Gauntlet | `.agents/skills/verify-*` | Codex workflows |
-| 5 | Gauntlet | `.codex/`, `.pi/extensions/gauntlet/` | Native runtime adapters |
-| 6 | Gauntlet | `qa/` | Canonical verification engine |
-| 7 | Harness | `.harness-core/`, `scripts/bin/harness` | Provenance and controlled maintenance |
-| 8 | Repository | CI | Independent final enforcement |
-| 9 | Harness + repository | `.harness/changesets/`, `harness.db` | Replayable orchestration state |
+| 2 | Harness | `docs/` | Product truth, decisions, and plans |
+| 3 | Harness | `.agents/skills/` | Repository workflows |
+| 4 | Gauntlet | `.codex/` | Native Codex policy and lifecycle adapter |
+| 5 | Gauntlet | `qa/`, `gauntlet/` | Canonical verification and offline security |
+| 6 | Harness | `.harness-core/`, `scripts/bin/*.exe` | Pinned core, CLI, and provenance |
+| 7 | Repository | `scripts/windows-control.ps1` | Native Windows control plane |
+| 8 | Repository | Windows CI | Independent final enforcement |
+| 9 | Harness + repository | `.harness/changesets/`, `harness.windows.db` | Replayable lifecycle state |
 
 ## Ownership
 
-Harness-managed paths may change only through the official maintenance lane. Gauntlet-managed paths may change only in explicit Gauntlet maintenance. Product code, tests, dependencies, infrastructure, and product truth remain project-owned.
+Harness-managed paths change only through the reviewed Harness maintenance
+lane. Gauntlet-managed paths change only under explicit Gauntlet maintenance
+authority. Product code, tests, infrastructure, and product truth remain
+project-owned.
 
-The Harness manifest must never claim `.codex/**`, `qa/**`, or `.github/workflows/codex-gauntlet.yml`. An overlap fails closed and requires an explicit architecture decision.
+The Harness manifest must never claim `.codex/**`, `qa/**`, or the Windows CI
+workflow. An overlap fails closed and requires an explicit architecture
+decision.
 
-## Verification
-
-```text
-Agent done → Harness context complete → Local Gauntlet verified → Repository CI verified
-```
-
-Only the final state with the required status from repository CI is mergeable.
+## One-way verification
 
 ```text
 Harness WorkContext
-        ↓ one-way validated input
-Gauntlet policy + ./qa/verify
+        ↓ validated input
+Gauntlet policy + qa/verify.ps1
         ↓ sealed VerificationReceipt
 Explicit Harness completion reference
         ↓
 Repository CI required status
 ```
 
-## Orchestration authority
+Repository CI verified is the final merge authority. Harness owns lifecycle,
+readiness, dependencies, hierarchy, and runnable selection. The linked Git plan
+owns intent, progress, decisions, recovery, and validation context. The ignored
+SQLite database is generated from reviewed semantic changesets.
 
-Harness work-graph state owns task lifecycle, readiness, dependencies,
-hierarchy, and runnable selection. A linked Git execution plan owns intent,
-progress, decisions, recovery, and validation context. Semantic changesets are
-reviewed and committed; the SQLite database is generated and ignored.
+Gauntlet alone decides executable pass/fail. Lifecycle-only semantic changes
+are excluded from the receipt target-state digest so story completion can link
+a current receipt without causing a circular scan.
 
-Gauntlet retains sole executable pass/fail authority through `./qa/verify`.
-Story completion may invoke that command as fresh proof, but metadata never
-redefines verification.
+## Native Windows adapters
 
-Lifecycle-only semantic changes are excluded from the receipt target-state
-digest, so an explicit completion event may reference a still-current receipt
-without triggering a circular rescan. Harness validates and links the receipt;
-it never recalculates application pass/fail.
+`scripts/windows-control.ps1` is the human and agent entrypoint. It resolves
+repo-local `harness.exe`, `harness-cli.exe`, Python, the Windows database,
+and PowerShell verification without using a compatibility shell.
+
+`scripts/gauntlet_policy.py` owns destructive-command, protected-path, and
+exact-maintenance decisions. Codex hooks translate native events into that
+shared policy contract. `scripts/continuity/lifecycle.py` stores bounded
+compaction/resume checkpoints below `LOCALAPPDATA` and reads Harness with a
+short timeout; it never mutates story lifecycle.
 
 ## Security Intelligence
 
 `gauntlet/security/` owns offline target normalization, knowledge ingestion,
-meaningful threat-model freshness, language-aware discovery, validation,
-attack-path calibration, stable finding identity, sealed history, and export.
-`qa/security/` is its internal gate adapter. Neither is a second verification
-authority, and no external scanner is installed or invoked.
+threat-model freshness, discovery, validation, attack-path calibration,
+findings, sealed history, and export. `qa/security/` is an internal adapter.
+Neither is a second verification authority.
 
-`gauntlet/security/config_audit/` is a bounded domain inside that same layer.
-It audits Git-visible Codex configuration, hook declarations, MCP transports,
-and managed skill metadata with standard-library parsers and stable rule IDs.
-Skill inspection is deterministic and read-only: it can report malformed,
-overlapping, oversized, missing-reference, or unsafe-instruction evidence but
-cannot mutate `.agents/skills/**`, learn from sessions, or inject context. Its
-redacted candidates and coverage join the existing fast/full report; only
-`qa/security/gates.py` under `./qa/verify` evaluates the sealed result.
-
-## Runtime policy adapters
-
-`scripts/gauntlet_policy.py` owns pure destructive-command, protected-path,
-and exact-maintenance decisions. Codex hooks and the trusted Pi extension
-translate their native tool events into that shared contract while preserving
-runtime-specific outputs and approval behavior.
-
-Codex retains its workspace sandbox, user-reviewed approvals, native hooks,
-and Stop semantics. Pi has no built-in sandbox: its adapter can block covered
-built-in tool calls and trigger canonical verification, but it cannot isolate
-the process, credentials, network, filesystem, custom tools, or extensions.
-Pi remains auxiliary-only and never becomes a verification authority.
-
-`scripts/continuity/lifecycle.py` owns the runtime-neutral compaction/resume
-result. The Codex hook adapter serializes it as `systemMessage`; the Pi adapter
-namespaces native session IDs, maps Pi session events, and injects recovery at
-a lifecycle-safe delivery point. Both adapters use the same bounded store and
-checkpoint schema. Neither adapter owns conversation transcripts or native
-compaction summaries.
-
-## Termux control plane
-
-The repository owns Termux operating policy, runbooks, pinned local tooling,
-and cross-repository coordination. Target repositories retain ownership of
-their product code and tests.
-
-Compaction-aware continuity is generated local control-plane state. It owns
-only session bindings, bounded checkpoints, checkpoint events, operation
-observations, and recovery attempts. It may read Harness with a bounded timeout
-but cannot mutate story lifecycle. It cannot replace the linked Git plan,
-target-system state, or `./qa/verify`.
-
-`scripts/termux-control` is the human and agent entrypoint. It delegates
-repository pass/fail to `./qa/verify`; it does not introduce a second
-verification authority.
-
-Harness updates on Termux follow a source-build lane because upstream release
-self-update does not support `android/aarch64`.
+The active platform is native Windows x64. WSL, Git Bash, Linux executables,
+mobile binaries, and retired agent adapters are outside the runtime boundary.

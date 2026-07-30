@@ -14,5 +14,5 @@ task safely:
 If story selection is ambiguous, say so and require explicit binding. If an
 external operation has unknown outcome, require inspection of both the
 operation ledger and real target before any retry. Keep Harness lifecycle, the
-Git plan, target-system state, and `./qa/verify` in their existing authority
+Git plan, target-system state, and `qa/verify.ps1` in their existing authority
 roles.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Internal security pipeline component. It is not a pass/fail authority.
 
-Only ./qa/verify may invoke this component in repository workflows.
+Only qa/verify.ps1 may invoke this component in repository workflows.
 """
 from __future__ import annotations
 

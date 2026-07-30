@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "https://github.com/hoangnb24/repository-harness.git",
+    "tag": "harness-v0.1.7",
+    "commit": "d43b70254308b0e10efed2efbcbe595f1e771f63",
+    "core_release_asset": "harness-windows-x64.exe",
+    "core_release_url": "https://github.com/hoangnb24/repository-harness/releases/tag/harness-v0.1.7"
+  },
+  "build": {
+    "target": "x86_64-pc-windows-msvc",
+    "windows_version": "10.0.26100",
+    "rustc": "1.92.0",
+    "cargo": "1.92.0",
+    "profile": "release",
+    "locked": true,
+    "rustflags": "-C link-arg=/Brepro --remap-path-prefix <source>=.",
+    "patches": []
+  },
+  "artifacts": {
+    "scripts/bin/harness.exe": {
+      "version": "0.1.7",
+      "source": "official-release",
+      "size": 1379840,
+      "sha256": "9948fa714ee8e7731c1691f3d84649832571b882d009aaa0c511a0c82086754c"
+    },
+    "scripts/bin/harness-cli.exe": {
+      "version": "0.1.23",
+      "source": "pinned-source-build",
+      "size": 4734464,
+      "sha256": "87a8522c671cfd7bb9331904f388968abb8afb6bbef9df9841f20b6099eaa748"
+    }
+  },
+  "platform_note": "The Harness core is the official Windows x64 release asset. The release does not publish harness-cli.exe, so CLI 0.1.23 is built and tested from the exact pinned tag commit without platform patches."
+}

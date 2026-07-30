@@ -1,8 +1,7 @@
-#!/data/data/com.termux/files/usr/bin/python3
+#!/usr/bin/env python
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import os
 import re
@@ -12,6 +11,10 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.cross_platform_lock import try_exclusive_lock, unlock
 
 
 def text(path: str) -> str:
@@ -29,31 +32,28 @@ def hook(path: str, event: dict, env=None):
 
 
 def orchestration_probe():
-    cross_platform = os.environ.get('CODEX_GAUNTLET_CROSS_PLATFORM') == '1'
     temp_root = tempfile.gettempdir()
     lock_path = ROOT/'.harness/epoch-transition/writer.lock'
     nested_writer = False
     if lock_path.exists():
         with lock_path.open('rb') as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(lock, fcntl.LOCK_UN)
-            except BlockingIOError:
+            if try_exclusive_lock(lock):
+                unlock(lock)
+            else:
                 nested_writer = True
     with tempfile.TemporaryDirectory(prefix='gauntlet-orchestration-', dir=temp_root) as tmp:
         db_path = str(Path(tmp) / 'harness.db')
         env = {**os.environ, 'HARNESS_DB_PATH': db_path}
         env.pop('HARNESS_RUN_ID', None)
-        control = [str(ROOT/'scripts/termux-control')]
-        if cross_platform:
-            control.insert(0, 'bash')
-        if nested_writer or cross_platform:
+        control = [
+            'powershell.exe', '-NoProfile', '-File',
+            str(ROOT/'scripts/windows-control.ps1')
+        ]
+        if nested_writer:
             # story complete holds the repository writer lock while running proof.
             # Re-entering rebuild through the same lock would deadlock, so nested
             # proof validates the already runtime-tested replay source instead.
-            # Hosted CI uses the same source proof because Android harness-cli
-            # execution remains the responsibility of the native Termux gate.
-            changeset = ROOT/'.harness/changesets/20260724-orchestration-first.changeset.jsonl'
+            changeset = ROOT/'.harness/changesets/windows-codex-home-20260730.changeset.jsonl'
             try:
                 operations = [
                     json.loads(line) for line in changeset.read_text().splitlines()
@@ -65,7 +65,7 @@ def orchestration_probe():
                 operations[:1] != [] and
                 operations[0].get('op') == 'changeset.header' and
                 any(
-                    op.get('op') == 'story.add' and op.get('id') == 'TERMUX-001'
+                    op.get('op') == 'story.add' and op.get('id') == 'WIN-002'
                     for op in operations
                 )
             )
@@ -84,12 +84,12 @@ def orchestration_probe():
                 stories = []
             rebuild_ok = (
                 init.returncode == 0 and graph.returncode == 0 and
-                any(story.get('id') == 'TERMUX-001' for story in stories)
+                any(story.get('id') == 'WIN-002' for story in stories)
             )
         guard = subprocess.run(
             [
                 *control, 'orchestrator', 'story',
-                'update', '--id', 'TERMUX-001', '--status', 'planned', '--json'
+                'update', '--id', 'WIN-002', '--status', 'planned', '--json'
             ],
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
         )
@@ -100,22 +100,11 @@ def orchestration_probe():
             ],
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
         )
-        if cross_platform:
-            discovery = subprocess.run(
-                control,
-                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
-            )
-            discovery_ok = (
-                discovery.returncode == 2 and
-                'Usage:' in discovery.stderr and
-                '-h|--help' in text('scripts/termux-control')
-            )
-        else:
-            discovery = subprocess.run(
-                [*control, 'orchestrator', 'story', '--help'],
-                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
-            )
-            discovery_ok = discovery.returncode == 0 and 'Usage:' in discovery.stdout
+        discovery = subprocess.run(
+            [*control, 'orchestrator', 'story', '--help'],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, env=env
+        )
+        discovery_ok = discovery.returncode == 0 and 'Usage:' in discovery.stdout
         run_id_guard_ok = (
             guard.returncode == 2 and
             'set a stable HARNESS_RUN_ID' in guard.stderr
@@ -131,7 +120,7 @@ def checks():
     config = text('.codex/config.toml')
     hooks_json = json.loads(text('.codex/hooks.json'))
     hook_commands = [
-        h['command']
+        h['commandWindows']
         for groups in hooks_json['hooks'].values()
         for group in groups
         for h in group['hooks']
@@ -144,17 +133,13 @@ def checks():
     ci = text('.github/workflows/codex-gauntlet.yml')
     matrix = text('qa/verify-matrix.yaml')
     shared_policy = text('scripts/gauntlet_policy.py')
-    pi_index = text('.pi/extensions/gauntlet/index.ts')
-    pi_policy = text('.pi/extensions/gauntlet/policy.ts')
-    pi_verification = text('.pi/extensions/gauntlet/verification.ts')
-    pi_contract = text('docs/product/pi-gauntlet.md')
     compatibility = json.loads(text('qa/compatibility.json'))
 
     classifier_probe = subprocess.run(
         [
             sys.executable,
             str(ROOT / 'qa/classify_changes.py'),
-            '.pi/extensions/gauntlet/index.ts',
+            '.codex/hooks/pre_tool_use_policy.py',
             'src/math.py',
             '--json',
         ],
@@ -340,21 +325,21 @@ def checks():
         'G04': ('destructive command denied', destructive.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
         'G05': ('protected path denied', protected.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
         'G06': ('permission hook never auto-allows prohibited request', permission.get('hookSpecificOutput',{}).get('decision',{}).get('behavior') == 'deny'),
-        'G07': ('Stop delegates to qa/verify', './qa/verify --mode stop' in quality and 'qa" / "verify' in text('.codex/hooks/stop_gate.py')),
+        'G07': ('Stop delegates to qa/verify.ps1', 'qa/verify.ps1' in quality and 'verify.ps1' in text('.codex/hooks/stop_gate.py')),
         'G08': ('Stop recursion guard', 'stop_hook_active' in text('.codex/hooks/stop_gate.py')),
         'G09': ('network disabled', 'network_access = false' in config),
         'G10': ('user reviews approvals', 'approvals_reviewer = "user"' in config),
-        'G11': ('qa/verify executable', os.access(ROOT/'qa/verify', os.X_OK)),
-        'G12': ('CI canonical command', './qa/verify --mode ci' in ci),
+        'G11': ('qa/verify.ps1 present', (ROOT/'qa/verify.ps1').is_file()),
+        'G12': ('CI canonical command', 'qa/verify.ps1' in ci and '-Mode ci' in ci),
         'G13': ('CI no remote Harness update', not re.search(r'\b(curl|wget)\b.*(latest|repository-harness)', ci, re.I)),
         'G14': ('central thresholds file', (ROOT/'qa/thresholds.json').exists()),
         'G15': ('unknown is conservative', 'unknown-mixed:' in matrix and all(gate in matrix.split('unknown-mixed:', 1)[1].split('\n', 1)[0] for gate in ('build', 'unit', 'integration', 'acceptance', 'coverage', 'policy-audit'))),
         'G16': ('policy audit present', (ROOT/'qa/policy_audit.py').exists()),
         'G17': ('hook trust documented', 'hook trust' in quality.lower()),
         'G18': ('Rules optional', '.codex/rules' not in config and 'rules' not in hooks_json),
-        'G19': ('Termux hook interpreters', all(command.startswith('/data/data/com.termux/files/usr/bin/python3 ') for command in hook_commands)),
+        'G19': ('Windows hook interpreters', all(command.startswith('python ') for command in hook_commands)),
         'G20': ('untracked changes classified', '"ls-files", "--others", "--exclude-standard"' in text('qa/classify_changes.py')),
-        'G21': ('multiple change classes split', classifier_probe.returncode == 0 and {'pi', 'pure-logic'} <= classifier_classes),
+        'G21': ('multiple change classes split', classifier_probe.returncode == 0 and {'gauntlet-policy', 'pure-logic'} <= classifier_classes),
         'G22': ('hard reset denied', hard_reset.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
         'G23': ('ordinary protected patch denied', ordinary_patch.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
         'G24': ('exact scoped maintenance patch permitted', exact_patch == {}),
@@ -371,12 +356,12 @@ def checks():
         'G35': ('ordinary Write to protected target denied', ordinary_write.get('hookSpecificOutput',{}).get('permissionDecision') == 'deny'),
         'G36': ('exact scoped Write remains user-authorized', exact_write == {}),
         'G37': ('shared runtime-neutral policy core', 'class PolicyDecision' in shared_policy and 'def decide(' in shared_policy),
-        'G38': ('Pi adapter covers native mutation events', all(event in pi_index for event in ('tool_call', 'tool_result', 'agent_settled')) and all(tool in pi_policy for tool in ('"bash"', '"edit"', '"write"'))),
-        'G39': ('Pi prompt preserves defaults without project shadow files', 'event.systemPrompt' in pi_index and not (ROOT/'.pi/SYSTEM.md').exists() and not (ROOT/'.pi/APPEND_SYSTEM.md').exists()),
-        'G40': ('Pi adapter is dependency-free', not any((ROOT/'.pi'/name).exists() for name in ('package.json','package-lock.json','npm','node_modules'))),
-        'G41': ('Pi verification is bounded and recursion-guarded', all(marker in pi_verification for marker in ('MAX_CAPTURE', 'inFlight', 'failureSignature', 'repairFollowUpSent', '"--mode", "stop"'))),
-        'G42': ('Pi adapter is protected from ordinary mutation', '".pi/"' in shared_policy and 'from scripts.gauntlet_policy import' in text('.codex/hooks/common.py')),
-        'G43': ('Pi changes have an explicit verification class', 'pi: [' in matrix and 'pi' in classifier_classes),
+        'G38': ('native Windows sandbox selected', '[windows]' in config and 'sandbox = "unelevated"' in config),
+        'G39': ('every hook has a Windows command', all('commandWindows' in h for groups in hooks_json['hooks'].values() for g in groups for h in g['hooks'])),
+        'G40': ('Windows hooks are dependency-free Python entrypoints', all(command.startswith('python ') and command.endswith(('.py', '.py hook')) for command in hook_commands)),
+        'G41': ('Windows Stop is bounded and recursion-guarded', all(marker in text('.codex/hooks/stop_gate.py') for marker in ('powershell.exe', 'verify.ps1', 'stop_hook_active'))),
+        'G42': ('Codex adapter delegates to shared policy', 'from scripts.gauntlet_policy import' in text('.codex/hooks/common.py')),
+        'G43': ('Windows policy changes have an explicit verification class', 'gauntlet-policy:' in matrix and 'gauntlet-policy' in classifier_classes),
         'H01': ('Harness provenance', (ROOT/'.harness-core/manifest.json').exists()),
         'H02': ('skill coexistence and unique names', set(skill_names) == {
             'onboard-repository', 'audit-onboarding-proposal', 'verify-suite',
@@ -384,26 +369,26 @@ def checks():
             'security-diff-scan', 'validate-finding', 'attack-path-review',
             'triage-finding',
         } and len(skill_names) == len(set(skill_names))),
-        'H03': ('compact AGENTS entrypoint', len(agents.splitlines()) < 45 and 'docs/WORKFLOW.md' in agents and './qa/verify' in agents),
+        'H03': ('compact AGENTS entrypoint', len(agents.splitlines()) < 45 and 'docs/WORKFLOW.md' in agents and 'qa/verify.ps1' in agents),
         'H04': ('bounded task stays light', 'does not require a durable plan' in workflow),
         'H05': ('durable task structure', (ROOT/'docs/plans/active').is_dir() and (ROOT/'docs/plans/completed').is_dir() and (ROOT/'docs/templates/exec-plan.md').exists()),
         'H06': ('onboarding pass one read-only', 'Pass 1 — read-only' in text('.agents/skills/onboard-repository/SKILL.md')),
         'H07': ('onboarding exact approval', 'exact proposal items' in text('.agents/skills/onboard-repository/SKILL.md')),
         'H08': ('ordinary Harness tampering protected', '.harness-core/' in shared_policy and 'from scripts.gauntlet_policy import' in text('.codex/hooks/common.py')),
-        'H09': ('explicit Harness maintenance authorization', 'CODEX_GAUNTLET_MAINTENANCE' in text('scripts/build-harness-termux')),
+        'H09': ('explicit Harness maintenance authorization', 'CODEX_GAUNTLET_MAINTENANCE' in text('scripts/build-harness-windows.ps1')),
         'H10': ('merge conflict requires human direction', 'semantic merge conflicts without human direction' in harness_doc),
         'H11': ('ownership collision fails', 'overlaps protected Gauntlet path' in text('qa/check_harness.py')),
-        'H12': ('update regression gates', 'G + H self-tests' in harness_doc and './qa/verify --mode stop' in harness_doc),
+        'H12': ('update regression gates', 'G + H self-tests' in harness_doc and 'qa/verify.ps1' in harness_doc),
         'H13': ('CI hermeticity', 'never downloads the latest Harness' in text('README.md') and 'curl' not in ci),
-        'H14': ('single verification authority', 'single_authority: ./qa/verify' in matrix and 'There is no `harness verify`' in quality),
+        'H14': ('single verification authority', 'single_authority: qa/verify.ps1' in matrix and 'There is no `harness verify`' in quality),
         'H15': ('nested instruction precedence acknowledged', 'smallest authoritative context' in agents and 'Authority order' in workflow),
         'H16': ('Codex directories protected', '.codex/**' in quality and '.agents/skills' in quality),
-        'H17': ('complete Harness payload checked', 'EXPECTED_CORE_PATHS' in text('qa/check_harness.py') and 'EXPECTED_CLI_PATHS' in text('qa/check_harness.py') and '"git", "apply", "--numstat"' in text('qa/check_harness.py')),
+        'H17': ('complete Harness payload checked', 'EXPECTED_CORE_PATHS' in text('qa/check_harness.py') and 'EXPECTED_CLI_PATHS' in text('qa/check_harness.py') and 'b"MZ"' in text('qa/check_harness.py')),
         'H18': ('orchestration state rebuilds from semantic changesets', rebuild_ok),
         'H19': ('orchestration mutations require stable run id', run_id_guard_ok),
         'H20': ('orchestration discovery stays read-only', discovery_ok),
         'H21': ('help values cannot bypass orchestration run id', help_value_guard_ok),
-        'H22': ('Pi remains auxiliary-only without sandbox claims', compatibility.get('pi',{}).get('authority') == 'auxiliary-only' and compatibility.get('pi',{}).get('sandbox') is False and 'not a sandbox' in pi_contract.lower()),
+        'H22': ('Windows is the only active compatibility platform', compatibility.get('codex',{}).get('platform') == 'windows-native' and 'pi' not in compatibility and compatibility.get('repository_harness',{}).get('platform') == 'x86_64-pc-windows-msvc'),
     }
 
 

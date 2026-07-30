@@ -17,6 +17,6 @@ def run_hook(stdin: Any = sys.stdin, stdout: Any = sys.stdout) -> int:
     result = handle_event(read_lifecycle_event(stdin))
     if result:
         stdout.write(
-            json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n"
+            json.dumps(result, ensure_ascii=True, separators=(",", ":")) + "\n"
         )
     return 0

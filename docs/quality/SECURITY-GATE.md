@@ -1,6 +1,8 @@
 # Security Intelligence gate
 
-Security Intelligence is a clean-room, internal and offline layer. It produces target, threat-model, finding, validation, attack-path, coverage, history and export artifacts. Only `./qa/verify` decides pass/fail.
+Security Intelligence is a clean-room, internal and offline layer. It produces
+target, threat-model, finding, validation, attack-path, coverage, history, and
+export artifacts. Only `qa/verify.ps1` decides pass/fail.
 
 ## Profiles
 

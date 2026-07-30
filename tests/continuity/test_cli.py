@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import subprocess
 import sys
@@ -21,17 +20,11 @@ class ContinuityCliTests(unittest.TestCase):
 
     @staticmethod
     def cli_argv(*arguments: str) -> list[str]:
-        if os.environ.get("CODEX_GAUNTLET_CROSS_PLATFORM") == "1":
-            return [
-                sys.executable,
-                str(ROOT / "scripts" / "continuity_cli.py"),
-                "--repo-root",
-                str(ROOT),
-                *arguments,
-            ]
         return [
-            str(ROOT / "scripts" / "termux-control"),
-            "continuity",
+            sys.executable,
+            str(ROOT / "scripts" / "continuity_cli.py"),
+            "--repo-root",
+            str(ROOT),
             *arguments,
         ]
 

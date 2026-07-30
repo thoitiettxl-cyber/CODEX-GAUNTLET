@@ -28,7 +28,7 @@ For complex, multi-session, coordination-heavy, or recovery-sensitive work:
   decisions, risks, recovery, and validation context;
 - semantic changesets are committed as replay input while the generated
   `harness.db` remains ignored and reproducible;
-- `./qa/verify` remains the sole repository definition-of-pass.
+- `qa/verify.ps1` remains the sole repository definition-of-pass.
 
 Read-only requests never mutate Harness state. Bounded single-session changes
 do not require a story. Trace, audit, intervention, backlog, and proposal

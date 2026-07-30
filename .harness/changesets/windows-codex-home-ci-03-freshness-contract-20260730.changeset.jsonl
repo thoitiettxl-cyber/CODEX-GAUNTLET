@@ -1,0 +1,2 @@
+{"base_schema_version":14,"op":"changeset.header","run_id":"windows-codex-home-ci-freshness-contract-20260730","version":1}
+{"expected_revision":3,"id":"WIN-002","op":"story.update","payload":{"contract_doc":null,"e2e_proof":null,"evidence":null,"integration_proof":null,"platform_proof":null,"status":null,"unit_proof":null,"verify_command":"powershell.exe -NoProfile -File qa/verify.ps1 -Mode ci -WorkContext .harness/work-context/windows-codex-home-ci-freshness-20260730.json"},"version":3}

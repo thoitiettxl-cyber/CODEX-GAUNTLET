@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/python3
+#!/usr/bin/env python
 from __future__ import annotations
 
 import json
@@ -19,7 +19,7 @@ def main() -> int:
     suspicious = [p for p in changed if p.startswith((".codex/", ".harness-core/", "qa/"))]
     if suspicious:
         print(json.dumps({
-            "systemMessage": "Policy-sensitive files changed; run focused checks and the canonical ./qa/verify before completion."
+            "systemMessage": "Policy-sensitive files changed; run focused checks and canonical qa/verify.ps1 before completion."
         }))
     return 0
 

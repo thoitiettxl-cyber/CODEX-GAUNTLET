@@ -245,11 +245,14 @@ def adapter_digest(repo: Path) -> str:
 
 
 def load_work_graph(repo: Path) -> dict[str, Any]:
-    controller = repo / "scripts" / "termux-control"
+    controller = repo / "scripts" / "windows-control.ps1"
     if not controller.is_file():
         raise ValueError("Harness control entrypoint is missing")
     proc = subprocess.run(
         [
+            "powershell.exe",
+            "-NoProfile",
+            "-File",
             str(controller),
             "orchestrator",
             "query",

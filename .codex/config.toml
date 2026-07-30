@@ -8,3 +8,6 @@ network_access = false
 
 [features]
 hooks = true
+
+[windows]
+sandbox = "unelevated"

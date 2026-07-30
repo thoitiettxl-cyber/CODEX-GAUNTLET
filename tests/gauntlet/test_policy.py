@@ -70,7 +70,7 @@ class SharedPolicyTests(unittest.TestCase):
         cases = (
             ".codex/config.toml",
             str(ROOT / ".codex" / "config.toml"),
-            "docs/../.pi/extensions/gauntlet/index.ts",
+            "docs/../.codex/hooks/pre_tool_use_policy.py",
             "qa/compatibility.json",
         )
         for target in cases:
@@ -108,21 +108,20 @@ class SharedPolicyTests(unittest.TestCase):
         )
         self.assertEqual("deny", result.action)
 
-    def test_exact_executable_mode_update_is_the_only_shell_maintenance_exception(self):
-        allowed = self.decision(
+    def test_windows_shell_mutation_never_enters_the_maintenance_lane(self):
+        chmod = self.decision(
             "shell",
-            text="chmod 755 qa/verify",
+            text="chmod 755 qa/verify.ps1",
             maintenance=True,
-            maintenance_targets=("qa/verify",),
+            maintenance_targets=("qa/verify.ps1",),
         )
         denied = self.decision(
             "shell",
-            text="printf x > qa/verify",
+            text="Set-Content -LiteralPath qa/verify.ps1 -Value x",
             maintenance=True,
-            maintenance_targets=("qa/verify",),
+            maintenance_targets=("qa/verify.ps1",),
         )
-        self.assertEqual("requires_human", allowed.action)
-        self.assertEqual("CG.POLICY.EXACT_FILE_MODE_SCOPE", allowed.reason_code)
+        self.assertEqual("deny", chmod.action)
         self.assertEqual("deny", denied.action)
 
     def test_hard_protected_paths_remain_denied(self):
@@ -225,7 +224,7 @@ class SharedPolicyTests(unittest.TestCase):
             "input": {
                 "operation": "write",
                 "text": "replacement",
-                "targets": [".pi/extensions/gauntlet/index.ts"],
+                "targets": [".codex/hooks/pre_tool_use_policy.py"],
             },
             "context": {
                 "cwd": str(ROOT),
@@ -246,7 +245,7 @@ class SharedPolicyTests(unittest.TestCase):
         result = json.loads(proc.stdout)
         self.assertEqual("deny", result["action"])
         self.assertEqual(
-            [".pi/extensions/gauntlet/index.ts"],
+            [".codex/hooks/pre_tool_use_policy.py"],
             result["normalized_targets"],
         )
         self.assertLessEqual(len(result["reason"]), 240)

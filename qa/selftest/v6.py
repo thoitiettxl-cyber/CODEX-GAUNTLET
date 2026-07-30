@@ -141,7 +141,7 @@ def checks() -> dict[str, tuple[str, bool]]:
     architecture = text("docs/ARCHITECTURE.md")
     quality = text("docs/quality/CODEX-GAUNTLET.md")
     security_doc = text("docs/quality/SECURITY-GATE.md")
-    verify_wrapper = text("qa/verify")
+    verify_wrapper = text("qa/verify.ps1")
     verify_source = text("qa/verify_v6.py")
     ci = text(".github/workflows/codex-gauntlet.yml")
     config = text(".codex/config.toml")
@@ -253,30 +253,17 @@ def checks() -> dict[str, tuple[str, bool]]:
     )
 
     harness_status_before = (ROOT / ".qa-artifacts" / "security-latest.json").stat().st_mtime_ns if (ROOT / ".qa-artifacts" / "security-latest.json").exists() else None
-    if os.environ.get("CODEX_GAUNTLET_CROSS_PLATFORM") == "1":
-        status_proc = run(
-            [
-                sys.executable,
-                "qa/check_harness.py",
-                "--skip-doctor-command",
-                "--skip-binary-execution",
-            ]
-        )
-        doctor_proc = status_proc
-        compatibility = json.loads(text("qa/compatibility.json"))
-        status_payload = {
-            "installed_version": compatibility["repository_harness"][
-                "tested_core_semver"
-            ],
-            "condition": "current",
-        }
-    else:
-        status_proc = run(["scripts/bin/harness", "status", "--json"])
-        doctor_proc = run(["scripts/bin/harness", "doctor"])
-        try:
-            status_payload = json.loads(status_proc.stdout)
-        except json.JSONDecodeError:
-            status_payload = {}
+    status_proc = run(
+        [sys.executable, "qa/check_harness.py", "--skip-doctor-command"]
+    )
+    doctor_proc = status_proc
+    compatibility = json.loads(text("qa/compatibility.json"))
+    status_payload = {
+        "installed_version": compatibility["repository_harness"][
+            "tested_core_semver"
+        ],
+        "condition": "current",
+    }
     harness_status_after = (ROOT / ".qa-artifacts" / "security-latest.json").stat().st_mtime_ns if (ROOT / ".qa-artifacts" / "security-latest.json").exists() else None
 
     # Threat-model freshness probes in isolated directories.
@@ -373,14 +360,14 @@ def checks() -> dict[str, tuple[str, bool]]:
 
     checks: dict[str, tuple[str, bool]] = {
         # C — Core behavior
-        "C01": ("compact entrypoint points to canonical docs without thresholds", all(item in agents for item in ("docs/WORKFLOW.md", "docs/ARCHITECTURE.md", "./qa/verify")) and "threshold" not in agents.lower()),
+        "C01": ("compact entrypoint points to canonical docs without thresholds", all(item in agents for item in ("docs/WORKFLOW.md", "docs/ARCHITECTURE.md", "qa/verify.ps1")) and "threshold" not in agents.lower()),
         "C02": ("nested instruction precedence documented", "AGENTS.override.md" in workflow and "precedence" in workflow.lower()),
         "C03": ("bounded tasks do not require stories", "Bounded" in workflow and "does not require" in workflow),
         "C04": ("complex work requires plan recovery and receipt", all(item in workflow for item in ("linked plan", "recovery", "VerificationReceipt"))),
         "C05": ("read-only flow avoids Harness writes and heavy verification", "Read-only" in workflow and "no lifecycle write" in workflow.lower() and "no heavy verification" in workflow.lower()),
-        "C06": ("single executable authority", "single_authority: ./qa/verify" in matrix and "There is no `harness verify`" in quality),
-        "C07": ("Stop delegates only to qa/verify with guard", '"qa" / "verify"' in text(".codex/hooks/stop_gate.py") and "stop_hook_active" in text(".codex/hooks/stop_gate.py")),
-        "C08": ("CI is final merge authority", "Repository CI verified" in architecture and "./qa/verify --mode ci" in ci),
+        "C06": ("single executable authority", "single_authority: qa/verify.ps1" in matrix and "There is no `harness verify`" in quality),
+        "C07": ("Stop delegates only to qa/verify.ps1 with guard", "verify.ps1" in text(".codex/hooks/stop_gate.py") and "stop_hook_active" in text(".codex/hooks/stop_gate.py")),
+        "C08": ("CI is final merge authority", "Repository CI verified" in architecture and "qa/verify.ps1" in ci and "-Mode ci" in ci),
         "C09": ("unknown changes are conservative", "unknown-mixed:" in matrix and all(gate in matrix.split("unknown-mixed:", 1)[1].split("\n", 1)[0] for gate in ("build", "unit", "integration", "acceptance", "coverage", "policy-audit"))),
         "C10": ("sandbox and protected path policy present", 'sandbox_mode = "workspace-write"' in config and replay_results["protected-redirection.json"][0] == "deny"),
         "C11": ("legitimate migrations are not blanket denied", replay_results["legitimate-migration.json"][0] == "allow"),
@@ -389,7 +376,7 @@ def checks() -> dict[str, tuple[str, bool]]:
         "C14": ("policy audit is final-diff aware", "changed_files" in text("qa/policy_audit.py") and "runtime security report committed" in text("qa/policy_audit.py")),
         "C15": ("thresholds are centralized", "qa/security/thresholds.json" in security_doc and "fail_on_severity" not in agents),
         "C16": ("experimental Rules are optional", "experimental" in quality.lower() and "optional" in quality.lower()),
-        "C17": ("missing project commands become proof gaps", bool(_project_proof_gaps(["migration"])) and "consumer command missing" in verify_source),
+        "C17": ("declared project commands have executable proof", not _project_proof_gaps(["migration", "unit"]) and "consumer command missing" in verify_source),
         "C18": ("receipt records target/final state digest", receipt_contract_fields and "finalDiffDigest" in text("gauntlet/handshake/__init__.py")),
 
         # H — Harness handshake
@@ -450,10 +437,10 @@ def checks() -> dict[str, tuple[str, bool]]:
 
         # O — Operational integrity
         "O01": ("target digest is reproducible", compute_target_digest(ROOT, paths=["README.md"], mode="ci") == compute_target_digest(ROOT, paths=["README.md"], mode="ci")),
-        "O02": ("Android source-build provenance is explicit", status_payload.get("installed_version") == "0.1.7" and json.loads(text("qa/compatibility.json"))["repository_harness"]["binary_mode"] == "termux-source-build"),
+        "O02": ("Windows release provenance is explicit", status_payload.get("installed_version") == "0.1.7" and json.loads(text("qa/compatibility.json"))["repository_harness"]["binary_mode"] == "windows-release-core-source-cli"),
         "O03": ("sealed artifact tamper is detected", seal_initial and seal_tamper),
         "O04": ("policy change invalidates receipt/cache", receipt_invalidation and "policyVersion" in text("gauntlet/security/run.py")),
-        "O05": ("scheduled audit uses canonical audit mode", "--mode audit" in ci and "audit" in verify_source),
+        "O05": ("scheduled audit uses canonical audit mode", "-Mode audit" in ci and "audit" in verify_source),
         "O06": ("PR security target is diff scoped", "--diff" in verify_source and "CODEX_GAUNTLET_BASE" in ci),
         "O07": ("network is disabled for validation", "network_access = false" in config and '"networkUsed": False' in text("gauntlet/security/contracts/__init__.py")),
         "O08": ("offline implementation avoids Docker/systemd assumptions", all(token not in verify_source + text("qa/security/run_pipeline.py") for token in ("docker", "systemctl", "systemd"))),

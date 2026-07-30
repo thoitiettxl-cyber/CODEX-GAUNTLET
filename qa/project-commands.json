@@ -2,32 +2,31 @@
   "application_present": true,
   "commands": {
     "build": [
-      "python3 -m compileall -q scripts/continuity scripts/continuity_cli.py scripts/gauntlet_policy.py scripts/rtk_control.py tests/continuity tests/gauntlet tests/pi tests/rtk"
+      "python -m compileall -q .codex/hooks gauntlet qa scripts/continuity scripts/continuity_cli.py scripts/gauntlet_handshake.py scripts/gauntlet_policy.py tests/continuity tests/gauntlet"
     ],
     "docs": [
-      "python3 -m compileall -q scripts/continuity scripts/continuity_cli.py scripts/gauntlet_policy.py scripts/rtk_control.py tests/continuity tests/gauntlet tests/pi tests/rtk"
+      "python -m compileall -q .codex/hooks gauntlet qa scripts/continuity scripts/continuity_cli.py scripts/gauntlet_handshake.py scripts/gauntlet_policy.py tests/continuity tests/gauntlet"
     ],
     "unit": [
-      "python3 -m unittest -v tests.continuity.test_store",
-      "python3 -m unittest -v tests.gauntlet.test_policy",
-      "python3 -m unittest -v tests.rtk.test_policy"
+      "python -m unittest -v tests.continuity.test_store",
+      "python -m unittest -v tests.gauntlet.test_policy"
     ],
     "integration": [
-      "python3 -m unittest -v tests.continuity.test_cli tests.continuity.test_hooks",
-      "python3 -m unittest -v tests.pi.test_adapter",
-      "python3 -m unittest -v tests.rtk.test_control"
+      "python -m unittest -v tests.continuity.test_cli tests.continuity.test_hooks",
+      "python -m unittest -v qa.tests.test_handshake qa.tests.test_verifier"
     ],
     "acceptance": [
-      "python3 -m unittest -v tests.continuity.test_game_day"
+      "python -m unittest -v tests.continuity.test_game_day"
     ],
     "coverage": [
-      "mkdir -p .qa-artifacts/continuity-coverage && python3 -m trace --count --summary --missing --ignore-dir \"$PREFIX/lib/python3.14\" --coverdir .qa-artifacts/continuity-coverage --module unittest discover -s tests/continuity -p 'test_*.py'",
-      "mkdir -p .qa-artifacts/pi-gauntlet-coverage && python3 -m trace --count --summary --missing --ignore-dir \"$PREFIX/lib/python3.14\" --coverdir .qa-artifacts/pi-gauntlet-coverage --module unittest tests.gauntlet.test_policy tests.pi.test_adapter",
-      "mkdir -p .qa-artifacts/rtk-coverage && python3 -m trace --count --summary --missing --ignore-dir \"$PREFIX/lib/python3.14\" --coverdir .qa-artifacts/rtk-coverage --module unittest tests.rtk.test_policy tests.rtk.test_control"
+      "mkdir -p .qa-artifacts/continuity-coverage && python -m trace --count --summary --missing --coverdir .qa-artifacts/continuity-coverage --module unittest discover -s tests/continuity -p 'test_*.py'",
+      "mkdir -p .qa-artifacts/gauntlet-coverage && python -m trace --count --summary --missing --coverdir .qa-artifacts/gauntlet-coverage --module unittest tests.gauntlet.test_policy"
     ],
     "mutation": [
-      "python3 -m unittest -v tests.continuity.test_store.StoreTests.test_secret_values_are_redacted_from_packet_output_and_database tests.continuity.test_store.StoreTests.test_same_operation_key_does_not_repeat_committed_fake_side_effect tests.continuity.test_hooks.HookFixtureTests.test_hook_failure_degrades_without_blocking"
+      "python -m unittest -v tests.continuity.test_store.StoreTests.test_secret_values_are_redacted_from_packet_output_and_database tests.continuity.test_store.StoreTests.test_same_operation_key_does_not_repeat_committed_fake_side_effect tests.continuity.test_hooks.HookFixtureTests.test_hook_failure_degrades_without_blocking"
     ],
-    "migration": []
+    "migration": [
+      "python -m unittest -v tests.continuity.test_game_day.GameDayTests.test_semantic_changeset_replay_matches_live_logical_graph"
+    ]
   }
 }

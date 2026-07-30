@@ -1,5 +1,5 @@
-#!/data/data/com.termux/files/usr/bin/python3
-"""Runtime-neutral normalized-operation policy for Codex and Pi adapters."""
+#!/usr/bin/env python
+"""Normalized-operation policy for the native Windows Codex adapter."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from typing import Any, Iterable
 
 PROTECTED_PATHS = (
     ".codex/",
-    ".pi/",
     ".harness-core/",
     ".agents/skills/onboard-repository/",
     ".agents/skills/audit-onboarding-proposal/",
@@ -40,7 +39,7 @@ HARD_PROTECTED_PATHS = tuple(
     if path == ".harness-core/" or path.startswith(".agents/skills/")
 )
 POLICY_CRITICAL = (
-    "qa/verify",
+    "qa/verify.ps1",
     "qa/verify_v6.py",
     "qa/policy.json",
     "qa/thresholds.json",
@@ -95,15 +94,24 @@ READ_ONLY_COMMANDS = {
     "which",
 }
 MUTATING_COMMANDS = {
+    "add-content",
+    "clear-content",
     "chmod",
     "chown",
+    "copy-item",
     "cp",
     "install",
     "ln",
     "mkdir",
+    "move-item",
     "mv",
+    "new-item",
+    "out-file",
+    "remove-item",
+    "rename-item",
     "rm",
     "rmdir",
+    "set-content",
     "tee",
     "touch",
     "truncate",
@@ -616,7 +624,7 @@ def decide(policy_input: PolicyInput, context: PolicyContext) -> PolicyDecision:
 
     harness_update = any(
         command.argv
-        and str(command.argv[0]).replace("\\", "/").endswith("scripts/bin/harness")
+        and str(command.argv[0]).replace("\\", "/").endswith("scripts/bin/harness.exe")
         and any(item in {"update", "activate"} for item in command.argv[1:])
         for command in shell_commands
     )
@@ -627,7 +635,7 @@ def decide(policy_input: PolicyInput, context: PolicyContext) -> PolicyDecision:
             "CG.POLICY.HARNESS_MAINTENANCE",
             "Harness update requires explicit operator maintenance authority",
             "enter the documented Harness maintenance lane",
-            target="scripts/bin/harness",
+            target="scripts/bin/harness.exe",
             normalized_targets=normalized_targets,
             protected_targets=protected_targets,
             mutation=True,
@@ -649,38 +657,6 @@ def decide(policy_input: PolicyInput, context: PolicyContext) -> PolicyDecision:
             mutation=True,
         )
 
-    # A canonical executable bit is a narrow maintenance concern. It is the
-    # only shell mutation admitted to this lane, and only for an exact target;
-    # ordinary shell writes continue to fail closed below.
-    chmod_commands = [
-        command
-        for command in shell_commands
-        if command.argv and Path(command.argv[0]).name.lower() == "chmod"
-    ]
-    if (
-        policy_input.operation == "shell"
-        and chmod_commands
-        and len(chmod_commands) == len(shell_commands)
-        and normalized_targets
-        and context.maintenance_enabled
-    ):
-        allowed = {
-            normalize_target(target, context)
-            for target in context.maintenance_targets
-            if target.strip()
-        }
-        if set(normalized_targets) <= allowed:
-            return _decision(
-                "requires_human",
-                "CG.POLICY.EXACT_FILE_MODE_SCOPE",
-                "exact executable-bit maintenance scope is valid",
-                "approve only the reviewed executable target",
-                target=normalized_targets[0],
-                normalized_targets=normalized_targets,
-                protected_targets=protected_targets,
-                mutation=True,
-            )
-
     sealed_target = next(
         (
             path
@@ -698,7 +674,7 @@ def decide(policy_input: PolicyInput, context: PolicyContext) -> PolicyDecision:
             "deny",
             "CG.POLICY.SEALED_ARTIFACT",
             "sealed runtime evidence may only be created by its canonical issuer",
-            "run ./qa/verify instead of writing generated evidence directly",
+            "run qa/verify.ps1 instead of writing generated evidence directly",
             target=sealed_target,
             normalized_targets=normalized_targets,
             protected_targets=protected_targets,

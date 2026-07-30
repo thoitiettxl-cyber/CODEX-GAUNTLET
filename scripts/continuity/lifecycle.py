@@ -299,14 +299,14 @@ def run_lifecycle(stdin: Any = sys.stdin, stdout: Any = sys.stdout) -> int:
     outcome = handle_lifecycle(read_lifecycle_event(stdin))
     encoded = json.dumps(
         outcome.protocol_result(),
-        ensure_ascii=False,
+        ensure_ascii=True,
         separators=(",", ":"),
     )
     if len(encoded.encode("utf-8")) > MAX_PROTOCOL_OUTPUT:
         outcome = _degraded(outcome.event_name, "lifecycle output exceeded its bound")
         encoded = json.dumps(
             outcome.protocol_result(),
-            ensure_ascii=False,
+            ensure_ascii=True,
             separators=(",", ":"),
         )
     stdout.write(encoded + "\n")

@@ -53,13 +53,13 @@ class GateSelectionTests(unittest.TestCase):
         ):
             self.assertIn(gate, selection.gates)
 
-    def test_pi_change_does_not_become_security_sensitive(self) -> None:
+    def test_windows_harness_change_does_not_become_security_sensitive(self) -> None:
         selection = select_gates(
-            records([".pi/extensions/gauntlet/index.ts"]),
+            records(["scripts/bin/harness.exe"]),
             "stop",
         )
         self.assertIsNone(selection.securityProfile)
-        self.assertIn("unit", selection.gates)
+        self.assertIn("harness-integrity", selection.gates)
         self.assertIn("integration", selection.gates)
 
     def test_reasons_preserve_rule_path_class_and_evidence(self) -> None:

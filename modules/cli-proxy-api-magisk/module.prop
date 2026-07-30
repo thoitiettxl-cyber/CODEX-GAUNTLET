@@ -1,7 +1,0 @@
-id=cli_proxy_api
-name=CLIProxyAPI Standalone
-version=v1.1.0
-versionCode=2026071602
-author=repository-harness
-description=Standalone CLIProxyAPI runtime for Magisk KernelSU and APatch
-updateJson=

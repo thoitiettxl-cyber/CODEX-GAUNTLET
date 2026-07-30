@@ -1,11 +1,15 @@
 {
   "codex": {
-    "baseline_date": "2026-07-24",
+    "baseline_date": "2026-07-30",
     "gauntlet_version": "6",
     "handshake_schema": "1",
+    "platform": "windows-native",
     "required_features": [
       "project_trust",
       "project_hooks",
+      "native_windows_sandbox",
+      "powershell",
+      "commandWindows",
       "PreToolUse",
       "PermissionRequest",
       "PostToolUse",
@@ -13,40 +17,23 @@
       "repository_skills"
     ]
   },
-  "pi": {
-    "baseline_date": "2026-07-26",
-    "tested_version": "0.82.1",
-    "tested_commit": "b4f2936",
-    "authority": "auxiliary-only",
-    "sandbox": false,
-    "verification_authority": false,
-    "required_features": [
-      "project_trust",
-      "project_extensions",
-      "before_agent_start",
-      "tool_call_blocking",
-      "tool_result",
-      "agent_settled",
-      "repository_skills",
-      "temporary_approve"
-    ]
-  },
   "repository_harness": {
     "tested_core_version": "harness-v0.1.7",
     "tested_core_semver": "0.1.7",
     "tested_cli_version": "0.1.23",
     "tested_commit": "d43b70254308b0e10efed2efbcbe595f1e771f63",
-    "binary_mode": "termux-source-build",
-    "production_binary_required": false,
-    "core_sha256": "20ec5d0a717d75f36a307926d008f67ebc2cdff7c3ab718abefc0384fdc4e222",
-    "cli_sha256": "1d39602c82d3937ccafe1af5d851e5fc50d5c39b7d86277c60f844ca2b011b87",
-    "android_patch_sha256": "67672f7efc2a10ce7656fa24a1e6e6924f0cbb309bc9b0d937cb194284a65a5d",
+    "binary_mode": "windows-release-core-source-cli",
+    "platform": "x86_64-pc-windows-msvc",
+    "production_binary_required": true,
+    "core_asset": "harness-windows-x64.exe",
+    "core_sha256": "9948fa714ee8e7731c1691f3d84649832571b882d009aaa0c511a0c82086754c",
+    "cli_sha256": "87a8522c671cfd7bb9331904f388968abb8afb6bbef9df9841f20b6099eaa748",
     "core_payload_count": 19,
     "cli_payload_count": 23,
     "cli_payload_manifest_sha256": "eb4ae884262a7a03d117cb7b5dff5c932ecb4184d76aef27428b39bfe55e2067",
     "schema_count": 14,
     "schema_manifest_sha256": "e31ac87a8afb2d37d1f6c24ab2d0b00e7ac73d2d6acc3c10f88f4dd525141f51",
     "gauntlet_handshake": "work-context-receipt-v1",
-    "compatibility_review_date": "2026-07-29"
+    "compatibility_review_date": "2026-07-30"
   }
 }

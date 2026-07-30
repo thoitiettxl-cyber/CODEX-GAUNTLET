@@ -26,9 +26,9 @@ class HarnessTimedOut(HarnessUnavailable):
 def resolve_repo_root(cwd: str | Path) -> Path:
     candidate = Path(cwd).expanduser().resolve()
     for parent in (candidate, *candidate.parents):
-        if (parent / ".git").exists() and (parent / "scripts" / "termux-control").is_file():
+        if (parent / ".git").exists() and (parent / "scripts" / "windows-control.ps1").is_file():
             return parent
-    raise ValueError("cwd is not inside a supported Termux control-plane repository")
+    raise ValueError("cwd is not inside a supported Windows control-plane repository")
 
 
 def state_database(repo_root: Path) -> Path:
@@ -36,10 +36,10 @@ def state_database(repo_root: Path) -> Path:
     if override:
         state_root = Path(override)
     else:
-        prefix = os.environ.get("PREFIX")
-        if not prefix:
-            raise ValueError("PREFIX is required for the continuity state root")
-        state_root = Path(prefix) / "var" / "lib" / "codex-gauntlet" / "session-state"
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if not local_app_data:
+            raise ValueError("LOCALAPPDATA is required for the continuity state root")
+        state_root = Path(local_app_data) / "CodexGauntlet" / "session-state"
     if not state_root.is_absolute():
         raise ValueError("continuity state root must be absolute")
     repository_id = hashlib.sha256(str(repo_root.resolve()).encode("utf-8")).hexdigest()[:20]
@@ -47,6 +47,14 @@ def state_database(repo_root: Path) -> Path:
 
 
 def _terminate_tree(process: subprocess.Popen[str]) -> None:
+    if os.name == "nt":
+        try:
+            process.terminate()
+            process.wait(timeout=1)
+        except (OSError, subprocess.TimeoutExpired):
+            process.kill()
+            process.wait(timeout=1)
+        return
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -101,7 +109,10 @@ def harness_timeout() -> float:
 
 def query_work_graph(repo_root: Path) -> dict[str, Any]:
     command = [
-        str(repo_root / "scripts" / "termux-control"),
+        "powershell.exe",
+        "-NoProfile",
+        "-File",
+        str(repo_root / "scripts" / "windows-control.ps1"),
         "orchestrator",
         "query",
         "work-graph",

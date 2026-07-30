@@ -34,7 +34,7 @@ def _json_value(raw: str, *, object_only: bool = False) -> Any:
 
 
 def _emit(value: Any, *, pretty: bool = True) -> None:
-    print(json.dumps(value, ensure_ascii=False, indent=2 if pretty else None, sort_keys=True))
+    print(json.dumps(value, ensure_ascii=True, indent=2 if pretty else None, sort_keys=True))
 
 
 def _store(args: argparse.Namespace) -> tuple[Path, ContinuityStore]:
@@ -213,7 +213,7 @@ def command_operation_show(args: argparse.Namespace) -> int:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
-        prog="scripts/termux-control continuity",
+        prog="scripts/windows-control.ps1 continuity",
         description="Compaction-aware local session continuity",
     )
     result.add_argument("--repo-root", help=argparse.SUPPRESS)

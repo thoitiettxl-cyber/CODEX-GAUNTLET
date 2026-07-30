@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/python3
+#!/usr/bin/env python
 """Canonical Codex Gauntlet v6 verification authority."""
 
 from __future__ import annotations
@@ -38,21 +38,21 @@ from qa.metrics import emit_metrics  # noqa: E402
 
 VALID_MODES = {"targeted", "stop", "ci", "audit"}
 UNITTEST_FAILURE = re.compile(r"^FAILED(?: \(|$)", re.MULTILINE)
-FUNCTIONAL_SCRIPTS = {
-    "acceptance": "qa/run-acceptance.sh",
-    "build": "qa/run-build.sh",
-    "coverage": "qa/run-coverage.sh",
-    "dependency-audit": "qa/run-build.sh",
-    "integration": "qa/run-integration.sh",
-    "migration": "qa/run-migration.sh",
-    "mutation": "qa/run-mutation.sh",
-    "unit": "qa/run-unit.sh",
+FUNCTIONAL_GATES = {
+    "acceptance",
+    "build",
+    "coverage",
+    "dependency-audit",
+    "integration",
+    "migration",
+    "mutation",
+    "unit",
 }
 
 
-def _functional_argv(gate: str, *, cross_platform: bool) -> list[str]:
-    script = FUNCTIONAL_SCRIPTS[gate]
-    return ["bash", script] if cross_platform else [script]
+def _functional_argv(gate: str) -> list[str]:
+    configured_gate = "build" if gate == "dependency-audit" else gate
+    return [sys.executable, "qa/run-configured.py", configured_gate]
 
 
 class VerificationFailure(RuntimeError):
@@ -131,7 +131,7 @@ def _project_proof_gaps(selected_gates: list[str]) -> list[str]:
     commands = config.get("commands", {})
     gaps: list[str] = []
     for gate in selected_gates:
-        if gate not in FUNCTIONAL_SCRIPTS:
+        if gate not in FUNCTIONAL_GATES:
             continue
         configured_gate = "build" if gate == "dependency-audit" else gate
         configured = commands.get(configured_gate)
@@ -199,7 +199,8 @@ class EvidenceRunner:
         duration_ms = round((time.perf_counter() - started) * 1000, 3)
         body = f"+ {command_line}\n{output}"
         log_path.write_text(body, encoding="utf-8")
-        log_path.chmod(0o444)
+        if os.name != "nt":
+            log_path.chmod(0o444)
         print(f"+ {command_line}")
         print(output, end="" if output.endswith("\n") or not output else "\n")
         record = {
@@ -222,7 +223,8 @@ class EvidenceRunner:
         ordinal = len(self.records) + 1
         log_path = self.root / f"{ordinal:02d}-{gate}-failure.log"
         log_path.write_text(message.rstrip() + "\n", encoding="utf-8")
-        log_path.chmod(0o444)
+        if os.name != "nt":
+            log_path.chmod(0o444)
         self.records.append(
             {
                 "gate": gate,
@@ -256,14 +258,11 @@ def _run_selected_gates(
     target_digest: str,
 ) -> str | None:
     selected = list(selection["gates"])
-    cross_platform = os.environ.get("CODEX_GAUNTLET_CROSS_PLATFORM") == "1"
     harness_argv = [
         sys.executable,
         "qa/check_harness.py",
         "--skip-doctor-command",
     ]
-    if cross_platform:
-        harness_argv.append("--skip-binary-execution")
     runner.run("harness-integrity", harness_argv)
 
     if "selftest" in selected:
@@ -312,10 +311,10 @@ def _run_selected_gates(
                     "scripts/gauntlet_policy.py",
                 ],
             )
-        elif gate in FUNCTIONAL_SCRIPTS:
+        elif gate in FUNCTIONAL_GATES:
             runner.run(
                 gate,
-                _functional_argv(gate, cross_platform=cross_platform),
+                _functional_argv(gate),
             )
 
     security_report_id: str | None = None
@@ -496,12 +495,12 @@ def main() -> int:
 
     if result == "pass":
         print(
-            f"PASS: qa/verify --mode {ns.mode} "
+            f"PASS: qa/verify.ps1 -Mode {ns.mode} "
             f"({elapsed_ms:.1f} ms, proof_gaps={len(proof_gaps)})"
         )
         return 0
     if error:
-        print(f"FAIL: qa/verify --mode {ns.mode}: {error}", file=sys.stderr)
+        print(f"FAIL: qa/verify.ps1 -Mode {ns.mode}: {error}", file=sys.stderr)
     return 1
 
 

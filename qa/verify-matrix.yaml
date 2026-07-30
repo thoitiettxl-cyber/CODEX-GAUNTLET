@@ -1,5 +1,5 @@
 schema_version: 2
-single_authority: ./qa/verify
+single_authority: qa/verify.ps1
 
 classes:
   docs-only: [docs]
@@ -12,7 +12,6 @@ classes:
   harness-core: [harness-integrity, integration, acceptance]
   harness-state: [harness-integrity]
   threat-model-source: [threat-model-freshness, security-profile]
-  pi: [unit, integration, coverage]
   unknown-mixed: [docs, build, unit, integration, acceptance, coverage, policy-audit]
 
 mode_profiles:
