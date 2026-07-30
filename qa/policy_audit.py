@@ -148,7 +148,7 @@ def main() -> int:
             errors.append(f"possible secret file committed: {rel}")
 
     workflow = _text(".github/workflows/codex-gauntlet.yml")
-    for command in ("./qa/verify --mode ci", "./qa/verify --mode audit"):
+    for command in ("bash ./qa/verify --mode ci", "bash ./qa/verify --mode audit"):
         if command not in workflow:
             errors.append(f"CI does not invoke canonical command: {command}")
     if re.search(

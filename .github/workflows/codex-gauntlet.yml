@@ -33,7 +33,7 @@ jobs:
         env:
           CODEX_GAUNTLET_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           CODEX_GAUNTLET_CROSS_PLATFORM: "1"
-        run: ./qa/verify --mode ci
+        run: bash ./qa/verify --mode ci
       - name: Upload verification evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -63,7 +63,7 @@ jobs:
       - name: Canonical repository audit
         env:
           CODEX_GAUNTLET_CROSS_PLATFORM: "1"
-        run: ./qa/verify --mode audit
+        run: bash ./qa/verify --mode audit
       - name: Upload audit evidence
         if: always()
         uses: actions/upload-artifact@v4
